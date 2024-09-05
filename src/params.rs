@@ -165,7 +165,7 @@ impl ConnectionParams {
     }
 
     pub fn spending_scripts(&self) -> Vec<ScriptBuf> {
-        self.spending_scripts.iter().map(|script| script.script().clone()).collect()
+        self.spending_scripts.iter().map(|script| script.get_script().clone()).collect()
     }
 
     pub fn spending_scripts_with_params(&self) -> Vec<ScriptWithParams> {

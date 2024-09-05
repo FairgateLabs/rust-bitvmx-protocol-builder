@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::TapSighashType;
+use bitcoin::{TapSighashType, Transaction};
 
 use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}};
 
@@ -64,21 +64,12 @@ impl TemplateBuilder {
     pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
         
-        
         // Create the from template if it doesn't exist and push the output that will be spent
-        let from_template = self.add_or_create_template(
-            from, 
-            connection_params.template_from()
-        )?;
-
+        let from_template = self.add_or_create_template(from, connection_params.template_from())?;
         let output = from_template.push_output(protocol_amount, &connection_params.spending_scripts_with_params())?;
 
         // Create the to template if it doesn't exist and push the input that will spend the previously created output
-        let to_template = self.add_or_create_template(
-            to,
-            connection_params.template_to()
-        )?;
-
+        let to_template = self.add_or_create_template(to, connection_params.template_to())?;
         let next_input = to_template.push_input(sighash_type, output, &connection_params.spending_scripts_with_params());
 
         // Add to the from_template the recently created next input for later updates of the txid in connected inputs
@@ -130,7 +121,7 @@ impl TemplateBuilder {
         self.finalized = false;
         
         if !self.templates.contains_key(name) {
-            return Err(TemplateBuilderError::MissingTemplate(name.to_string(), "end".to_string()));
+            return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
         }
         let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
@@ -162,6 +153,15 @@ impl TemplateBuilder {
     pub fn finalize_and_build(&mut self) -> Result<Vec<Template>, TemplateBuilderError> {
         self.finalize()?;
         self.build_templates()
+    }
+
+    /// Returns the transactions of the finalized templates.
+    pub fn get_transactions(&self) -> Result<Vec<Transaction>, TemplateBuilderError> {
+        if !self.finalized {
+            return Err(TemplateBuilderError::NotFinalized);
+        }
+        
+        Ok(self.templates.values().map(|template| template.get_transaction()).collect())
     }
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
@@ -203,7 +203,7 @@ impl TemplateBuilder {
     fn get_template_mut(&mut self, name: &str) -> Result<&mut Template, TemplateBuilderError> {
         match self.templates.get_mut(name) {
             Some(template) => Ok(template),
-            None => Err(TemplateBuilderError::MissingTemplate(name.to_string(), "get_template_mut".to_string())),
+            None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
         }
     }
 }
@@ -264,7 +264,7 @@ mod tests {
 
         let template_b = signed_templates.iter().find(|template| template.get_name() == "B").unwrap();
 
-        assert_eq!(template_b.get_spending_info().len(), 1);
+        assert_eq!(template_b.get_inputs().len(), 1);
 
         // The third output from A is the protocol output we will be consuming in B
         let previous_outputs = template_b.get_previous_outputs();        
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(previous_outputs[0].get_from(), "A");
         assert_eq!(previous_outputs[0].get_index(), 2);
 
-        for spending_info in template_b.get_spending_info() {
+        for spending_info in template_b.get_inputs() {
             let verifying_key = spending_info.get_verifying_key().unwrap();
             for spending_path in spending_info.get_spending_paths() {
                 let sighash = spending_path.get_sighash().unwrap();
@@ -443,7 +443,7 @@ mod tests {
         for (index, template) in templates.iter_mut().enumerate() {
             let public_key = key_manager.derive_keypair(index as u32)?;
     
-            for (input_index, spending_info) in template.get_spending_info().iter().enumerate() {
+            for (input_index, spending_info) in template.get_inputs().iter().enumerate() {
                 for spending_path in spending_info.get_spending_paths() {
                     let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &public_key)?;
                     let taproot_signature = Signature{ signature, sighash_type: spending_path.get_sighash_type() };
@@ -466,7 +466,7 @@ mod tests {
         for (index, template) in signed_templates.iter().enumerate() {
             let public_key = key_manager.derive_public_key(master_xpub, index as u32)?;
     
-            for spending_info in template.get_spending_info().iter() {
+            for spending_info in template.get_inputs().iter() {
                 for spending_path in spending_info.get_spending_paths() {
                     let message = &Message::from(spending_path.get_sighash().unwrap());
                     if !SignatureVerifier::default().verify_schnorr_signature(&spending_path.get_signature().unwrap().signature, message, public_key) {

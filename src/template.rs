@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use lazy_static::lazy_static;
+use bitcoin::{hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, Signature, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
 
-use bitcoin::{hashes::Hash, locktime, secp256k1, sighash::{self, SighashCache}, taproot::{LeafVersion, Signature, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
+use crate::{errors::TemplateError, scripts::{ScriptParam, ScriptWithParams}, unspendable::unspendable_key};
 
-use crate::{errors::TemplateError, scripts::ScriptWithParams, unspendable::unspendable_key};
+lazy_static! {
+    static ref SECP: Secp256k1<All> = Secp256k1::new();
+}
 
 #[derive(Clone, Debug)]
 /// Represents an output of a previous transaction that is consumed by an output in this transaction.
@@ -10,14 +14,16 @@ pub struct PreviousOutput {
     from: String,
     index: usize,
     txout: TxOut,
+    taproot_spend_info: TaprootSpendInfo
 }
 
 impl PreviousOutput { 
-    pub fn new(from: String, index: usize, txout: TxOut) -> Self {
+    pub fn new(from: String, index: usize, txout: TxOut, taproot_spend_info: TaprootSpendInfo) -> Self {
         PreviousOutput {
             from,
             index,
             txout,
+            taproot_spend_info,
         }
     }
 
@@ -31,6 +37,10 @@ impl PreviousOutput {
 
     pub fn get_txout(&self) -> &TxOut {
         &self.txout
+    }
+
+    pub fn get_taproot_spend_info(&self) -> TaprootSpendInfo {
+        self.taproot_spend_info.clone()
     }
 }
 
@@ -59,17 +69,19 @@ impl NextInput {
 }
 
 #[derive(Clone, Debug)]
-pub struct SpendingInfo {
+pub struct Input {
+    taproot_spend_info: TaprootSpendInfo,
     signature_verifying_key: Option<PublicKey>,
     spending_paths: HashMap<TapLeafHash, SpendingPath>,
 }
 
-impl SpendingInfo {
-    pub fn new(sighash_type: TapSighashType, taproot_spending_scripts: &[ScriptWithParams]) -> Self {
-        SpendingInfo {
+impl Input {
+    pub fn new(sighash_type: TapSighashType, taproot_spending_scripts: &[ScriptWithParams], taproot_spend_info: TaprootSpendInfo) -> Self {
+        Input {
+            taproot_spend_info,
             signature_verifying_key: None,
             spending_paths: taproot_spending_scripts.iter().map(|taproot_leaf| {
-                let leaf_hash = TapLeafHash::from_script(taproot_leaf.script(), LeafVersion::TapScript);
+                let leaf_hash = TapLeafHash::from_script(taproot_leaf.get_script(), LeafVersion::TapScript);
                 let path = SpendingPath::new(sighash_type, taproot_leaf.clone());
 
                 (leaf_hash, path)
@@ -97,6 +109,10 @@ impl SpendingInfo {
     pub fn get_verifying_key(&self) -> Option<PublicKey> {
         self.signature_verifying_key
     }
+
+    pub fn get_taproot_spend_info(&self) -> TaprootSpendInfo {
+        self.taproot_spend_info.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -118,7 +134,7 @@ impl SpendingPath {
     }
 
     pub fn tap_leaf_hash(&self) -> TapLeafHash {
-        TapLeafHash::from_script(self.taproot_leaf.script(), LeafVersion::TapScript)
+        TapLeafHash::from_script(self.taproot_leaf.get_script(), LeafVersion::TapScript)
     }
 
     pub fn get_sighash_type(&self) -> TapSighashType {
@@ -132,6 +148,14 @@ impl SpendingPath {
     pub fn get_signature(&self) -> Option<Signature> {
         self.signature
     }
+
+    pub fn get_taproot_leaf(&self) -> ScriptWithParams {
+        self.taproot_leaf.clone()
+    }
+
+    pub fn get_script_params(&self) -> Vec<ScriptParam> {
+        self.taproot_leaf.get_params()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -139,9 +163,9 @@ pub struct Template {
     name: String,
     txid: Txid,
     transaction: Transaction,
+    inputs: Vec<Input>,
     previous_outputs: Vec<PreviousOutput>,
     next_inputs: Vec<NextInput>,
-    spending_info: Vec<SpendingInfo>,
 }
 
 impl Template {
@@ -152,7 +176,7 @@ impl Template {
             transaction: Self::build_transaction(),
             previous_outputs: vec![],
             next_inputs: vec![],
-            spending_info: vec![],
+            inputs: vec![],
         };
 
         template.push_output_with_script(speedup_amount, speedup_script);
@@ -164,9 +188,9 @@ impl Template {
         &self.name
     }
 
-    pub fn get_inputs(&self) -> Vec<TxIn> {
-        self.transaction.input.clone()
-    }
+    // pub fn get_inputs(&self) -> Vec<TxIn> {
+    //     self.transaction.input.clone()
+    // }
 
     pub fn get_next_inputs(&self) -> Vec<NextInput> {
         self.next_inputs.clone()
@@ -198,7 +222,7 @@ impl Template {
         let prevouts = self.get_txouts();
 
         for input_index in 0..self.transaction.input.len() {
-            let spending_info = &mut self.spending_info[input_index];
+            let spending_info = &mut self.inputs[input_index];
 
             for spending_path in spending_info.get_spending_paths() {
                 let leaf_hash = spending_path.tap_leaf_hash();
@@ -216,22 +240,27 @@ impl Template {
         Ok(())
     }
 
-    pub fn get_spending_info(&self) -> Vec<SpendingInfo> {
-        self.spending_info.clone()
+    pub fn get_inputs(&self) -> Vec<Input> {
+        self.inputs.clone()
+    }
+
+    pub fn get_input(&self, input_index: usize) -> Input {
+        self.inputs[input_index].clone()
     }
 
     pub fn update_input(&mut self, index: usize, txid: Txid) {
         self.transaction.input[index].previous_output.txid = txid;
     }
 
-    pub fn push_input(&mut self, sighash_type: TapSighashType, output: PreviousOutput, taproot_spending_scripts: &[ScriptWithParams]) -> NextInput {
-        let outpoint = OutPoint { txid: Hash::all_zeros(), vout: output.index as u32 };
+    pub fn push_input(&mut self, sighash_type: TapSighashType, previous_output: PreviousOutput, taproot_spending_scripts: &[ScriptWithParams]) -> NextInput {
+        let outpoint = OutPoint { txid: Hash::all_zeros(), vout: previous_output.index as u32 };
         let txin = Self::build_input(outpoint);
+        let taproot_spend_info = previous_output.get_taproot_spend_info();
 
         self.transaction.input.push(txin);
-        self.previous_outputs.push(output);
+        self.previous_outputs.push(previous_output);
 
-        self.spending_info.push(SpendingInfo::new(sighash_type, taproot_spending_scripts));
+        self.inputs.push(Input::new(sighash_type, taproot_spending_scripts, taproot_spend_info));
 
         NextInput::new(self.name.clone(), self.transaction.input.len() - 1)
     }
@@ -239,18 +268,14 @@ impl Template {
     pub fn push_output(&mut self, amount: u64, taproot_spending_scripts: &[ScriptWithParams]) -> Result<PreviousOutput, TemplateError> {
         let internal_key = Self::create_unspendable_key()?;
 
-        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.script().clone()).collect::<Vec<ScriptBuf>>();
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();
 
-        let spend_info = Self::taproot_spend_info(internal_key, scripts)?.1;
-        let txout = Self::build_output(amount, &spend_info);
+        let (taproot_spend_info, script) = Self::taproot_spend_info(internal_key, scripts)?;
+        let txout = Self::build_output(amount, &script);
         
         self.transaction.output.push(txout.clone());
 
-        Ok(PreviousOutput::new(
-            self.name.to_string(),
-            self.transaction.output.len() - 1, 
-            txout,)
-        )
+        Ok(PreviousOutput::new(self.name.to_string(),self.transaction.output.len() - 1, txout, taproot_spend_info))
     }
 
     pub fn push_next_input(&mut self, next_input: NextInput) {
@@ -258,8 +283,50 @@ impl Template {
     }
 
     pub fn push_signature(&mut self, index: usize, spending_path: SpendingPath, signature: Signature, public_key: &PublicKey) {
-        self.spending_info[index].signature_verifying_key = Some(*public_key);
-        self.spending_info[index].spending_paths.get_mut(&spending_path.tap_leaf_hash()).unwrap().signature = Some(signature);
+        self.inputs[index].signature_verifying_key = Some(*public_key);
+        self.inputs[index].spending_paths.get_mut(&spending_path.tap_leaf_hash()).unwrap().signature = Some(signature);
+    }
+
+    pub fn get_params_for_spending_path(&self, input_index: usize, spending_leaf: &ScriptBuf) -> Result<Vec<ScriptParam>, TemplateError> {
+        let input = &self.inputs[input_index];
+        let spending_path = match input.get_spending_path(spending_leaf) {
+            Some(sp) => sp,
+            None => return Err(TemplateError::MissingSpendingPath(input_index)),
+        };
+
+        Ok(spending_path.get_script_params())
+    }
+
+    pub fn get_transaction_for_spending_path(&mut self, input_index: usize, spending_leaf: &ScriptBuf, values: Vec<Vec<u8>>) -> Result<Transaction, TemplateError> {
+        let input = &self.inputs[input_index];
+        let spending_path = match input.get_spending_path(spending_leaf) {
+            Some(sp) => sp,
+            None => return Err(TemplateError::MissingSpendingPath(input_index)),
+        };
+
+        let taproot_spend_info = input.get_taproot_spend_info();
+        let signature = spending_path.get_signature().unwrap();
+
+        let params = spending_path.get_script_params();
+
+        let control_block = taproot_spend_info.control_block(&(spending_leaf.clone(), LeafVersion::TapScript)).unwrap();
+        if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), &spending_leaf) {
+            return Err(TemplateError::InvalidSpendingPath(input_index));
+        }
+
+        let mut witness = Witness::default();
+        witness.push(signature.serialize());
+        witness.push(spending_leaf.to_bytes());
+        witness.push(control_block.serialize().to_vec());
+
+        for (param, value) in params.iter().zip(values.iter()) {
+            witness.push(param.get_verifying_key().to_bytes());
+            witness.push(value.clone());
+        }
+
+        self.transaction.input[input_index].witness = witness;
+
+        Ok(self.transaction.clone())
     }
 
     fn get_txouts(&self) -> Vec<TxOut> {
@@ -331,4 +398,3 @@ impl Template {
         Ok(key)
     }
 }
-

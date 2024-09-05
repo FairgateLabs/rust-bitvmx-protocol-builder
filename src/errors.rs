@@ -9,8 +9,8 @@ pub enum TemplateBuilderError {
     #[error("Failed to build template")]
     FailedToBuildTemplate(#[from] TemplateError),
 
-    #[error("Template `{0}` not found while executing {1}")]
-    MissingTemplate(String, String),
+    #[error("Template `{0}` not found")]
+    MissingTemplate(String),
 
     #[error("Template already exists")]
     TemplateAlreadyExists,
@@ -47,6 +47,12 @@ pub enum TemplateError {
 
     #[error("Input {0} is missing")]
     MissingInput(usize),
+
+    #[error("Spending path for input {0} is missing")]
+    MissingSpendingPath(usize),
+
+    #[error("Invalid spending path for input {0}")]
+    InvalidSpendingPath(usize),
 }
 
 #[derive(Error, Debug)]

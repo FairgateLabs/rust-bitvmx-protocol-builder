@@ -30,23 +30,23 @@ impl ScriptParam {
         &self.name
     }
 
-    pub fn verifying_key(&self) -> &WinternitzPublicKey {
+    pub fn get_verifying_key(&self) -> &WinternitzPublicKey {
         &self.verifying_key
     }
 
-    pub fn verifying_key_index(&self) -> u32 {
+    pub fn get_verifying_key_index(&self) -> u32 {
         self.verifying_key_index
     }
 
-    pub fn param_size(&self) -> usize {
+    pub fn get_param_size(&self) -> usize {
         self.verifying_key.message_size()
     }
 
-    pub fn param_position(&self) -> u32 {
+    pub fn get_param_position(&self) -> u32 {
         self.param_position
     }
 
-    pub fn checksum_size(&self) -> usize {
+    pub fn get_checksum_size(&self) -> usize {
         self.verifying_key.checksum_size()
     }
 }
@@ -65,7 +65,7 @@ impl ScriptWithParams {
         }
     }
 
-    pub fn script(&self) -> &ScriptBuf {
+    pub fn get_script(&self) -> &ScriptBuf {
         &self.script
     }
 
@@ -74,8 +74,8 @@ impl ScriptWithParams {
     }
 
     /// Returns the parameters in ascending order using their param_position.
-    pub fn params(&self) -> Vec<ScriptParam> {
-        self.params.values().cloned().sorted_by(|a, b| Ord::cmp(&a.param_position(), &b.param_position())).collect()
+    pub fn get_params(&self) -> Vec<ScriptParam> {
+        self.params.values().cloned().sorted_by(|a, b| Ord::cmp(&a.get_param_position(), &b.get_param_position())).collect()
     }
 
     fn add_param(&mut self, name: &str, verifying_key: &WinternitzPublicKey, verifying_key_index: u32) {
