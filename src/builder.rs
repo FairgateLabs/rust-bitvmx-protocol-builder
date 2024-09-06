@@ -231,13 +231,14 @@ impl TemplateBuilder {
 #[cfg(test)]
 mod tests {
     use std::env;
+    use anyhow::Result;
     use bitcoin::{bip32::Xpub, key::rand::{random, RngCore}, secp256k1::{self, Message}, taproot::Signature, Amount, Network, TapSighashType};
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
     use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}, template::Template};
     use super::TemplateBuilder;
 
     #[test]
-    fn test_single_connection() -> Result<(), TemplateBuilderError> {
+    fn test_single_connection() -> Result<()> {
         let protocol_amount = 200;
         let speedup_amount = 9_999_859;
         let locked_amount = 5_000_000_000;
@@ -331,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rounds() -> Result<(), TemplateBuilderError> {
+    fn test_rounds() -> Result<()> {
         let rounds = 3;
 
         let mut key_manager = test_key_manager()?;
@@ -362,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_connections() -> Result<(), TemplateBuilderError> {
+    fn test_multiple_connections() -> Result<()> {
         let rounds = 3;
 
         let mut key_manager = test_key_manager()?;
@@ -408,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn test_starting_ending_templates() -> Result<(), TemplateBuilderError> {
+    fn test_starting_ending_templates() -> Result<()> {
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
         let spending_scripts = dummy_spending_scripts(&verifying_key);
