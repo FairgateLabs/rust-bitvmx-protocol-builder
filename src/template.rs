@@ -310,14 +310,14 @@ impl Template {
         let params = spending_path.get_script_params();
 
         let control_block = taproot_spend_info.control_block(&(spending_leaf.clone(), LeafVersion::TapScript)).unwrap();
-        if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), &spending_leaf) {
+        if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), spending_leaf) {
             return Err(TemplateError::InvalidSpendingPath(input_index));
         }
 
         let mut witness = Witness::default();
         witness.push(signature.serialize());
         witness.push(spending_leaf.to_bytes());
-        witness.push(control_block.serialize().to_vec());
+        witness.push(control_block.serialize());
 
         for (param, value) in params.iter().zip(values.iter()) {
             witness.push(param.get_verifying_key().to_bytes());

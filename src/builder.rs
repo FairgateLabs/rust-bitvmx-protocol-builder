@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
 use bitcoin::{TapSighashType, Transaction};
 
-use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}};
+use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}, templates::Templates};
 
 pub struct TemplateBuilder {
     graph: Graph,
-    templates: HashMap<String, Template>,
+    templates: Templates,
     defaults: DefaultParams,
     finalized: bool,
 }
@@ -15,7 +13,7 @@ impl TemplateBuilder {
     pub fn new(defaults: DefaultParams) -> Result<Self, TemplateBuilderError> {
         let builder = TemplateBuilder {
             graph: Graph::new(),
-            templates: HashMap::new(),
+            templates: Templates::new(),
             defaults,
             finalized: false,
         };
@@ -52,7 +50,7 @@ impl TemplateBuilder {
     pub fn start(&mut self, name: &str, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
 
-        if self.templates.contains_key(name) {
+        if self.templates.contains_template(name) {
             return Err(TemplateBuilderError::TemplateAlreadyExists);
         }
         
@@ -120,7 +118,7 @@ impl TemplateBuilder {
     pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<PreviousOutput, TemplateBuilderError> {
         self.finalized = false;
         
-        if !self.templates.contains_key(name) {
+        if !self.templates.contains_template(name) {
             return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
         }
         let protocol_amount = self.defaults.get_protocol_amount();
@@ -142,11 +140,11 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::NotFinalized);
         }
 
-        for template in self.templates.values_mut() {
+        for template in self.templates.templates_mut() {
             template.compute_spend_signature_hashes()?;
         } 
 
-        Ok(self.templates.values().cloned().collect())
+        Ok(self.templates.templates().cloned().collect())
     }
 
     /// Finalizes the DAG and builds the templates in one step.
@@ -161,12 +159,19 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::NotFinalized);
         }
         
-        Ok(self.templates.values().map(|template| template.get_transaction()).collect())
+        Ok(self.templates.templates().map(|template| template.get_transaction()).collect())
+    }
+
+    /// Resets the builder to its initial state discarding all the templates and the graph.
+    pub fn reset(&mut self) {
+        self.graph = Graph::new();
+        self.templates = Templates::new();
+        self.finalized = false;
     }
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
     fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
-        if !self.templates.contains_key(name) {
+        if !self.templates.contains_template(name) {
             let template = Template::new(
                 name, 
                 &template_params.get_speedup_script(), 
@@ -175,7 +180,7 @@ impl TemplateBuilder {
                 template_params.get_locked_amount()
             );
 
-            self.templates.insert(name.to_string(), template);
+            self.templates.add_template(name, template);
             self.graph.add_node(name);
         }
 
@@ -201,7 +206,7 @@ impl TemplateBuilder {
     }
 
     fn get_template_mut(&mut self, name: &str) -> Result<&mut Template, TemplateBuilderError> {
-        match self.templates.get_mut(name) {
+        match self.templates.get_template_mut(name) {
             Some(template) => Ok(template),
             None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
         }

@@ -6,4 +6,5 @@ pub mod graph;
 pub mod params;
 pub mod scripts;
 pub mod template;
+pub mod templates;
 pub mod unspendable;
