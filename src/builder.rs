@@ -51,7 +51,7 @@ impl TemplateBuilder {
         self.finalized = false;
 
         if self.templates.contains_template(name) {
-            return Err(TemplateBuilderError::TemplateAlreadyExists);
+            return Err(TemplateBuilderError::TemplateAlreadyExists(name.to_string()));
         }
         
         self.add_or_create_template(name, template_params)?;
@@ -61,7 +61,15 @@ impl TemplateBuilder {
     /// Creates a connection between two templates.
     pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
+
+        if self.templates.is_ended(from) {
+            return Err(TemplateBuilderError::TemplateEnded(from.to_string()));
+        }
         
+        if self.templates.is_ended(to) {
+            return Err(TemplateBuilderError::TemplateEnded(to.to_string()));
+        }
+
         // Create the from template if it doesn't exist and push the output that will be spent
         let from_template = self.add_or_create_template(from, connection_params.template_from())?;
         let output = from_template.push_output(protocol_amount, &connection_params.spending_scripts_with_params())?;
@@ -121,6 +129,13 @@ impl TemplateBuilder {
         if !self.templates.contains_template(name) {
             return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
         }
+
+        if self.templates.is_ended(name) {
+            return Err(TemplateBuilderError::TemplateAlreadyEnded(name.to_string()));
+        }
+
+        self.templates.end_template(name);
+
         let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
 
@@ -388,6 +403,45 @@ mod tests {
         template_names.sort();
 
         assert_eq!(&template_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_starting_ending_templates() -> Result<(), TemplateBuilderError> {
+        let mut key_manager = test_key_manager()?;
+        let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
+        let spending_scripts = dummy_spending_scripts(&verifying_key);
+
+        let mut builder = test_template_builder()?;
+
+        builder.add_start("A")?;
+        builder.add_connection("A", "B", &spending_scripts)?;
+        builder.end("B", &spending_scripts)?;
+
+        // Ending a template twice should fail
+        let result = builder.end("B", &spending_scripts);
+        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyEnded(_))));
+
+        // Adding a connection to an ended template should fail
+        let result = builder.add_connection("C", "B", &spending_scripts);
+        assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
+
+        let result = builder.add_connection("B", "C", &spending_scripts);
+        assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
+
+        // Cannot end a template that doesn't exist in the graph
+        let result = builder.end("C", &spending_scripts);
+        assert!(matches!(result, Err(TemplateBuilderError::MissingTemplate(_))));
+
+        // Cannot mark an existing template in the graph as the starting point
+        let result = builder.add_start("B");
+        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyExists(_))));
+
+        // Cannot start a template twice
+        builder.add_start("D")?;
+        let result = builder.add_start("D");
+        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyExists(_))));
 
         Ok(())
     }

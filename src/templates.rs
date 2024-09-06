@@ -3,7 +3,8 @@ use std::collections::{hash_map::{Values, ValuesMut}, HashMap};
 use crate::template::Template;
 
 pub struct Templates {
-    templates: HashMap<String, Template>
+    templates: HashMap<String, Template>,
+    end_templates: Vec<String>,
 }
 
 impl Default for Templates {
@@ -15,7 +16,8 @@ impl Default for Templates {
 impl Templates {
     pub fn new() -> Self {
         Templates {
-            templates: HashMap::new()
+            templates: HashMap::new(),
+            end_templates: Vec::new(),
         }
     }
 
@@ -41,5 +43,13 @@ impl Templates {
 
     pub fn templates_mut(&mut self) -> ValuesMut<String, Template> {
         self.templates.values_mut()
+    }
+
+    pub fn end_template(&mut self, name: &str) {
+        self.end_templates.push(name.to_string());
+    }
+
+    pub fn is_ended(&self, name: &str) -> bool {
+        self.end_templates.contains(&name.to_string())
     }
 }

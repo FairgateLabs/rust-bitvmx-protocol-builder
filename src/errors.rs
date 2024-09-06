@@ -12,10 +12,16 @@ pub enum TemplateBuilderError {
     #[error("Template `{0}` not found")]
     MissingTemplate(String),
 
-    #[error("Template already exists")]
-    TemplateAlreadyExists,
+    #[error("Template `{0}` already exists")]
+    TemplateAlreadyExists(String),
 
-    #[error("Failed to build taptree for given spending conditions")]
+    #[error("Cannot end `{0}` template twice")]
+    TemplateAlreadyEnded(String),
+
+    #[error("Cannot add a connection to the ended template `{0}`")]
+    TemplateEnded(String),
+
+    #[error("Failed to build graph")]
     GraphBuildingError(#[from] GraphError),
 
     #[error("Speedup public key is invalid")]
