@@ -158,6 +158,34 @@ impl SpendingPath {
     }
 }
 
+pub struct SpendingParams {
+    input_index: usize,
+    spending_leaf: ScriptBuf,
+    values: Vec<Vec<u8>>,
+}
+
+impl SpendingParams {
+    pub fn new(input_index: usize, spending_leaf: ScriptBuf, values: Vec<Vec<u8>>) -> Self {
+        SpendingParams {
+            input_index,
+            spending_leaf,
+            values,
+        }
+    }
+
+    pub fn get_input_index(&self) -> usize {
+        self.input_index
+    }
+
+    pub fn get_spending_leaf(&self) -> ScriptBuf {
+        self.spending_leaf.clone()
+    }
+
+    pub fn get_values(&self) -> Vec<Vec<u8>> {
+        self.values.clone()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Template {
     name: String,
@@ -297,37 +325,55 @@ impl Template {
         Ok(spending_path.get_script_params())
     }
 
-    pub fn get_transaction_for_spending_path(&mut self, input_index: usize, spending_leaf: &ScriptBuf, values: Vec<Vec<u8>>) -> Result<Transaction, TemplateError> {
-        let input = &self.inputs[input_index];
-        let spending_path = match input.get_spending_path(spending_leaf) {
-            Some(sp) => sp,
-            None => return Err(TemplateError::MissingSpendingPath(input_index)),
-        };
-
-        let taproot_spend_info = input.get_taproot_spend_info();
-        let signature = spending_path.get_signature().unwrap();
-
-        let params = spending_path.get_script_params();
-
-        let control_block = taproot_spend_info.control_block(&(spending_leaf.clone(), LeafVersion::TapScript)).unwrap();
-        if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), spending_leaf) {
-            return Err(TemplateError::InvalidSpendingPath(input_index));
+    pub fn get_transaction_for_spending_paths(&mut self, params: Vec<SpendingParams>) -> Result<Transaction, TemplateError> {
+        for param in params {
+            let input_index = param.input_index;
+            let witness = self.get_witness_for_spending_path(param)?;
+            self.transaction.input[input_index].witness = witness;
         }
 
-        let mut witness = Witness::default();
-        witness.push(signature.serialize());
-        witness.push(spending_leaf.to_bytes());
-        witness.push(control_block.serialize());
+        Ok(self.transaction.clone())
+    }
 
-        for (param, value) in params.iter().zip(values.iter()) {
-            witness.push(param.get_verifying_key().to_bytes());
-            witness.push(value.clone());
-        }
+    pub fn get_transaction_for_spending_path(&mut self, params: SpendingParams) -> Result<Transaction, TemplateError> {
+        let input_index = params.input_index;
+        let witness = self.get_witness_for_spending_path(params)?;
 
         self.transaction.input[input_index].witness = witness;
 
         Ok(self.transaction.clone())
     }
+
+    fn get_witness_for_spending_path(&self, params: SpendingParams) -> Result<Witness, TemplateError> {
+        let input = &self.inputs[params.input_index];
+        let spending_path = match input.get_spending_path(&params.spending_leaf) {
+            Some(sp) => sp,
+            None => return Err(TemplateError::MissingSpendingPath(params.input_index)),
+        };
+
+        let taproot_spend_info = input.get_taproot_spend_info();
+        let signature = spending_path.get_signature().unwrap();
+
+        let script_params = spending_path.get_script_params();
+
+        let control_block = taproot_spend_info.control_block(&(params.spending_leaf.clone(), LeafVersion::TapScript)).unwrap();
+        if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), &params.spending_leaf) {
+            return Err(TemplateError::InvalidSpendingPath(params.input_index));
+        }
+
+        let mut witness = Witness::default();
+        witness.push(signature.serialize());
+        witness.push(params.spending_leaf.to_bytes());
+        witness.push(control_block.serialize());
+
+        for (param, value) in script_params.iter().zip(params.values.iter()) {
+            witness.push(param.get_verifying_key().to_bytes());
+            witness.push(value.clone());
+        }
+
+        Ok(witness)
+    }
+
 
     fn get_txouts(&self) -> Vec<TxOut> {
         self.previous_outputs.iter().map(|po| po.txout.clone()).collect()
