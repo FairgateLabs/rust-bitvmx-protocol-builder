@@ -1,5 +1,6 @@
 use bitcoin::{key::UncompressedPublicKeyError, sighash::TaprootError, taproot::TaprootBuilderError};
 use key_manager::errors::KeyManagerError;
+use storage_backend::error::StorageError;
 use thiserror::Error;
 
 use config as settings;
@@ -76,6 +77,11 @@ pub enum UnspendableKeyError {
 pub enum GraphError {
     #[error("The graph should be a DAG, cycles are not allowed")]
     GraphCycleDetected,
+    #[error("Node not found")]
+    NodeNotFound,
+    #[error("Error while trying to access storage")]
+    StorageError(StorageError),
+
 }
 
 #[derive(Error, Debug)]

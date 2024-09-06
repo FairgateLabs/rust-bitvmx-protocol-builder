@@ -1,7 +1,7 @@
 use bitcoin::{TapSighashType, Transaction};
 
 use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}, templates::Templates};
-
+use anyhow::Result;
 pub struct TemplateBuilder {
     graph: Graph,
     templates: Templates,
@@ -143,16 +143,16 @@ impl TemplateBuilder {
     }
     
     /// It marks the DAG as finalized, and triggers an ordered update of the txids of each template in the DAG.
-    pub fn finalize(&mut self) -> Result<(), TemplateBuilderError> {
+    pub fn finalize(&mut self) -> Result<()> {
         self.finalized = true;
         self.update_inputs()?;
         Ok(())
     }
 
     /// After marking the DAG as finalized with all the txids updated, it computes the spend signature hashes for each template.
-    pub fn build_templates(&mut self) -> Result<Vec<Template>, TemplateBuilderError> {
+    pub fn build_templates(&mut self) -> Result<Vec<Template>> {
         if !self.finalized {
-            return Err(TemplateBuilderError::NotFinalized);
+            return Err(TemplateBuilderError::NotFinalized.into());
         }
 
         for template in self.templates.templates_mut() {
@@ -163,7 +163,7 @@ impl TemplateBuilder {
     }
 
     /// Finalizes the DAG and builds the templates in one step.
-    pub fn finalize_and_build(&mut self) -> Result<Vec<Template>, TemplateBuilderError> {
+    pub fn finalize_and_build(&mut self) -> Result<Vec<Template>> {
         self.finalize()?;
         self.build_templates()
     }
@@ -204,7 +204,7 @@ impl TemplateBuilder {
 
     /// Updates the txids of each template in the DAG in topological order.
     /// It will update the txid of the template and the txid of the connected inputs.
-    fn update_inputs(&mut self) -> Result <(), TemplateBuilderError> {
+    fn update_inputs(&mut self) -> Result <()> {
         let sorted_templates = self.graph.topological_sort()?;
 
         for from in sorted_templates {
