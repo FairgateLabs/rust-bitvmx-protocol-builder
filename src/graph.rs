@@ -1,23 +1,35 @@
-use std::collections::HashSet;
+use std::collections::{hash_map::{Values, ValuesMut}, HashMap, HashSet};
 use anyhow::{Result,Ok};
 use storage_backend::storage::Storage;
 use crate::errors::GraphError;
 use std::path::Path;
 
 pub struct Graph {
-    graph: Storage, 
+    graph: Storage,
+    templates: HashMap<String, Template>,
+    end_templates: Vec<String>,
 }
 
 impl Graph {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
         let graph = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
-        Ok(Graph { graph })
+        Ok(Graph { 
+            graph,
+            templates: HashMap::new(),
+            end_templates: Vec::new(),
+      })
     }
 
     pub fn add_node(&mut self, name: &str)-> Result<()> {
         if !self.graph.has_key(name).map_err(|e| GraphError::StorageError(e))? {
             self.graph.write(name, "").map_err(|e| GraphError::StorageError(e))?;
-        }
+          Ok(())
+    }
+
+    pub fn add_template(&mut self, name: &str, template: Template) {
+        self.templates.insert(name.to_string(), template);
+        if !self.graph.contains_key(name) {
+            self.graph.insert(name.to_string(), HashSet::new());
         Ok(())
     }
 
@@ -38,8 +50,41 @@ impl Graph {
         self.graph.write(from, &dependents).map_err(|e| GraphError::StorageError(e))?;
         Ok(())
     }
+      
+    pub fn get_template(&self, name: &str) -> Option<&Template> {
+        self.templates.get(name)
+    }
 
-    pub fn topological_sort(&self) -> Result<Vec<String>> {
+    pub fn get_template_mut(&mut self, name: &str) -> Option<&mut Template> {
+        self.templates.get_mut(name)
+    }
+
+    pub fn contains_template(&self, name: &str) -> bool {
+        self.templates.contains_key(name)
+    }
+
+    pub fn templates(&self) -> Values<String, Template> {
+        self.templates.values()
+    }
+
+    pub fn templates_mut(&mut self) -> ValuesMut<String, Template> {
+        self.templates.values_mut()
+    }
+
+    pub fn end_template(&mut self, name: &str) {
+        self.end_templates.push(name.to_string());
+    }
+
+    pub fn is_ended(&self, name: &str) -> bool {
+        self.end_templates.contains(&name.to_string())
+    }
+
+    pub fn connect(&mut self, from: &str, to: &str) {
+        self.graph.get_mut(from).unwrap().insert(to.to_string());
+    }
+
+    /// Returns a topological ordering of the graph
+    pub fn sort(&self) -> Result<Vec<String>, GraphError> {
         let mut sorted = Vec::new();
         let mut visited = HashSet::new();
         let mut temp_marked = HashSet::new();

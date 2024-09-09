@@ -2,9 +2,9 @@ use bitcoin::{TapSighashType, Transaction};
 
 use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}, templates::Templates};
 use anyhow::Result as AnyResult;
+
 pub struct TemplateBuilder {
     graph: Graph,
-    templates: Templates,
     defaults: DefaultParams,
     finalized: bool,
 }
@@ -17,7 +17,6 @@ impl TemplateBuilder {
         };
         let builder = TemplateBuilder {
             graph,
-            templates: Templates::new(),
             defaults,
             finalized: false,
         };
@@ -54,7 +53,7 @@ impl TemplateBuilder {
     pub fn start(&mut self, name: &str, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
 
-        if self.templates.contains_template(name) {
+        if self.graph.contains_template(name) {
             return Err(TemplateBuilderError::TemplateAlreadyExists(name.to_string()));
         }
         
@@ -66,11 +65,11 @@ impl TemplateBuilder {
     pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
 
-        if self.templates.is_ended(from) {
+        if self.graph.is_ended(from) {
             return Err(TemplateBuilderError::TemplateEnded(from.to_string()));
         }
         
-        if self.templates.is_ended(to) {
+        if self.graph.is_ended(to) {
             return Err(TemplateBuilderError::TemplateEnded(to.to_string()));
         }
 
@@ -86,10 +85,7 @@ impl TemplateBuilder {
         self.get_template_mut(from)?.push_next_input(next_input);
 
         // Connect the templates in the graph
-        match self.graph.add_edge(from, to){
-            Ok(_) => {},
-            Err(_) => return Err(TemplateBuilderError::GraphBuildingError)
-        };
+        self.graph.connect(from, to);
 
         Ok(())
     }
@@ -133,15 +129,15 @@ impl TemplateBuilder {
     pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<PreviousOutput, TemplateBuilderError> {
         self.finalized = false;
         
-        if !self.templates.contains_template(name) {
+        if !self.graph.contains_template(name) {
             return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
         }
 
-        if self.templates.is_ended(name) {
+        if self.graph.is_ended(name) {
             return Err(TemplateBuilderError::TemplateAlreadyEnded(name.to_string()));
         }
 
-        self.templates.end_template(name);
+        self.graph.end_template(name);
 
         let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
@@ -162,11 +158,11 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::NotFinalized.into());
         }
 
-        for template in self.templates.templates_mut() {
+        for template in self.graph.templates_mut() {
             template.compute_spend_signature_hashes()?;
         } 
 
-        Ok(self.templates.templates().cloned().collect())
+        Ok(self.graph.templates().cloned().collect())
     }
 
     /// Finalizes the DAG and builds the templates in one step.
@@ -181,7 +177,7 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::NotFinalized);
         }
         
-        Ok(self.templates.templates().map(|template| template.get_transaction()).collect())
+        Ok(self.graph.templates().map(|template| template.get_transaction()).collect())
     }
 
     /// Resets the builder to its initial state discarding all the templates and the graph.
@@ -198,7 +194,7 @@ impl TemplateBuilder {
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
     fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
-        if !self.templates.contains_template(name) {
+        if !self.graph.contains_template(name) {
             let template = Template::new(
                 name, 
                 &template_params.get_speedup_script(), 
@@ -207,11 +203,7 @@ impl TemplateBuilder {
                 template_params.get_locked_amount()
             );
 
-            self.templates.add_template(name, template);
-            match self.graph.add_node(name){
-              Ok(_) => {},
-              Err(_) => return Err(TemplateBuilderError::GraphBuildingError)  
-            };
+            self.graph.add_template(name, template);
         }
 
         self.get_template_mut(name)
@@ -219,8 +211,8 @@ impl TemplateBuilder {
 
     /// Updates the txids of each template in the DAG in topological order.
     /// It will update the txid of the template and the txid of the connected inputs.
-    fn update_inputs(&mut self) -> AnyResult <()> {
-        let sorted_templates = self.graph.topological_sort()?;
+    fn update_inputs(&mut self) -> Result <(), TemplateBuilderError> {
+        let sorted_templates = self.graph.sort()?;
 
         for from in sorted_templates {
             let template = self.get_template_mut(&from)?;
@@ -236,7 +228,7 @@ impl TemplateBuilder {
     }
 
     fn get_template_mut(&mut self, name: &str) -> Result<&mut Template, TemplateBuilderError> {
-        match self.templates.get_template_mut(name) {
+        match self.graph.get_template_mut(name) {
             Some(template) => Ok(template),
             None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
         }
