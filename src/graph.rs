@@ -1,8 +1,8 @@
 use std::collections::{hash_map::{Values, ValuesMut}, HashMap, HashSet};
-use anyhow::{Result,Ok};
 use storage_backend::storage::Storage;
 use crate::errors::GraphError;
 use std::path::Path;
+use crate::template::Template;
 
 pub struct Graph {
     graph: Storage,
@@ -11,7 +11,7 @@ pub struct Graph {
 }
 
 impl Graph {
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
         let graph = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
         Ok(Graph { 
             graph,
@@ -20,34 +20,11 @@ impl Graph {
       })
     }
 
-    pub fn add_node(&mut self, name: &str)-> Result<()> {
-        if !self.graph.has_key(name).map_err(|e| GraphError::StorageError(e))? {
-            self.graph.write(name, "").map_err(|e| GraphError::StorageError(e))?;
-          Ok(())
-    }
-
-    pub fn add_template(&mut self, name: &str, template: Template) {
+    pub fn add_template(&mut self, name: &str, template: Template) -> Result<(), GraphError> {
         self.templates.insert(name.to_string(), template);
-        if !self.graph.contains_key(name) {
-            self.graph.insert(name.to_string(), HashSet::new());
-        Ok(())
-    }
-
-    pub fn add_edge(&mut self, from: &str, to: &str)-> Result<()> {
-        let mut dependents = match self.graph.read(from).map_err(|e| GraphError::StorageError(e))? {
-            Some(dependents) => dependents,
-            None => return Err(GraphError::NodeNotFound.into()),            
-        };
-
-        if dependents.contains(to) {
-            return Ok(());    
-        } else if dependents.is_empty() {
-            dependents = to.to_string();
-        } else {
-            dependents.push_str(&format!(",{}", to));
+        if !self.graph.has_key(name).map_err(|e| GraphError::StorageError(e))?{
+            self.graph.write(name, "").map_err(|e| GraphError::StorageError(e))?;
         }
-        
-        self.graph.write(from, &dependents).map_err(|e| GraphError::StorageError(e))?;
         Ok(())
     }
       
@@ -79,8 +56,22 @@ impl Graph {
         self.end_templates.contains(&name.to_string())
     }
 
-    pub fn connect(&mut self, from: &str, to: &str) {
-        self.graph.get_mut(from).unwrap().insert(to.to_string());
+    pub fn connect(&mut self, from: &str, to: &str) -> Result<(), GraphError>{
+        let mut dependents = match self.graph.read(from).map_err(|e| GraphError::StorageError(e))? {
+            Some(dependents) => dependents,
+            None => return Err(GraphError::NodeNotFound),            
+        };
+
+        if dependents.contains(to) {
+            return Ok(());    
+        } else if dependents.is_empty() {
+            dependents = to.to_string();
+        } else {
+            dependents.push_str(&format!(",{}", to));
+        }
+
+        self.graph.write(from, &dependents).map_err(|e| GraphError::StorageError(e))?;
+        Ok(())
     }
 
     /// Returns a topological ordering of the graph
@@ -113,7 +104,7 @@ impl Graph {
         
     }
 
-    fn visit(&self, name: &str, visited: &mut HashSet<String>, temp_marked: &mut HashSet<String>, sorted: &mut Vec<String>) -> Result<()> {
+    fn visit(&self, name: &str, visited: &mut HashSet<String>, temp_marked: &mut HashSet<String>, sorted: &mut Vec<String>) -> Result<(), GraphError> {
         if temp_marked.contains(name) {
             return Err(GraphError::GraphCycleDetected.into())
         }

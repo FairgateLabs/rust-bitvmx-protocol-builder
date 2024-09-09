@@ -1,6 +1,5 @@
 use bitcoin::{key::UncompressedPublicKeyError, sighash::TaprootError, taproot::TaprootBuilderError};
 use key_manager::errors::KeyManagerError;
-use storage_backend::error::StorageError;
 use thiserror::Error;
 
 use config as settings;
@@ -23,7 +22,7 @@ pub enum TemplateBuilderError {
     TemplateEnded(String),
 
     #[error("Failed to build graph")]
-    GraphBuildingError,
+    GraphBuildingError(#[from] GraphError),
 
     #[error("Speedup public key is invalid")]
     InvalidKeyForSpeedupScript(#[from] ScriptError),
@@ -80,7 +79,7 @@ pub enum GraphError {
     #[error("Node not found")]
     NodeNotFound,
     #[error("Error while trying to access storage")]
-    StorageError(StorageError),
+    StorageError(storage_backend::error::StorageError),
 
 }
 

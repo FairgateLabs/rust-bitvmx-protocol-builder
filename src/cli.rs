@@ -6,9 +6,8 @@ use bitcoin::{PublicKey, TapSighashType};
 use clap::{Parser, Subcommand};
 use tracing::info;
 
-use rand::{thread_rng, RngCore};
 use std::env;
-
+use bitcoin::secp256k1::rand::{self, RngCore};
 use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams};
 
 pub struct Cli {
@@ -72,7 +71,7 @@ impl Cli {
             &timelock_to_key, 
             locked_amount, 
             sighash_type,
-            temp_storage()
+            temp_storage_path()
         )?;
 
         let mut builder = TemplateBuilder::new(defaults)?;
@@ -123,9 +122,14 @@ impl Cli {
     // }
 }
 
-fn temp_storage() -> String {
+fn temp_storage_path() -> String {
     let dir = env::temp_dir();
-    let mut rng = thread_rng();
-    let index = rng.next_u32();
-    dir.join(format!("storage_{}.db", index)).to_string_lossy().into_owned()  
+
+    let storage_path = dir.join(format!("secure_storage_{}.db", random_u32()));
+    storage_path.to_str().expect("Failed to get path to temp file").to_string()
 }
+
+fn random_u32() -> u32 {
+    rand::thread_rng().next_u32()
+}
+

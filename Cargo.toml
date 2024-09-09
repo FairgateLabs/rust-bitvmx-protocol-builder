@@ -22,7 +22,6 @@ serde_json = "1.0.96"
 thiserror = "1.0.63"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-rand = "0.8.5"
 
 bitcoincore-rpc = { version = "0.19.0"}
 bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "bitvmx"}
