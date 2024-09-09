@@ -2,27 +2,21 @@ use std::collections::HashSet;
 use anyhow::{Result,Ok};
 use storage_backend::storage::Storage;
 use crate::errors::GraphError;
+use std::path::Path;
 
 pub struct Graph {
     graph: Storage, 
 }
 
-impl Default for Graph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Graph {
-    pub fn new() -> Self {
-        Graph {
-            graph: Storage::new().unwrap(),
-        }
+    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let graph = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
+        Ok(Graph { graph })
     }
 
     pub fn add_node(&mut self, name: &str)-> Result<()> {
         if !self.graph.has_key(name).map_err(|e| GraphError::StorageError(e))? {
-            self.graph.write(name, "");
+            self.graph.write(name, "").map_err(|e| GraphError::StorageError(e))?;
         }
         Ok(())
     }
@@ -41,7 +35,7 @@ impl Graph {
             dependents.push_str(&format!(",{}", to));
         }
         
-        self.graph.write(from, &dependents);
+        self.graph.write(from, &dependents).map_err(|e| GraphError::StorageError(e))?;
         Ok(())
     }
 

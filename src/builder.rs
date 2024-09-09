@@ -1,7 +1,7 @@
 use bitcoin::{TapSighashType, Transaction};
 
 use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{PreviousOutput, Template}, templates::Templates};
-use anyhow::Result;
+use anyhow::Result as AnyResult;
 pub struct TemplateBuilder {
     graph: Graph,
     templates: Templates,
@@ -11,8 +11,12 @@ pub struct TemplateBuilder {
 
 impl TemplateBuilder {
     pub fn new(defaults: DefaultParams) -> Result<Self, TemplateBuilderError> {
+        let graph =  match Graph::new(defaults.graph_path()) {
+            Ok(graph) => graph,
+            Err(_) => return Err(TemplateBuilderError::GraphBuildingError)
+        };
         let builder = TemplateBuilder {
-            graph: Graph::new(),
+            graph,
             templates: Templates::new(),
             defaults,
             finalized: false,
@@ -82,7 +86,10 @@ impl TemplateBuilder {
         self.get_template_mut(from)?.push_next_input(next_input);
 
         // Connect the templates in the graph
-        self.graph.add_edge(from, to);
+        match self.graph.add_edge(from, to){
+            Ok(_) => {},
+            Err(_) => return Err(TemplateBuilderError::GraphBuildingError)
+        };
 
         Ok(())
     }
@@ -143,14 +150,14 @@ impl TemplateBuilder {
     }
     
     /// It marks the DAG as finalized, and triggers an ordered update of the txids of each template in the DAG.
-    pub fn finalize(&mut self) -> Result<()> {
+    pub fn finalize(&mut self) -> AnyResult<()> {
         self.finalized = true;
         self.update_inputs()?;
         Ok(())
     }
 
     /// After marking the DAG as finalized with all the txids updated, it computes the spend signature hashes for each template.
-    pub fn build_templates(&mut self) -> Result<Vec<Template>> {
+    pub fn build_templates(&mut self) -> AnyResult<Vec<Template>> {
         if !self.finalized {
             return Err(TemplateBuilderError::NotFinalized.into());
         }
@@ -163,7 +170,7 @@ impl TemplateBuilder {
     }
 
     /// Finalizes the DAG and builds the templates in one step.
-    pub fn finalize_and_build(&mut self) -> Result<Vec<Template>> {
+    pub fn finalize_and_build(&mut self) -> AnyResult<Vec<Template>> {
         self.finalize()?;
         self.build_templates()
     }
@@ -178,10 +185,15 @@ impl TemplateBuilder {
     }
 
     /// Resets the builder to its initial state discarding all the templates and the graph.
-    pub fn reset(&mut self) {
-        self.graph = Graph::new();
+    pub fn reset(&mut self) -> Result<(), TemplateBuilderError>{
+        self.graph = match Graph::new(self.defaults.graph_path()) {
+            Ok(graph) => graph,
+            Err(_) => return Err(TemplateBuilderError::GraphBuildingError)
+        };
         self.templates = Templates::new();
         self.finalized = false;
+
+        Ok(())
     }
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
@@ -196,7 +208,10 @@ impl TemplateBuilder {
             );
 
             self.templates.add_template(name, template);
-            self.graph.add_node(name);
+            match self.graph.add_node(name){
+              Ok(_) => {},
+              Err(_) => return Err(TemplateBuilderError::GraphBuildingError)  
+            };
         }
 
         self.get_template_mut(name)
@@ -204,7 +219,7 @@ impl TemplateBuilder {
 
     /// Updates the txids of each template in the DAG in topological order.
     /// It will update the txid of the template and the txid of the connected inputs.
-    fn update_inputs(&mut self) -> Result <()> {
+    fn update_inputs(&mut self) -> AnyResult <()> {
         let sorted_templates = self.graph.topological_sort()?;
 
         for from in sorted_templates {
@@ -236,6 +251,7 @@ mod tests {
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
     use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}, template::Template};
     use super::TemplateBuilder;
+    use rand::thread_rng;
 
     #[test]
     fn test_single_connection() -> Result<()> {
@@ -447,6 +463,13 @@ mod tests {
         Ok(())
     }
 
+    fn temp_storage() -> String {
+        let dir = env::temp_dir();
+        let mut rng = thread_rng();
+        let index = rng.next_u32();
+        dir.join(format!("storage_{}.db", index)).to_string_lossy().into_owned()  
+    }
+
     fn test_template_builder() -> Result<TemplateBuilder, TemplateBuilderError> {
         let mut key_manager = test_key_manager()?;
 
@@ -472,7 +495,8 @@ mod tests {
             timelock_from_key, 
             timelock_to_key, 
             locked_amount, 
-            sighash_type
+            sighash_type,
+            temp_storage()
         )?;
 
         let builder = TemplateBuilder::new(defaults)?;

@@ -23,7 +23,7 @@ pub enum TemplateBuilderError {
     TemplateEnded(String),
 
     #[error("Failed to build graph")]
-    GraphBuildingError(#[from] GraphError),
+    GraphBuildingError,
 
     #[error("Speedup public key is invalid")]
     InvalidKeyForSpeedupScript(#[from] ScriptError),

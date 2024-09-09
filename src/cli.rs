@@ -6,6 +6,9 @@ use bitcoin::{PublicKey, TapSighashType};
 use clap::{Parser, Subcommand};
 use tracing::info;
 
+use rand::{thread_rng, RngCore};
+use std::env;
+
 use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams};
 
 pub struct Cli {
@@ -68,7 +71,8 @@ impl Cli {
             &timelock_from_key, 
             &timelock_to_key, 
             locked_amount, 
-            sighash_type
+            sighash_type,
+            temp_storage()
         )?;
 
         let mut builder = TemplateBuilder::new(defaults)?;
@@ -119,3 +123,9 @@ impl Cli {
     // }
 }
 
+fn temp_storage() -> String {
+    let dir = env::temp_dir();
+    let mut rng = thread_rng();
+    let index = rng.next_u32();
+    dir.join(format!("storage_{}.db", index)).to_string_lossy().into_owned()  
+}

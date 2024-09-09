@@ -13,10 +13,11 @@ pub struct DefaultParams {
     timelock_to_key: PublicKey,
     locked_amount: u64,
     sighash_type: TapSighashType,
+    graph_path: String,
 }
 
 impl DefaultParams {
-    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, sighash_type: TapSighashType) -> Result<Self, ConfigError> {
+    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, sighash_type: TapSighashType, graph_path: String) -> Result<Self, ConfigError> {
         let defaults = DefaultParams {
             protocol_amount,
             speedup_from_key: *speedup_from_key,
@@ -27,6 +28,7 @@ impl DefaultParams {
             timelock_to_key: *timelock_to_key,
             locked_amount,
             sighash_type,
+            graph_path
         };
 
         Ok(defaults)
@@ -102,6 +104,10 @@ impl DefaultParams {
             template_from, 
             spending_scripts,   
         ))
+    }
+
+    pub fn graph_path(&self)-> String {
+        self.graph_path.clone()
     }
 }
 
