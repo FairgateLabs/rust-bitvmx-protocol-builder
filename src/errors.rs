@@ -1,4 +1,4 @@
-use bitcoin::{ key::UncompressedPublicKeyError, sighash::TaprootError, taproot::TaprootBuilderError};
+use bitcoin::{key::UncompressedPublicKeyError, sighash::{P2wpkhError, TaprootError}, taproot::TaprootBuilderError};
 use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
@@ -32,6 +32,9 @@ pub enum TemplateBuilderError {
 
     #[error("Invalid configuration")]
     ConfigurationError(#[from] ConfigError),
+
+    #[error("Invalid test configuration")]
+    TestConfigurationError(#[from] TestClientError),
     
     #[error("Call `finalize` before building templates")]
     NotFinalized,
@@ -49,13 +52,22 @@ pub enum TemplateError {
     TapTreeFinalizeError,
 
     #[error("Failed to hash template")]
-    SighasherError(#[from] TaprootError),
+    TaprootSighashError(#[from] TaprootError),
+
+    #[error("Failed to hash template")]
+    SegwitSighashError(#[from] P2wpkhError),
 
     #[error("Input {0} is missing")]
     MissingInput(usize),
 
     #[error("Spending path for input {0} is missing")]
     MissingSpendingPath(usize),
+
+    #[error("Signature of spending path for input {0} is missing")]
+    MissingSignature(usize),
+
+    #[error("Signature verifying key of spending path for input {0} is missing")]
+    MissingSignatureVerifyingKey(usize),
 
     #[error("Invalid spending path for input {0}")]
     InvalidSpendingPath(usize),
@@ -65,6 +77,9 @@ pub enum TemplateError {
 
     #[error("Failed to serialize")]
     InvalidSerialization,
+  
+    #[error("Invalid input type for input {0}")]
+    InvalidInputType(usize),
 }
 
 #[derive(Error, Debug)]
@@ -106,4 +121,38 @@ pub enum ConfigError {
     InvalidKeyForSpeedupScript(#[from] ScriptError),
 }
 
+#[derive(Error, Debug)]
+pub enum TestClientError {
+    #[error("Failed to fund address")]
+    FailedToFundAddress{
+        error: String
+    },
 
+    #[error("Failed to send transaction")]
+    FailedToSendTransaction{
+        error: String
+    },
+
+    #[error("Failed to create new wallet")]
+    FailedToCreateWallet{
+        error: String
+    },
+
+    #[error("Failed to get new address")]
+    FailedToGetNewAddress{
+        error: String
+    },
+
+    #[error("Failed to mine blocks")]
+    FailedToMineBlocks{
+        error: String
+    },
+
+    #[error("Failed to get transaction details")]
+    FailedToGetTransactionDetails{
+        error: String
+    },
+
+    #[error("Failed to create client")]
+    FailedToCreateClient { error: String },
+}

@@ -2,8 +2,9 @@ use std::str::FromStr;
 
 use anyhow::{Ok, Result};
 
-use bitcoin::{PublicKey, TapSighashType};
+use bitcoin::{hashes::Hash, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType};
 use clap::{Parser, Subcommand};
+use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
 use std::env;
@@ -24,7 +25,7 @@ pub struct Menu {
 
 #[derive(Subcommand)]
 enum Commands {
-    NewTemplateBuilder,
+    AddStartTemplate,
 }
 
 impl Cli {
@@ -39,8 +40,8 @@ impl Cli {
         let menu = Menu::parse();
 
         match &menu.command {
-            Commands::NewTemplateBuilder => {
-                self.create_builder()?;
+            Commands::AddStartTemplate => {
+                self.add_start_template()?;
             }
         }
 
@@ -50,7 +51,29 @@ impl Cli {
     // 
     // Commands
     //
-    fn create_builder(&self) -> Result<()>{
+    fn add_start_template(&self) -> Result<()>{
+        let defaults = self.get_defaults_from_config()?;
+        
+        let mut key_manager = self.key_manager()?;
+
+        // TODO test values, replace for real values from command line params.
+        let pk = key_manager.derive_keypair(0)?;
+        let wpkh = pk.wpubkey_hash().expect("key is compressed");
+        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+        let txid= Hash::all_zeros();
+        let vout = 0;
+        let amount = 100000;
+
+        let mut builder = TemplateBuilder::new(defaults)?;
+
+        builder.add_start("A", txid, vout, amount, script_pubkey)?;
+
+        info!("New start template created.");
+
+        Ok(())
+    }
+
+    fn get_defaults_from_config(&self) -> Result<DefaultParams, anyhow::Error> {
         let protocol_amount = self.config.template_builder.protocol_amount;
         let speedup_from_key = PublicKey::from_str(self.config.template_builder.speedup_from_key.as_str())?;
         let speedup_to_key = PublicKey::from_str(self.config.template_builder.speedup_to_key.as_str())?;
@@ -59,8 +82,9 @@ impl Cli {
         let timelock_from_key = PublicKey::from_str(self.config.template_builder.timelock_from_key.as_str())?;
         let timelock_to_key = PublicKey::from_str(self.config.template_builder.timelock_to_key.as_str())?;
         let locked_amount = self.config.template_builder.locked_amount;
-        let sighash_type = TapSighashType::from_str(self.config.template_builder.sighash_type.as_str())?;
-    
+        let ecdsa_sighash_type = EcdsaSighashType::from_str(self.config.template_builder.ecdsa_sighash_type.as_str())?;
+        let taproot_sighash_type = TapSighashType::from_str(self.config.template_builder.taproot_sighash_type.as_str())?;
+       
         let defaults = DefaultParams::new(
             protocol_amount, 
             &speedup_from_key, 
@@ -70,56 +94,34 @@ impl Cli {
             &timelock_from_key, 
             &timelock_to_key, 
             locked_amount, 
-            sighash_type,
             temp_storage_path()
+            ecdsa_sighash_type,
+            taproot_sighash_type,
         )?;
-
-        let mut builder = TemplateBuilder::new(defaults)?;
-
-        builder.add_start(
-            "A", 
-        )?;
-
-        info!("New template builder created.");
-
-        Ok(())
+        Ok(defaults)
     }
-
-    // fn key_manager(network: Network) -> Result<KeyManager<DatabaseKeyStore>> {
-    //     let keystore_path = Self::temp_storage_path();
-    //     let keystore_password = b"secret password".to_vec(); 
-    //     let key_derivation_path: &str = "m/101/1/0/0/";
-    //     let key_derivation_seed = Self::random_bytes();
-    //     let winternitz_seed = Self::random_bytes();
-
-    //     let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
-    //     let key_manager = KeyManager::new(
-    //         network,
-    //         key_derivation_path,
-    //         key_derivation_seed,
-    //         winternitz_seed,
-    //         database_keystore,
-    //     )?;
     
-    //     Ok(key_manager)
-    // }
+    fn key_manager(&self) -> Result<KeyManager<DatabaseKeyStore>> {
+        let network = self.config.key_manager.network.parse::<Network>()?;
 
-    // fn random_bytes() -> [u8; 32] {
-    //     let mut seed = [0u8; 32];
-    //     secp256k1::rand::thread_rng().fill_bytes(&mut seed);
-    //     seed
-    // }
+        let key_derivation_path = self.config.key_manager.key_derivation_path.as_str(); 
+        let key_derivation_seed = self.config.key_manager.key_derivation_seed.as_bytes().try_into()?;
+        let winternitz_seed = self.config.key_manager.winternitz_seed.as_bytes().try_into()?;
 
-    // fn random_u32() -> u32 {
-    //     secp256k1::rand::thread_rng().next_u32()
-    // }
+        let keystore_path = self.config.storage.path.as_str();
+        let keystore_password = self.config.storage.password.as_bytes().to_vec();
 
-    // fn temp_storage_path() -> String {
-    //     let dir = env::temp_dir();
-
-    //     let storage_path = dir.join(format!("secure_storage_{}.db", Self::random_u32()));
-    //     storage_path.to_str().expect("Failed to get path to temp file").to_string()
-    // }
+        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
+        let key_manager = KeyManager::new(
+            network,
+            key_derivation_path,
+            key_derivation_seed,
+            winternitz_seed,
+            database_keystore,
+        )?;
+    
+        Ok(key_manager)
+    }
 }
 
 fn temp_storage_path() -> String {

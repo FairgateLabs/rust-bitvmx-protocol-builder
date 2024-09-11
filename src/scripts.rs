@@ -239,11 +239,3 @@ pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey
     script_with_params.add_param(value_name, verifying_key, 0);
     script_with_params
 }
-
-// pub fn dummy_spending_scripts(public_key: &PublicKey, otk_1: &WinternitzPublicKey, otk_2: &WinternitzPublicKey) -> Vec<ScriptBuf> { 
-//     let timelock = timelock(public_key, 100);
-//     let kickoff = kickoff(otk_1, otk_2);
-//     let challenge = challenge(otk_1, otk_2);
-
-//     [timelock, kickoff, challenge].to_vec()
-// }
