@@ -1,20 +1,46 @@
 use std::collections::HashMap;
 use lazy_static::lazy_static;
 use bitcoin::{hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, Signature, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
-
+use serde::{Deserialize, Serialize};
 use crate::{errors::TemplateError, scripts::{ScriptParam, ScriptWithParams}, unspendable::unspendable_key};
+use crate::taproot_spend_info_serde::deserialize as deserialize_taproot_spend_info;
 
 lazy_static! {
     static ref SECP: Secp256k1<All> = Secp256k1::new();
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 /// Represents an output of a previous transaction that is consumed by an output in this transaction.
 pub struct PreviousOutput {
     from: String,
     index: usize,
     txout: TxOut,
-    taproot_spend_info: TaprootSpendInfo
+    #[serde(skip_serializing)]
+    taproot_spend_info: Option<TaprootSpendInfo>
+}
+
+impl<'de> Deserialize<'de> for PreviousOutput {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de> ,
+    {
+        #[derive(Deserialize)]
+        struct PreviousOutputHelper {
+            from: String,
+            index: usize,
+            txout: TxOut,
+        }
+
+        let helper = PreviousOutputHelper::deserialize(deserializer)?;
+        let taproot_spend_info = deserialize_taproot_spend_info::<D>().ok();
+
+        Ok(PreviousOutput {
+            from: helper.from,
+            index: helper.index,
+            txout: helper.txout,
+            taproot_spend_info: taproot_spend_info.unwrap(),
+        })
+    }
 }
 
 impl PreviousOutput { 
@@ -23,7 +49,7 @@ impl PreviousOutput {
             from,
             index,
             txout,
-            taproot_spend_info,
+            taproot_spend_info: Some(taproot_spend_info),
         }
     }
 
@@ -40,11 +66,11 @@ impl PreviousOutput {
     }
 
     pub fn get_taproot_spend_info(&self) -> TaprootSpendInfo {
-        self.taproot_spend_info.clone()
+        self.taproot_spend_info.clone().unwrap()
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 /// Represents an input of a subsequent transaction that consumes an output from this transaction.
 pub struct NextInput {
     to: String,
@@ -68,17 +94,42 @@ impl NextInput {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Input {
-    taproot_spend_info: TaprootSpendInfo,
+    #[serde(skip_serializing, with = "taproot_spend_info_serde")]
+    taproot_spend_info: Option<TaprootSpendInfo>,
     signature_verifying_key: Option<PublicKey>,
     spending_paths: HashMap<TapLeafHash, SpendingPath>,
 }
 
+impl<'de> Deserialize<'de> for Input {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct InputHelper {
+            signature_verifying_key: Option<PublicKey>,
+            spending_paths: HashMap<TapLeafHash, SpendingPath>,
+        }
+
+        let helper = InputHelper::deserialize(deserializer)?;
+        let taproot_spend_info = deserialize_taproot_spend_info::<D>().ok();
+
+        Ok(Input {
+            taproot_spend_info: taproot_spend_info.unwrap(),
+            signature_verifying_key: helper.signature_verifying_key,
+            spending_paths: helper.spending_paths,
+        })
+    }
+}
+
+
+
 impl Input {
     pub fn new(sighash_type: TapSighashType, taproot_spending_scripts: &[ScriptWithParams], taproot_spend_info: TaprootSpendInfo) -> Self {
         Input {
-            taproot_spend_info,
+            taproot_spend_info: Some(taproot_spend_info),
             signature_verifying_key: None,
             spending_paths: taproot_spending_scripts.iter().map(|taproot_leaf| {
                 let leaf_hash = TapLeafHash::from_script(taproot_leaf.get_script(), LeafVersion::TapScript);
@@ -111,11 +162,11 @@ impl Input {
     }
 
     pub fn get_taproot_spend_info(&self) -> TaprootSpendInfo {
-        self.taproot_spend_info.clone()
+        self.taproot_spend_info.clone().unwrap()
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SpendingPath {
     sighash_type: TapSighashType,
     sighash: Option<TapSighash>,
@@ -186,7 +237,8 @@ impl SpendingParams {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+
 pub struct Template {
     name: String,
     txid: Txid,

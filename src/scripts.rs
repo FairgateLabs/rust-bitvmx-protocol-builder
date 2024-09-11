@@ -5,10 +5,11 @@ use bitcoin::{PublicKey, ScriptBuf};
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::WinternitzPublicKey;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScriptParam {
     name: String,
     verifying_key: WinternitzPublicKey,
@@ -51,7 +52,7 @@ impl ScriptParam {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ScriptWithParams {
     script: ScriptBuf,
     params: HashMap<String, ScriptParam>,

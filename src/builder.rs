@@ -52,7 +52,7 @@ impl TemplateBuilder {
     pub fn start(&mut self, name: &str, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
         self.finalized = false;
 
-        if self.graph.contains_template(name) {
+        if self.graph.contains_template(name)? {
             return Err(TemplateBuilderError::TemplateAlreadyExists(name.to_string()));
         }
         
@@ -128,7 +128,7 @@ impl TemplateBuilder {
     pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<PreviousOutput, TemplateBuilderError> {
         self.finalized = false;
         
-        if !self.graph.contains_template(name) {
+        if !self.graph.contains_template(name)? {
             return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
         }
 
@@ -161,7 +161,14 @@ impl TemplateBuilder {
             template.compute_spend_signature_hashes()?;
         } 
 
-        Ok(self.graph.templates().cloned().collect())
+        match self.graph.templates() {
+            Ok(transactions) => {
+                let transactions: Vec<Template> = transactions.into_iter().map(|(_, template)| template).collect();
+                Ok(transactions)
+            },
+            Err(e) => Err(TemplateBuilderError::GraphBuildingError(e)),
+            
+        }
     }
 
     /// Finalizes the DAG and builds the templates in one step.
@@ -175,8 +182,15 @@ impl TemplateBuilder {
         if !self.finalized {
             return Err(TemplateBuilderError::NotFinalized);
         }
-        
-        Ok(self.graph.templates().map(|template| template.get_transaction()).collect())
+
+        match self.graph.templates() {
+            Ok(transactions) => {
+                let transactions: Vec<Transaction> = transactions.into_iter().map(|(_, template)| template.get_transaction()).collect();
+                Ok(transactions)
+            },
+            Err(e) => Err(TemplateBuilderError::GraphBuildingError(e)),
+            
+        }
     }
 
     /// Resets the builder to its initial state discarding all the templates and the graph.
@@ -192,7 +206,7 @@ impl TemplateBuilder {
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
     fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
-        if !self.graph.contains_template(name) {
+        if !self.graph.contains_template(name)? {
             let template = Template::new(
                 name, 
                 &template_params.get_speedup_script(), 

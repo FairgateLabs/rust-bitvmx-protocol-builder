@@ -1,4 +1,4 @@
-use bitcoin::{key::UncompressedPublicKeyError, sighash::TaprootError, taproot::TaprootBuilderError};
+use bitcoin::{ key::UncompressedPublicKeyError, sighash::TaprootError, taproot::TaprootBuilderError};
 use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
@@ -59,6 +59,12 @@ pub enum TemplateError {
 
     #[error("Invalid spending path for input {0}")]
     InvalidSpendingPath(usize),
+
+    #[error("Failed to deserialize")]
+    InvalidDeserialization,
+
+    #[error("Failed to serialize")]
+    InvalidSerialization,
 }
 
 #[derive(Error, Debug)]
@@ -79,7 +85,9 @@ pub enum GraphError {
     #[error("Node not found")]
     NodeNotFound,
     #[error("Error while trying to access storage")]
-    StorageError(storage_backend::error::StorageError),
+    StorageError(#[from] storage_backend::error::StorageError),
+    #[error("Error while trying to deserialize data")]
+    DeserializationError(#[from] serde_json::Error),
 
 }
 
