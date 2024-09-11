@@ -1,8 +1,10 @@
-use bitcoin::{PublicKey, ScriptBuf, TapSighashType};
+use bitcoin::{EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 
 use crate::{errors::ConfigError, scripts::{self, ScriptWithParams}};
 
 #[derive(Clone, Debug)]
+/// DefaultParams is a struct that holds the default parameters for the templates.
+/// It is used by the template builder to create the templates when using TemplateBuilder's shortcut functions add_start(), add_connection(), and add_rounds().
 pub struct DefaultParams { 
     protocol_amount: u64,
     speedup_from_key: PublicKey,
@@ -12,11 +14,12 @@ pub struct DefaultParams {
     timelock_from_key: PublicKey,
     timelock_to_key: PublicKey,
     locked_amount: u64,
-    sighash_type: TapSighashType,
+    ecdsa_sighash_type: EcdsaSighashType,
+    taproot_sighash_type: TapSighashType,
 }
 
 impl DefaultParams {
-    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, sighash_type: TapSighashType) -> Result<Self, ConfigError> {
+    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, ecdsa_sighash_type: EcdsaSighashType, taproot_sighash_type: TapSighashType) -> Result<Self, ConfigError> {
         let defaults = DefaultParams {
             protocol_amount,
             speedup_from_key: *speedup_from_key,
@@ -26,7 +29,8 @@ impl DefaultParams {
             timelock_from_key: *timelock_from_key,
             timelock_to_key: *timelock_to_key,
             locked_amount,
-            sighash_type,
+            ecdsa_sighash_type,
+            taproot_sighash_type,
         };
 
         Ok(defaults)
@@ -36,8 +40,12 @@ impl DefaultParams {
         self.protocol_amount
     }
 
-    pub fn get_sighash_type(&self) -> TapSighashType {
-        self.sighash_type
+    pub fn get_ecdsa_sighash_type(&self) -> EcdsaSighashType {
+        self.ecdsa_sighash_type
+    }
+
+    pub fn get_taproot_sighash_type(&self) -> TapSighashType {
+        self.taproot_sighash_type
     }
 
     pub fn speedup_from_script(&self) -> Result<ScriptBuf, ConfigError> {
@@ -106,6 +114,7 @@ impl DefaultParams {
 }
 
 #[derive(Clone, Debug)]
+/// TemplateParams is a struct that holds the parameters to create templates.
 pub struct TemplateParams {
     speedup_script: ScriptBuf,
     speedup_amount: u64,
@@ -141,6 +150,8 @@ impl TemplateParams {
 }
 
 #[derive(Clone, Debug)]
+/// ConnectionParams is a struct that holds the parameters to create connections between templates.
+/// It is used by the template builder to create the connections when using the TemplateBuilder's long version function connect.
 pub struct ConnectionParams {
     template_from: TemplateParams,
     template_to: TemplateParams,
@@ -154,6 +165,8 @@ impl ConnectionParams {
             template_to,
             spending_scripts: spending_scripts.to_vec(),
         }
+
+        
     }
 
     pub fn template_from(&self) -> TemplateParams {
@@ -174,6 +187,8 @@ impl ConnectionParams {
 }
 
 #[derive(Clone, Debug)]
+/// RoundParams is a struct that holds the parameters to create rounds between templates.
+/// It is used by the template builder to create the connections when using the TemplateBuilder's long version function connect_rounds.
 pub struct RoundParams {
     direct_connection: ConnectionParams,
     reverse_connection: ConnectionParams,

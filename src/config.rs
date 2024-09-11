@@ -1,4 +1,5 @@
 use config as settings;
+use key_manager::config::{KeyManagerConfig, StorageConfig};
 use serde::Deserialize;
 use tracing::warn;
 use std::env;
@@ -18,7 +19,8 @@ pub struct TemplateBuilderConfig {
     pub timelock_from_key: String,
     pub timelock_to_key: String,
     pub locked_amount: u64,
-    pub sighash_type: String,
+    pub ecdsa_sighash_type: String,
+    pub taproot_sighash_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +37,8 @@ pub struct RpcConfig {
 pub struct Config {
     pub rpc: RpcConfig,
     pub template_builder: TemplateBuilderConfig,
+    pub key_manager: KeyManagerConfig,
+    pub storage: StorageConfig,
 }
 
 impl Config {
