@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use lazy_static::lazy_static;
 
-use bitcoin::{hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, Tagnature, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
-use serde::{Deserialize, Serialize};
+use bitcoin::{EcdsaSighashType, SegwitV0Sighash,hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
+use serde::{Deserialize, Serialize, ser::SerializeStruct};
 
 use crate::{errors::TemplateError, scripts::{ScriptParam, ScriptWithParams}, unspendable::unspendable_key};
-use crate::taproot_spend_info_serde::deserialize as deserialize_taproot_spend_info;
 
 lazy_static! {
     static ref SECP: Secp256k1<All> = Secp256k1::new();
@@ -13,7 +12,7 @@ lazy_static! {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Represents an output of a previous transaction that is consumed by an output in this transaction.
-pub struct PreviousOutput {
+pub struct Output {
     from: String,
     index: usize,
     txout: TxOut,
@@ -39,8 +38,8 @@ impl Output {
     pub fn get_txout(&self) -> &TxOut {
         &self.txout
     }
-  
-#[derive(Clone, Debug)]
+} 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpendingInfo {
     sighash: Option<TapSighash>,
     signature: Option<bitcoin::taproot::Signature>,
@@ -68,6 +67,7 @@ pub enum InputType {
     Taproot {
         sighash_type: TapSighashType,
         taproot_spend_info: TaprootSpendInfo,
+        taproot_internal_key: PublicKey,
         spending_paths: HashMap<TapLeafHash, SpendingInfo>,
     },
     Segwit {
@@ -79,7 +79,193 @@ pub enum InputType {
     },
 }
 
-#[derive(Clone, Debug)]
+impl Serialize for InputType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            InputType::Taproot {
+                sighash_type,
+                spending_paths,
+                taproot_spend_info: _,
+                taproot_internal_key
+            } => {
+                let mut state = serializer.serialize_struct("Taproot", 2)?;
+                state.serialize_field("tap_sighash_type", sighash_type)?;
+                state.serialize_field("spending_paths", spending_paths)?;
+                state.serialize_field("taproot_internal_key", taproot_internal_key)?;
+                state.end()
+            }
+            InputType::Segwit {
+                sighash_type,
+                script_pubkey,
+                sighash,
+                signature,
+                amount,
+            } => {
+                let mut state = serializer.serialize_struct("Segwit", 5)?;
+                state.serialize_field("ecdsa_sighash_type", sighash_type)?;
+                state.serialize_field("script_pubkey", script_pubkey)?;
+                state.serialize_field("sighash", sighash)?;
+                state.serialize_field("signature", signature)?;
+                state.serialize_field("amount", amount)?;
+                state.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InputType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            TapSighashType,
+            EcdsaSighashType,
+            SpendingPaths,
+            TaprootInternalKey,
+            ScriptPubkey,
+            Sighash,
+            Signature,
+            Amount,
+        }
+
+        struct InputTypeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for InputTypeVisitor {
+            type Value = InputType;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct InputType")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<InputType, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut tap_sighash_type = None;
+                let mut ecdsa_sighash_type = None;
+                let mut spending_paths: Option<HashMap<TapLeafHash, SpendingInfo>> = None;
+                let mut taproot_internal_key: Option<PublicKey> = None;
+                let mut script_pubkey = None;
+                let mut sighash = None;
+                let mut signature = None;
+                let mut amount = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::TapSighashType => {
+                            if tap_sighash_type.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tap_sighash_type"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                tap_sighash_type = Some(value);
+                            };
+                            
+                        }
+                        Field::EcdsaSighashType => {
+                            if ecdsa_sighash_type.is_some() {
+                                return Err(serde::de::Error::duplicate_field("ecdsa_sighash_type"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                ecdsa_sighash_type = Some(value);
+                            };
+                        }
+                        Field::SpendingPaths => {
+                            if spending_paths.is_some() {
+                                return Err(serde::de::Error::duplicate_field("spending_paths"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                spending_paths = Some(value);
+                            };
+                        }
+                        Field::TaprootInternalKey => {
+                            if taproot_internal_key.is_some() {
+                                return Err(serde::de::Error::duplicate_field("taproot_internal_key"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                taproot_internal_key = Some(value);
+                            };
+                        }
+                        Field::ScriptPubkey => {
+                            if script_pubkey.is_some() {
+                                return Err(serde::de::Error::duplicate_field("script_pubkey"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                script_pubkey = Some(value);
+                            }
+                        }
+                        Field::Sighash => {
+                            if sighash.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sighash"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                sighash = Some(value);
+                            }
+                        }
+                        Field::Signature => {
+                            if signature.is_some() {
+                                return Err(serde::de::Error::duplicate_field("signature"));
+                            }
+                            if let Some(value) =  map.next_value()?{
+                                signature = Some(value);   
+                            }
+                        }
+                        Field::Amount => {
+                            if amount.is_some() {
+                                return Err(serde::de::Error::duplicate_field("amount"));
+                            }
+                            if let Some(value) = map.next_value()?{
+                                amount = Some(value);
+                            }
+                        }
+                    }
+                }
+
+                if spending_paths.is_some() {
+                    Ok(InputType::Taproot {
+                        sighash_type: tap_sighash_type.ok_or_else(|| serde::de::Error::missing_field("sighash_type"))?,
+                        taproot_spend_info: {
+                            let internal_key = taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
+                            let taproot_builder = TaprootBuilder::new();
+                            taproot_builder.finalize(&SECP, internal_key.into()).map_err(|_| serde::de::Error::custom("Failed to finalize taproot"))?
+                        },
+                        taproot_internal_key: taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?,                      
+                        spending_paths: match spending_paths {
+                            Some(paths) => paths,
+                            None => HashMap::new(),
+                            
+                        },
+                    })
+                } else {
+                    Ok(InputType::Segwit {
+                        sighash_type: ecdsa_sighash_type.ok_or_else(|| serde::de::Error::missing_field("ecdsa_sighash_type"))?,
+                        script_pubkey: script_pubkey.ok_or_else(|| serde::de::Error::missing_field("script_pubkey"))?,
+                        sighash,
+                        signature,
+                        amount: amount.ok_or_else(|| serde::de::Error::missing_field("amount"))?,
+                    })
+                }
+            }
+        }
+
+        const FIELDS: &[&str] = &[
+            "sighash_type",
+            "spending_paths",
+            "script_pubkey",
+            "sighash",
+            "signature",
+            "amount",
+        ];
+        deserializer.deserialize_struct("InputType", FIELDS, InputTypeVisitor)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Input {
     to: String,
     index: usize,
@@ -284,7 +470,11 @@ impl Template {
 
         let input_type = InputType::Taproot {
             sighash_type,
-            taproot_spend_info,
+            taproot_spend_info: taproot_spend_info.clone(),
+            taproot_internal_key: {
+                let internal_key = taproot_spend_info.internal_key();
+                PublicKey::new(internal_key.public_key(taproot_spend_info.output_key_parity()))
+            },
             spending_paths: taproot_spending_scripts.iter().map(|s| {
                 let leaf_hash = TapLeafHash::from_script(s.get_script(), LeafVersion::TapScript);
                 let path = SpendingInfo {
@@ -293,9 +483,10 @@ impl Template {
                     taproot_leaf: s.get_script().clone(),
                     script_params: s.get_params(),
                 };
+            
 
                 (leaf_hash, path)
-            }).collect()
+            }).collect(),
         };
 
         let input = Input::new(&self.name, self.transaction.input.len() - 1, input_type);

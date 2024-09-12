@@ -57,8 +57,10 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::TemplateAlreadyExists(name.to_string()));
         }
         
-        let template = self.add_or_create_template(name, template_params)?;
+        let mut 
+        template = self.add_or_create_template(name, template_params)?;
         template.push_start_input(sighash_type, previous_tx, vout, amount, script_pubkey);
+        self.graph.add_template(name, template)?;
         Ok(())
     }
 
@@ -75,15 +77,19 @@ impl TemplateBuilder {
         }
 
         // Create the from template if it doesn't exist and push the output that will be spent
-        let from_template = self.add_or_create_template(from, connection_params.template_from())?;
+        let mut from_template = self.add_or_create_template(from, connection_params.template_from())?;
         let (output, taproot_spend_info) = from_template.push_output(protocol_amount, &connection_params.spending_scripts_with_params())?;
+        self.graph.add_template(from, from_template)?;
 
         // Create the to template if it doesn't exist and push the input that will spend the previously created output
-        let to_template = self.add_or_create_template(to, connection_params.template_to())?;
+        let mut to_template = self.add_or_create_template(to, connection_params.template_to())?;
         let next_input = to_template.push_taproot_input(sighash_type, output, taproot_spend_info,&connection_params.spending_scripts_with_params());
+        self.graph.add_template(to, to_template)?;
 
         // Add to the from_template the recently created next input for later updates of the txid in connected inputs
-        self.get_template_mut(from)?.push_next_input(next_input);
+        let mut template = self.get_template(from)?;
+        template.push_next_input(next_input);
+        self.graph.add_template(from, template)?;
 
         // Connect the templates in the graph
         self.graph.connect(from, to)?;
@@ -141,9 +147,11 @@ impl TemplateBuilder {
         self.graph.end_template(name);
 
         let protocol_amount = self.defaults.get_protocol_amount();
-        let template = self.get_template_mut(name)?;
+        let mut template = self.get_template(name)?;
 
         let (output, _) = template.push_output(protocol_amount, spending_conditions)?;
+
+        self.graph.add_template(name, template)?;
 
         Ok(output)
     }
@@ -161,8 +169,9 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::NotFinalized.into());
         }
 
-        for template in self.graph.templates_mut() {
+        for (key,mut template) in self.graph.templates()? {
             template.compute_spend_signature_hashes()?;
+            self.graph.add_template(key.trim_start_matches("template_"), template)?;
         } 
 
         match self.graph.templates() {
@@ -209,7 +218,7 @@ impl TemplateBuilder {
     }
 
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
-    fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
+    fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<Template, TemplateBuilderError> {
         if !self.graph.contains_template(name)? {
             let template = Template::new(
                 name, 
@@ -222,7 +231,7 @@ impl TemplateBuilder {
             self.graph.add_template(name, template)?;
         }
 
-        self.get_template_mut(name)
+        self.get_template(name)
     }
 
     /// Updates the txids of each template in the DAG in topological order.
@@ -231,20 +240,23 @@ impl TemplateBuilder {
         let sorted_templates = self.graph.sort()?;
 
         for from in sorted_templates {
-            let template = self.get_template_mut(&from)?;
+            let mut template = self.get_template(&from)?;
             let txid = template.compute_txid();
             
             for input in template.get_next_inputs(){
-                let template = self.get_template_mut(input.get_to())?;
-                template.update_input(input.get_index(), txid);   
+                let mut input_template = self.get_template(input.get_to())?;
+                input_template.update_input(input.get_index(), txid);
+                self.graph.add_template(input.get_to(), input_template)?;  
             }
+
+            self.graph.add_template(&from, template)?;
         }
 
         Ok(())
     }
 
-    fn get_template_mut(&mut self, name: &str) -> Result<&mut Template, TemplateBuilderError> {
-        match self.graph.get_template_mut(name) {
+    fn get_template(&mut self, name: &str) -> Result<Template, TemplateBuilderError> {
+        match self.graph.get_template(name)? {
             Some(template) => Ok(template),
             None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
         }
@@ -660,9 +672,9 @@ mod tests {
             timelock_from_key, 
             timelock_to_key, 
             locked_amount, 
-            temp_storage_path()
             ecdsa_sighash_type,
             taproot_sighash_type,
+            temp_storage_path(),
         )?;
 
         let builder = TemplateBuilder::new(defaults)?;

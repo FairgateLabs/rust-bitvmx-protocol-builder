@@ -13,9 +13,9 @@ pub struct Graph {
 
 impl Graph {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, GraphError> {
-        let graph = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
+        let storage = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
         Ok(Graph { 
-            storage: graph,
+            storage,
             templates: HashMap::new(),
             end_templates: Vec::new(),
       })
@@ -25,7 +25,7 @@ impl Graph {
         self.storage.write(&format!("template_{}", name), &serde_json::to_string(&template)?)?;
 
         if !self.storage.has_key(&format!("graph_{}", name))?{
-            self.storage.write(name, "")?;
+            self.storage.write(&format!("graph_{}", name), "")?;
         }
         Ok(())
     }
@@ -91,7 +91,7 @@ impl Graph {
     }
 
     pub fn connect(&mut self, from: &str, to: &str) -> Result<(), GraphError>{
-        let mut dependents = match self.storage.read(from)? {
+        let mut dependents = match self.storage.read(&format!("graph_{}", from))? {
             Some(dependents) => dependents,
             None => return Err(GraphError::NodeNotFound),            
         };
@@ -99,12 +99,12 @@ impl Graph {
         if dependents.contains(to) {
             return Ok(());    
         } else if dependents.is_empty() {
-            dependents = format!("graph_{}", to);
+            dependents = to.to_string();
         } else {
-            dependents.push_str(&format!(",graph_{}", to));
+            dependents.push_str(&format!(",{}", to));
         }
 
-        self.storage.write(from, &dependents)?;
+        self.storage.write(&format!("graph_{}", from), &dependents)?;
         Ok(())
     }
 
@@ -113,8 +113,9 @@ impl Graph {
         let mut sorted = Vec::new();
         let mut visited = HashSet::new();
         let mut temp_marked = HashSet::new();
-        for name in self.storage.keys() {
-            if !visited.contains(&name) && name.contains("template_") {
+        for (name, _) in self.storage.partial_compare("graph_")? {
+            let name = name.trim_start_matches("graph_");
+            if !visited.contains(name){
                 self.visit(&name, &mut visited, &mut temp_marked, &mut sorted)?;
             }
         }
@@ -124,7 +125,7 @@ impl Graph {
     }
 
     fn get_dependents(&self, name: &str) -> Result<Option<Vec<String>>, GraphError> {
-        let dependents = match self.storage.read(name)?{
+        let dependents = match self.storage.read(&format!("graph_{}", name))?{
             Some(dependents) => dependents,
             None => return Ok(None),
         };
@@ -152,7 +153,7 @@ impl Graph {
             }
             temp_marked.remove(name);
             visited.insert(name.to_string());
-            sorted.push(name.split("_").collect::<Vec<&str>>()[1].to_string());
+            sorted.push(name.to_string());
         }
 
         Ok(())

@@ -31,7 +31,7 @@ impl DefaultParams {
             timelock_from_key: *timelock_from_key,
             timelock_to_key: *timelock_to_key,
             locked_amount,
-            graph_path
+            graph_path,
             ecdsa_sighash_type,
             taproot_sighash_type,
         };

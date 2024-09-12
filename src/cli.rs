@@ -94,9 +94,9 @@ impl Cli {
             &timelock_from_key, 
             &timelock_to_key, 
             locked_amount, 
-            temp_storage_path()
             ecdsa_sighash_type,
             taproot_sighash_type,
+            temp_storage_path()
         )?;
         Ok(defaults)
     }
@@ -105,7 +105,7 @@ impl Cli {
         let network = self.config.key_manager.network.parse::<Network>()?;
 
         let key_derivation_path = self.config.key_manager.key_derivation_path.as_str(); 
-        let key_derivation_seed = self.config.key_manager.key_derivation_seed.as_bytes().try_into()?;
+        let key_derivation_seed: [u8; 32] = self.config.key_manager.key_derivation_seed.as_bytes().try_into()?;
         let winternitz_seed = self.config.key_manager.winternitz_seed.as_bytes().try_into()?;
 
         let keystore_path = self.config.storage.path.as_str();
