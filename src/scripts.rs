@@ -9,19 +9,25 @@ use key_manager::winternitz::WinternitzPublicKey;
 use crate::errors::ScriptError;
 
 #[derive(Clone, Debug)]
+pub enum KeyType {
+    EcdsaPublicKey,
+    WinternitzPublicKey,
+}
+
+#[derive(Clone, Debug)]
 pub struct ScriptParam {
     name: String,
-    verifying_key: WinternitzPublicKey,
     verifying_key_index: u32,
+    verifying_key_type: KeyType,
     param_position: u32,
 }
 
 impl ScriptParam {
-    pub fn new(name: &str, verifying_key: WinternitzPublicKey, verifying_key_index: u32, param_position: u32) -> Self {
+    pub fn new(name: &str, verifying_key_index: u32, verifying_key_type: KeyType, param_position: u32) -> Self {
         Self {
             name: name.to_string(),
-            verifying_key,
             verifying_key_index,
+            verifying_key_type,
             param_position, 
         }
     }
@@ -30,24 +36,16 @@ impl ScriptParam {
         &self.name
     }
 
-    pub fn get_verifying_key(&self) -> &WinternitzPublicKey {
-        &self.verifying_key
-    }
-
     pub fn get_verifying_key_index(&self) -> u32 {
         self.verifying_key_index
     }
 
-    pub fn get_param_size(&self) -> usize {
-        self.verifying_key.message_size()
+    pub fn get_verifying_key_type(&self) -> KeyType {
+        self.verifying_key_type.clone()
     }
 
     pub fn get_param_position(&self) -> u32 {
         self.param_position
-    }
-
-    pub fn get_checksum_size(&self) -> usize {
-        self.verifying_key.checksum_size()
     }
 }
 
@@ -78,12 +76,11 @@ impl ScriptWithParams {
         self.params.values().cloned().sorted_by(|a, b| Ord::cmp(&a.get_param_position(), &b.get_param_position())).collect()
     }
 
-    fn add_param(&mut self, name: &str, verifying_key: &WinternitzPublicKey, verifying_key_index: u32) {
-        let param_position = self.params.len();
-        let param = ScriptParam::new(name, verifying_key.clone(), verifying_key_index, param_position as u32);
-
+    pub fn add_param(&mut self, name: &str, verifying_key_index: u32, verifying_key_type: KeyType, param_position: u32) {
+        let param = ScriptParam::new(name, verifying_key_index, verifying_key_type, param_position);
         self.params.insert(param.name().to_string(), param);
     }
+
 }
 
 pub fn speedup(public_key: &PublicKey) -> Result<ScriptBuf, ScriptError> {
@@ -91,24 +88,48 @@ pub fn speedup(public_key: &PublicKey) -> Result<ScriptBuf, ScriptError> {
     Ok(ScriptBuf::new_p2wpkh(&pubkey_hash))
 }
 
-pub fn timelock(public_key: &PublicKey, csv_blocks: u8) -> ScriptBuf {
-    script!(
-        { public_key.to_bytes() }
-        OP_CHECKSIG
-        { csv_blocks }
+pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithParams {
+    let script = script!(
+        // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
+        { blocks.to_le_bytes().to_vec() }
         OP_CSV
+        OP_IF
         OP_DROP
-    )
+        { timelocked_public_key.to_bytes() }
+        OP_CHECKSIG
+        OP_ENDIF
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param("timelock_expired_signature", 0, KeyType::EcdsaPublicKey, 0);
+    script_with_params
 }
 
-pub fn aggegated_timelock(aggregated_key: &PublicKey, csv_blocks: u8) -> ScriptBuf {
-    script!(
+pub fn collaborative_spend(aggregated_key: &PublicKey) -> ScriptWithParams {
+    let script = script!(
         { aggregated_key.to_bytes() }
         OP_CHECKSIG
-        { csv_blocks }
-        OP_CSV
-        OP_DROP
-    )
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param("aggregated_signature", 0, KeyType::EcdsaPublicKey, 0);
+    script_with_params
+}
+
+pub fn signature(public_key: &PublicKey) -> ScriptWithParams {
+    let script = script!(
+        { public_key.to_bytes() }
+        OP_CHECKSIG
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param("signature", 0, KeyType::EcdsaPublicKey, 0);
+
+    script_with_params
+}
+
+pub fn aggregated_signature(aggregated_key: &PublicKey) -> ScriptWithParams {
+    signature(aggregated_key)
 }
 
 pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> ScriptWithParams {        
@@ -118,22 +139,25 @@ pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> 
     );
 
     let mut script_with_params = ScriptWithParams::new(script);
-    script_with_params.add_param("f", f_key, 0);
-    script_with_params.add_param("input", input_key, 1);
+    script_with_params.add_param("f", 0, KeyType::WinternitzPublicKey, 0);
+    script_with_params.add_param("input", 1, KeyType::WinternitzPublicKey, 1);
 
     script_with_params
 }
 
-pub fn challenge(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> ScriptBuf {        
-    script!(
-        {ots_checksig_verify(f_key, false)}
-        {ots_checksig_verify(input_key, false)}
-    )
+pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey) -> ScriptWithParams {
+    let script = script!(
+        {ots_checksig_verify(verifying_key, false)}
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param(value_name, 0, KeyType::WinternitzPublicKey, 0);
+    script_with_params
 }
 
 // Winternitz Signature verification. Note that the script inputs are malleable.
 // Optimized by @SergioDemianLerner, @tomkosm
-pub fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
+fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
     let message_size = public_key.message_size() as u32;
     let bits_per_digit = 4; 
     let base: u32 = (1 << bits_per_digit) - 1;
@@ -223,18 +247,4 @@ pub fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool)
             }
         }   
     }
-}
-
-pub fn any_speedup() -> ScriptBuf {
-    ScriptBuf::from(vec![0x01, 0x04, 0x05])
-}
-
-pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey) -> ScriptWithParams {
-    let script = script!(
-        {ots_checksig_verify(verifying_key, false)}
-    );
-
-    let mut script_with_params = ScriptWithParams::new(script);
-    script_with_params.add_param(value_name, verifying_key, 0);
-    script_with_params
 }

@@ -76,10 +76,11 @@ impl Cli {
         let speedup_from_key = PublicKey::from_str(self.config.template_builder.speedup_from_key.as_str())?;
         let speedup_to_key = PublicKey::from_str(self.config.template_builder.speedup_to_key.as_str())?;
         let speedup_amount = self.config.template_builder.speedup_amount;
-        let timelock_blocks = self.config.template_builder.timelock_blocks;
         let timelock_from_key = PublicKey::from_str(self.config.template_builder.timelock_from_key.as_str())?;
         let timelock_to_key = PublicKey::from_str(self.config.template_builder.timelock_to_key.as_str())?;
+        let timelock_renew_key = PublicKey::from_str(self.config.template_builder.timelock_renew_key.as_str())?;
         let locked_amount = self.config.template_builder.locked_amount;
+        let locked_blocks = self.config.template_builder.locked_blocks;
         let ecdsa_sighash_type = EcdsaSighashType::from_str(self.config.template_builder.ecdsa_sighash_type.as_str())?;
         let taproot_sighash_type = TapSighashType::from_str(self.config.template_builder.taproot_sighash_type.as_str())?;
        
@@ -87,11 +88,12 @@ impl Cli {
             protocol_amount, 
             &speedup_from_key, 
             &speedup_to_key, 
-            speedup_amount, 
-            timelock_blocks, 
+            speedup_amount,
             &timelock_from_key, 
             &timelock_to_key, 
+            &timelock_renew_key,
             locked_amount, 
+            locked_blocks,
             ecdsa_sighash_type,
             taproot_sighash_type,
         )?;
@@ -120,4 +122,3 @@ impl Cli {
         Ok(key_manager)
     }
 }
-

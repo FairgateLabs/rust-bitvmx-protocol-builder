@@ -70,19 +70,45 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::TemplateEnded(to.to_string()));
         }
 
-        // Create the from template if it doesn't exist and push the output that will be spent
-        let from_template = self.add_or_create_template(from, connection_params.template_from())?;
-        let (output, taproot_spend_info) = from_template.push_output(protocol_amount, &connection_params.spending_scripts_with_params())?;
+        // Add protocol connection
+        self.connect_protocol(
+            from, to, 
+            protocol_amount, 
+            0,
+            sighash_type, 
+            connection_params.template_from(), 
+            connection_params.template_to(), 
+            &connection_params.spending_scripts_with_params()
+        )?;
 
-        // Create the to template if it doesn't exist and push the input that will spend the previously created output
-        let to_template = self.add_or_create_template(to, connection_params.template_to())?;
-        let next_input = to_template.push_taproot_input(sighash_type, output, taproot_spend_info,&connection_params.spending_scripts_with_params());
-
-        // Add to the from_template the recently created next input for later updates of the txid in connected inputs
-        self.get_template_mut(from)?.push_next_input(next_input);
+        // Add timelock connection
+        self.connect_protocol(
+            from, to, 
+            protocol_amount, 
+            connection_params.get_lock_blocks(),
+            sighash_type, 
+            connection_params.template_from(), 
+            connection_params.template_to(), 
+            &connection_params.timelock_scripts()
+        )?;
 
         // Connect the templates in the graph
         self.graph.connect(from, to);
+
+        Ok(())
+    }
+
+    fn connect_protocol(&mut self, from: &str, to: &str, protocol_amount: u64, locked_blocks: u16, sighash_type: TapSighashType, from_params: TemplateParams, to_params: TemplateParams, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
+        // Create the from template if it doesn't exist and push the output that will be spent
+        let from_template = self.add_or_create_template(from, from_params)?;
+        let (output, taproot_spend_info) = from_template.push_output(protocol_amount, spending_scripts)?;
+
+        // Create the to template if it doesn't exist and push the input that will spend the previously created output
+        let to_template = self.add_or_create_template(to, to_params)?;
+        let next_input = to_template.push_taproot_input(sighash_type, output, locked_blocks, taproot_spend_info, spending_scripts);
+   
+        // Add to the from_template the recently created next input for later updates of the txid in connected inputs
+        self.get_template_mut(from)?.push_next_input(next_input);
 
         Ok(())
     }
@@ -188,12 +214,11 @@ impl TemplateBuilder {
     /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
     fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
         if !self.graph.contains_template(name) {
+
             let template = Template::new(
                 name, 
                 &template_params.get_speedup_script(), 
                 template_params.get_speedup_amount(), 
-                &template_params.get_timelock_script(), 
-                template_params.get_locked_amount()
             );
 
             self.graph.add_template(name, template);
@@ -231,10 +256,10 @@ impl TemplateBuilder {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use bitcoin::{absolute, bip32::Xpub, consensus, key::rand::{random, RngCore}, secp256k1::{self, Message}, transaction, Address, Amount, CompressedPublicKey, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid};
+    use bitcoin::{absolute, bip32::Xpub, consensus, key::rand::RngCore, locktime, secp256k1::{self, Message}, sighash::SighashCache, taproot::{TaprootBuilder, TaprootSpendInfo}, transaction, Address, Amount, CompressedPublicKey, EcdsaSighashType, Network, PublicKey, ScriptBuf, Sequence, TapSighashType, Transaction, TxOut, Txid, Witness};
     use bitcoincore_rpc::{Auth, Client, RpcApi};
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
-    use crate::{errors::{TemplateBuilderError, TestClientError}, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, SpendingParams, Template}};
+    use crate::{errors::{TemplateBuilderError, TemplateError, TestClientError}, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, ScriptArgs, Template}};
     use super::TemplateBuilder;
 
     const ONE_BTC: Amount = Amount::from_sat(100_000_000); // 1 BTC
@@ -296,12 +321,16 @@ mod tests {
             Ok((txid, vout))
         }
     
-        pub fn send_transaction(&self, tx: Transaction) -> Result<(), TestClientError> {
+        pub fn send_transaction(&self, tx: Transaction) -> Result<Txid, TestClientError> {
             let serialized_tx = consensus::encode::serialize_hex(&tx);
-            self.client.send_raw_transaction(serialized_tx)
+            let txid = self.client.send_raw_transaction(serialized_tx)
                 .map_err(|e| TestClientError::FailedToSendTransaction { error: e.to_string() })?;
     
-            Ok(())
+            // mine a block to confirm transaction
+            self.client.generate_to_address(1, &self.wallet_address)
+                .map_err(|e| TestClientError::FailedToMineBlocks{ error: e.to_string() })?;
+
+            Ok(txid)
         }
 
         pub fn get_new_address(&self, pk: PublicKey) -> Address {
@@ -341,7 +370,7 @@ mod tests {
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
-        let spending_scripts = dummy_spending_scripts(&verifying_key);
+        let spending_scripts = test_spending_scripts(&verifying_key);
 
         let mut builder = test_template_builder()?;
 
@@ -393,18 +422,18 @@ mod tests {
 
             match input.get_type() {
                 InputType::Taproot { spending_paths, .. } => {
-                    for spending_info in spending_paths.values() {
-                        let sighash = spending_info.get_sighash().unwrap();
+                    for spending_path in spending_paths.values() {
+                        let sighash = spending_path.get_sighash().unwrap();
                         let message = &Message::from(sighash);
 
                         assert!(SignatureVerifier::default().verify_schnorr_signature(
-                            &spending_info.get_signature().unwrap().signature, 
+                            &spending_path.get_signature().unwrap().signature, 
                             message, 
                             verifying_key)
                         );
                     }
                 },
-                InputType::Segwit { sighash, signature, .. } => {
+                InputType::P2WPKH { sighash, signature, .. } => {
                     let message = &Message::from(sighash.unwrap());
 
                     assert!(SignatureVerifier::default().verify_ecdsa_signature(
@@ -450,9 +479,9 @@ mod tests {
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
-        let spending_scripts = dummy_spending_scripts(&verifying_key);
-        let spending_scripts_from = dummy_spending_scripts(&verifying_key);
-        let spending_scripts_to = dummy_spending_scripts(&verifying_key);
+        let spending_scripts = test_spending_scripts(&verifying_key);
+        let spending_scripts_from = test_spending_scripts(&verifying_key);
+        let spending_scripts_to = test_spending_scripts(&verifying_key);
 
         let mut builder = test_template_builder()?;
         
@@ -485,9 +514,9 @@ mod tests {
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
-        let spending_scripts = dummy_spending_scripts(&verifying_key);
-        let spending_scripts_from = dummy_spending_scripts(&verifying_key);
-        let spending_scripts_to = dummy_spending_scripts(&verifying_key);
+        let spending_scripts = test_spending_scripts(&verifying_key);
+        let spending_scripts_from = test_spending_scripts(&verifying_key);
+        let spending_scripts_to = test_spending_scripts(&verifying_key);
 
         let mut builder = test_template_builder()?;    
 
@@ -527,7 +556,7 @@ mod tests {
     fn test_starting_ending_templates() -> Result<(), TemplateBuilderError> {
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let spending_scripts = dummy_spending_scripts(&verifying_key);
+        let spending_scripts = test_spending_scripts(&verifying_key);
         let pk = key_manager.derive_keypair(0)?;
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
@@ -566,18 +595,21 @@ mod tests {
     }
 
     #[test]
-    fn test() -> Result<(), TemplateBuilderError>{
+    fn test_send_template_transactions() -> Result<(), TemplateBuilderError>{
         let network = Network::Regtest;
 
         let mut key_manager = test_key_manager()?;
         let mut builder = test_template_builder()?;
 
-        let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let spending_scripts = dummy_spending_scripts(&verifying_key);
+        //let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
+        //let spending_scripts = test_spending_scripts(&verifying_key);
         
         let pk = key_manager.derive_keypair(0)?;
         let wpkh = pk.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+
+        let script_with_params = ScriptWithParams::new(script_pubkey.clone());
+        let spending_scripts = vec![script_with_params.clone(), script_with_params.clone()];
 
         let client = test_client(network)?;
         let user_address = client.get_new_address(pk);
@@ -587,20 +619,185 @@ mod tests {
         builder.add_connection("start", "end", &spending_scripts)?;
         builder.end("end", &spending_scripts)?;
 
-        let mut templates = builder.finalize_and_build()?;
-        let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
+        let templates = builder.finalize_and_build()?;
+        //let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
 
-        for template in signed_templates {
-            let param: Vec<u8> = vec![32, 33, 34, 35];
-            let spending_leaf = spending_scripts[0].get_script();
-            let params = SpendingParams::new(0, spending_leaf.clone(), vec![param]);
+        let args = ScriptArgs::new(0,  ScriptBuf::from_bytes(vec![1, 2, 3]), vec![vec![32, 33, 34, 35]]);
+        let mut start = templates.iter().find(|template| template.get_name() == "start").unwrap().clone();
 
-            let tx = template.get_transaction_for_spending_path(params)?;
-            let _ = client.send_transaction(tx);
-        }
+
+        match start.get_input(0).get_type() {
+            InputType::P2WPKH { sighash, sighash_type, .. } => {
+                let signature: secp256k1::ecdsa::Signature = key_manager.sign_ecdsa_message(&Message::from(sighash.unwrap()), pk)?;
+                let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: *sighash_type };
+
+                assert!(SignatureVerifier::default().verify_ecdsa_signature(&segwit_signature.signature, &Message::from(sighash.unwrap()), pk));
+    
+                start.push_ecdsa_signature(0, segwit_signature, &pk)?;
+            }, 
+
+            InputType::Taproot { sighash_type, spending_paths, .. } => {
+                for spending_path in spending_paths.values() {
+                    let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &pk)?;
+                    let taproot_signature = bitcoin::taproot::Signature{ signature, sighash_type: *sighash_type };
+    
+                    start.push_taproot_signature(0, &spending_path.get_taproot_leaf(), taproot_signature, &pk)?;
+                }
+            }
+        } 
+
+        let start_tx = start.get_transaction_for_input(args)?;
+
+        println!("Transaction is: {:#?}", start_tx);
+
+        let txid = client.send_transaction(start_tx)?;
+
+        println!("Transaction {} sent: {}", start.get_name(), txid);
+
+        // let end = signed_templates.iter().find(|template| template.get_name() == "end").unwrap();
+
+        // for template in signed_templates {
+        //     let value: Vec<u8> = vec![32, 33, 34, 35];
+        //     let spending_leaf = spending_scripts[0].get_script();
+        //     let args = ScriptArgs::new(0, spending_leaf.clone(), vec![value]);
+
+        //     let tx = template.get_transaction_for_input(args)?;
+
+        //     println!("Sending transaction: {}", template.get_name());
+        //     println!("Transaction is: {:#?}", tx);
+
+        //     let txid = client.send_transaction(tx)?;
+
+        //     println!("Transaction {} sent: {}", template.get_name(), txid);
+        // }
     
         Ok(())
     } 
+
+    #[test]
+    fn test_send_simple_tx() -> Result<(), TemplateBuilderError> {
+        let output_amount = Amount::from_sat(90_000_000);
+        let speedup_amount = Amount::from_sat(2_500_000);
+        let taproot_amount = Amount::from_sat(2_500_000);
+        let timelock_amount = Amount::from_sat(4_990_000);
+
+        let network = Network::Regtest;
+        let mut key_manager = test_key_manager()?;
+
+        let pk = key_manager.derive_keypair(0)?;
+        let wpkh = pk.wpubkey_hash().expect("key is compressed");
+        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+
+        let speedup_pk = key_manager.derive_keypair(1)?;
+        let speedup_wpkh = speedup_pk.wpubkey_hash().expect("key is compressed");
+        let speedup_script_pubkey = ScriptBuf::new_p2wpkh(&speedup_wpkh);
+
+        let taproot_pk = key_manager.derive_keypair(2)?;
+        let taproot_script_pubkey = taproot_spend_info(taproot_pk, &[script_pubkey.clone(), script_pubkey.clone()])?.1;
+
+        let timelock_pk = key_manager.derive_keypair(3)?;
+        let timelock = scripts::timelock(100, &timelock_pk);
+        //let timelock_script_pubkey = timelock.get_script();
+
+        let timelock_script_pubkey = ScriptBuf::new_p2wsh(&timelock.get_script().wscript_hash());
+
+        let client = test_client(network)?;
+        let user_address = client.get_new_address(pk);
+        let (previous_tx, vout) = client.fund_address(&user_address, ONE_BTC).unwrap();
+
+        let input = transaction::TxIn {
+            previous_output: transaction::OutPoint {
+                txid: previous_tx,
+                vout,
+            },
+            script_sig: ScriptBuf::default(), // For p2wpkh script_sig is empty.
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::default(),
+        };
+
+        let speedup_output = TxOut {
+            value: speedup_amount,
+            script_pubkey: speedup_script_pubkey.clone()
+        };
+
+        let output = TxOut {
+            value: output_amount,
+            script_pubkey: script_pubkey.clone(),
+        };
+
+        let taproot_output = TxOut {
+            value: taproot_amount,
+            script_pubkey: taproot_script_pubkey,
+        };
+
+        let timelock_output = TxOut {
+            value: timelock_amount,
+            script_pubkey: timelock_script_pubkey.clone(),
+        };
+
+        let mut tx = Transaction {
+            version: transaction::Version::TWO, // Post BIP-68.
+            lock_time: locktime::absolute::LockTime::ZERO, // Ignore the locktime.
+            input: vec![input],
+            output: vec![speedup_output, timelock_output, output, taproot_output],
+        };
+
+        let mut sighasher = SighashCache::new(tx.clone());
+        let sighash = sighasher.p2wpkh_signature_hash(
+            0,
+            &script_pubkey,
+            ONE_BTC,
+            EcdsaSighashType::All,
+        )?;
+
+        let signature = key_manager.sign_ecdsa_message(&Message::from(sighash), pk)?;
+        let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: EcdsaSighashType::All };
+
+        let witness = Witness::p2wpkh(
+            &segwit_signature, 
+            &pk.inner
+        );
+
+        tx.input[0].witness = witness;
+
+        println!("Transaction is: {:#?}", tx);
+
+        let txid = client.send_transaction(tx)?;
+
+        println!("Transaction sent: {}", txid);
+
+        Ok(())
+    }
+
+
+    fn taproot_spend_info(internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<(TaprootSpendInfo, ScriptBuf), TemplateError> {
+        let secp = secp256k1::Secp256k1::new();
+        let scripts_count = taproot_spending_scripts.len();
+        
+        let depth = (scripts_count as f32).log2().ceil() as u8;
+
+        let mut tr_builder = TaprootBuilder::new();
+        for script in taproot_spending_scripts.iter() {
+            tr_builder = tr_builder.add_leaf(depth, script.clone())?;
+        }
+
+        // If the number of spend conditions is odd, add the last one again
+        if scripts_count % 2 != 0 {
+            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].clone())?;
+        }
+    
+        let tr_spend_info = tr_builder.finalize(&secp, internal_key.into()).map_err(|_| TemplateError::TapTreeFinalizeError)?;
+
+        let script_pubkey = ScriptBuf::new_p2tr(
+            &secp,
+            tr_spend_info.internal_key(),
+            tr_spend_info.merkle_root(),
+        );
+
+        Ok((tr_spend_info, script_pubkey))
+    }
+
+
 
     fn test_client(network: Network) -> Result<TestClient, TestClientError> {
         let url = "http://127.0.0.1:18443";
@@ -619,12 +816,14 @@ mod tests {
         let speedup_from_key = &key_manager.derive_public_key(master_xpub, 0)?;
         let speedup_to_key = &key_manager.derive_public_key(master_xpub, 1)?;
         let timelock_from_key = &key_manager.derive_public_key(master_xpub, 2)?;
-        let timelock_to_key = &key_manager.derive_public_key(master_xpub, 2)?;
+        let timelock_to_key = &key_manager.derive_public_key(master_xpub, 3)?;
+        // This needs to be an aggregated key
+        let timelock_renew_key = &key_manager.derive_public_key(master_xpub, 4)?;
 
         let protocol_amount = 200;
         let speedup_amount = 9_999_859;
-        let timelock_blocks: u8 = 100;
         let locked_amount = 5_000_000_000;
+        let locked_blocks: u16 = 200;
         let taproot_sighash_type = TapSighashType::All;
         let ecdsa_sighash_type = EcdsaSighashType::All;
 
@@ -633,10 +832,11 @@ mod tests {
             speedup_from_key, 
             speedup_to_key, 
             speedup_amount, 
-            timelock_blocks, 
             timelock_from_key, 
             timelock_to_key, 
+            timelock_renew_key,
             locked_amount, 
+            locked_blocks,
             ecdsa_sighash_type,
             taproot_sighash_type,
         )?;
@@ -650,7 +850,7 @@ mod tests {
         let keystore_path = temp_storage_path();
         let keystore_password = b"secret password".to_vec(); 
         let key_derivation_path: &str = "m/101/1/0/0/";
-        let key_derivation_seed = random(); 
+        let key_derivation_seed = random_bytes(); 
         let winternitz_seed = random_bytes();
 
         let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
@@ -672,14 +872,14 @@ mod tests {
             for (input_index, input) in template.get_inputs().iter().enumerate() {
                 match input.get_type() {
                     InputType::Taproot { sighash_type, spending_paths, .. } => {
-                        for spending_info in spending_paths.values() {
-                            let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_info.get_sighash().unwrap()), &public_key)?;
+                        for spending_path in spending_paths.values() {
+                            let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &public_key)?;
                             let taproot_signature = bitcoin::taproot::Signature{ signature, sighash_type: *sighash_type };
     
-                            template.push_taproot_signature(input_index, &spending_info.get_taproot_leaf(), taproot_signature, &public_key)?;
+                            template.push_taproot_signature(input_index, &spending_path.get_taproot_leaf(), taproot_signature, &public_key)?;
                         }
                     },
-                    InputType::Segwit { sighash, sighash_type, .. } => {
+                    InputType::P2WPKH { sighash, sighash_type, .. } => {
                         let signature: secp256k1::ecdsa::Signature = key_manager.sign_ecdsa_message(&Message::from(sighash.unwrap()), public_key)?;
                         let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: *sighash_type };
     
@@ -706,14 +906,14 @@ mod tests {
 
                 match input.get_type() {
                     InputType::Taproot { spending_paths, .. } => {
-                        for spending_info in spending_paths.values() {
-                            let message = &Message::from(spending_info.get_sighash().unwrap());
-                            if !SignatureVerifier::default().verify_schnorr_signature(&spending_info.get_signature().unwrap().signature, message, public_key) {
+                        for spending_path in spending_paths.values() {
+                            let message = &Message::from(spending_path.get_sighash().unwrap());
+                            if !SignatureVerifier::default().verify_schnorr_signature(&spending_path.get_signature().unwrap().signature, message, public_key) {
                                 return Ok(false);
                             }
                         }
                     },
-                    InputType::Segwit { sighash, signature, .. } => {
+                    InputType::P2WPKH { sighash, signature, .. } => {
                         let message = &Message::from(sighash.unwrap());
                         if !SignatureVerifier::default().verify_ecdsa_signature(&signature.unwrap().signature, message, public_key) {
                             return Ok(false);
@@ -758,7 +958,7 @@ mod tests {
         storage_path.to_str().expect("Failed to get path to temp file").to_string()
     }
 
-    fn dummy_spending_scripts(verifying_key: &WinternitzPublicKey) -> Vec<ScriptWithParams> {
+    fn test_spending_scripts(verifying_key: &WinternitzPublicKey) -> Vec<ScriptWithParams> {
         vec![
             scripts::verify_single_value("x", verifying_key),
             scripts::verify_single_value("y", verifying_key),
