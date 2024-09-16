@@ -18,7 +18,9 @@ pub struct TemplateBuilderConfig {
     pub timelock_blocks: u8,
     pub timelock_from_key: String,
     pub timelock_to_key: String,
+    pub timelock_renew_key: String,
     pub locked_amount: u64,
+    pub locked_blocks: u16,
     pub ecdsa_sighash_type: String,
     pub taproot_sighash_type: String,
 }

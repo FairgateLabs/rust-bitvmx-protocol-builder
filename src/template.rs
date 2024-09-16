@@ -38,16 +38,17 @@ impl Output {
     pub fn get_txout(&self) -> &TxOut {
         &self.txout
     }
-} 
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SpendingInfo {
+pub struct SpendingPath {
     sighash: Option<TapSighash>,
     signature: Option<bitcoin::taproot::Signature>,
-    taproot_leaf: ScriptBuf,
+    script: ScriptBuf,
     script_params: Vec<ScriptParam>,
 }
-  
-impl SpendingInfo {
+
+impl SpendingPath {
     pub fn get_signature(&self) -> Option<bitcoin::taproot::Signature> {
         self.signature
     }
@@ -57,7 +58,11 @@ impl SpendingInfo {
     }
 
     pub fn get_taproot_leaf(&self) -> ScriptBuf {
-        self.taproot_leaf.clone()
+        self.script.clone()
+    }
+
+    pub fn get_script_params(&self) -> Vec<ScriptParam> {
+        self.script_params.clone()
     }
 }
 
@@ -68,9 +73,9 @@ pub enum InputType {
         sighash_type: TapSighashType,
         taproot_spend_info: TaprootSpendInfo,
         taproot_internal_key: PublicKey,
-        spending_paths: HashMap<TapLeafHash, SpendingInfo>,
+        spending_paths: HashMap<TapLeafHash, SpendingPath>,
     },
-    Segwit {
+    P2WPKH {
         sighash_type: EcdsaSighashType,
         script_pubkey: ScriptBuf,
         sighash: Option<SegwitV0Sighash>,
@@ -310,15 +315,15 @@ impl Input {
     }
 }
 
-pub struct SpendingParams {
+pub struct ScriptArgs {
     input_index: usize,
     spending_leaf: ScriptBuf,
     values: Vec<Vec<u8>>,
 }
 
-impl SpendingParams {
+impl ScriptArgs {
     pub fn new(input_index: usize, spending_leaf: ScriptBuf, values: Vec<Vec<u8>>) -> Self {
-        SpendingParams {
+        ScriptArgs {
             input_index,
             spending_leaf,
             values,
@@ -350,7 +355,7 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new(name: &str, speedup_script: &ScriptBuf, speedup_amount: u64, timelock_script: &ScriptBuf, locked_amount: u64) -> Self {
+    pub fn new(name: &str, speedup_script: &ScriptBuf, speedup_amount: u64) -> Self {
         let mut template = Template {
             name: name.to_string(),
             txid: Hash::all_zeros(),
@@ -361,7 +366,6 @@ impl Template {
         };
 
         template.push_output_with_script(speedup_amount, speedup_script);
-        template.push_output_with_script(locked_amount, timelock_script);
         template
     }
 
@@ -402,7 +406,7 @@ impl Template {
                 InputType::Taproot { sighash_type, spending_paths, .. } => {
                     let tx_outs  = self.previous_outputs.iter().map(|po| po.txout.clone()).collect::<Vec<TxOut>>();
 
-                    for (leaf_hash, spending_info) in spending_paths {
+                    for (leaf_hash, spending_path) in spending_paths {
                         let sighash = sighasher.taproot_script_spend_signature_hash(
                             input.index,
                             &sighash::Prevouts::All(&tx_outs),
@@ -410,11 +414,11 @@ impl Template {
                             *sighash_type,
                         )?;
     
-                        spending_info.sighash = Some(sighash);
+                        spending_path.sighash = Some(sighash);
                     }
                 },
     
-                InputType::Segwit { sighash_type, script_pubkey, amount, signature, .. } => {
+                InputType::P2WPKH { sighash_type, script_pubkey, amount, signature, .. } => {
                     let sighash = sighasher.p2wpkh_signature_hash(
                         input.index,
                         script_pubkey,
@@ -422,7 +426,7 @@ impl Template {
                         *sighash_type,
                     )?;
     
-                    input.input_type = InputType::Segwit { 
+                    input.input_type = InputType::P2WPKH { 
                         sighash_type: *sighash_type, 
                         script_pubkey: script_pubkey.clone(), 
                         amount: *amount, 
@@ -454,10 +458,10 @@ impl Template {
             vout,
         };
 
-        let txin = Self::build_input(previous_outpoint);
+        let txin = Self::build_input(previous_outpoint, Sequence::ENABLE_RBF_NO_LOCKTIME);
         self.transaction.input.push(txin);
 
-        let input_type = InputType::Segwit {
+        let input_type = InputType::P2WPKH {
             sighash_type,
             script_pubkey: script_pubkey.clone(),
             amount: Amount::from_sat(amount),
@@ -469,9 +473,9 @@ impl Template {
         self.inputs.push(input.clone());
     }
 
-    pub fn push_taproot_input(&mut self, sighash_type: TapSighashType, previous_output: Output, taproot_spend_info: TaprootSpendInfo, taproot_spending_scripts: &[ScriptWithParams]) -> Input {
+    pub fn push_taproot_input(&mut self, sighash_type: TapSighashType, previous_output: Output, locked_blocks: u16, taproot_spend_info: TaprootSpendInfo, taproot_spending_scripts: &[ScriptWithParams]) -> Input {
         let pevious_outpoint = OutPoint { txid: Hash::all_zeros(), vout: previous_output.index as u32 };
-        let txin = Self::build_input(pevious_outpoint);
+        let txin = Self::build_input(pevious_outpoint, Sequence::from_height(locked_blocks));
 
         self.transaction.input.push(txin);
         self.previous_outputs.push(previous_output);
@@ -485,10 +489,10 @@ impl Template {
             },
             spending_paths: taproot_spending_scripts.iter().map(|s| {
                 let leaf_hash = TapLeafHash::from_script(s.get_script(), LeafVersion::TapScript);
-                let path = SpendingInfo {
+                let path = SpendingPath {
                     sighash: None,
                     signature: None,
-                    taproot_leaf: s.get_script().clone(),
+                    script: s.get_script().clone(),
                     script_params: s.get_params(),
                 };
             
@@ -505,12 +509,12 @@ impl Template {
 
     pub fn push_segwit_input(&mut self, sighash_type: EcdsaSighashType, previous_output: Output, script_pubkey: ScriptBuf, amount: u64) -> Input {
         let outpoint = OutPoint { txid: Hash::all_zeros(), vout: previous_output.index as u32 };
-        let txin = Self::build_input(outpoint);
+        let txin = Self::build_input(outpoint, Sequence::ENABLE_RBF_NO_LOCKTIME);
 
         self.transaction.input.push(txin);
         self.previous_outputs.push(previous_output);
 
-        let input_type = InputType::Segwit {
+        let input_type = InputType::P2WPKH {
             sighash_type,
             script_pubkey: script_pubkey.clone(),
             amount: Amount::from_sat(amount),
@@ -567,8 +571,8 @@ impl Template {
         self.inputs[index].signature_verifying_key = Some(*public_key);
 
         match &mut self.inputs[index].input_type {
-            InputType::Segwit { sighash_type, script_pubkey, amount, sighash, .. }  => {
-                self.inputs[index].input_type = InputType::Segwit { 
+            InputType::P2WPKH { sighash_type, script_pubkey, amount, sighash, .. }  => {
+                self.inputs[index].input_type = InputType::P2WPKH { 
                     sighash_type: *sighash_type, 
                     script_pubkey: script_pubkey.clone(), 
                     amount: *amount, 
@@ -582,24 +586,7 @@ impl Template {
         }
     }
 
-    pub fn get_params_for_spending_path(&self, input_index: usize, spending_leaf: &ScriptBuf) -> Result<Vec<ScriptParam>, TemplateError> {
-        let input = &self.inputs[input_index];
-
-        match &input.input_type {
-            InputType::Taproot { spending_paths, .. } => {
-                let leaf_hash = TapLeafHash::from_script(spending_leaf, LeafVersion::TapScript);
-                let path = match spending_paths.get(&leaf_hash) {
-                    Some(sp) => sp,
-                    None => return Err(TemplateError::MissingSpendingPath(input_index)),
-                };
-
-                Ok(path.script_params.clone())
-            },
-            _ => Err(TemplateError::InvalidInputType(input_index)),
-        }
-    }
-
-    pub fn get_transaction_for_spending_paths(&mut self, params: Vec<SpendingParams>) -> Result<Transaction, TemplateError> {
+    pub fn get_transaction_for_inputs(&mut self, params: Vec<ScriptArgs>) -> Result<Transaction, TemplateError> {
         for param in params {
             let input_index = param.input_index;
 
@@ -610,7 +597,7 @@ impl Template {
         Ok(self.transaction.clone())
     }
 
-    pub fn get_transaction_for_spending_path(&mut self, params: SpendingParams) -> Result<Transaction, TemplateError> {
+    pub fn get_transaction_for_input(&mut self, params: ScriptArgs) -> Result<Transaction, TemplateError> {
         let input_index = params.input_index;
 
         let witness = self.get_witness_for_spending_path(params)?;
@@ -618,7 +605,7 @@ impl Template {
         Ok(self.transaction.clone())
     }
 
-    fn get_witness_for_spending_path(&self, params: SpendingParams) -> Result<Witness, TemplateError> {
+    fn get_witness_for_spending_path(&self, params: ScriptArgs) -> Result<Witness, TemplateError> {
         let input = &self.inputs[params.input_index];
 
         match &input.input_type {
@@ -634,8 +621,6 @@ impl Template {
                     None => return Err(TemplateError::MissingSpendingPath(params.input_index)),
                 };
 
-                let script_params = &path.script_params;
-
                 let control_block = match taproot_spend_info.control_block(&(params.spending_leaf.clone(), LeafVersion::TapScript)) {
                     Some(cb) => cb,
                     None => return Err(TemplateError::InvalidSpendingPath(params.input_index)),
@@ -649,15 +634,17 @@ impl Template {
                 witness.push(signature.serialize());
                 witness.push(params.spending_leaf.to_bytes());
                 witness.push(control_block.serialize());
-        
-                for (param, value) in script_params.iter().zip(params.values.iter()) {
-                    witness.push(param.get_verifying_key().to_bytes());
+
+                // TODO fix the relationship between values and OT Signatures
+                for value in params.values.iter() {
+                    // We only need to push the winternitz signed values
+                    // witness.push(param.get_verifying_key().to_bytes());
                     witness.push(value.clone());
                 }
         
                 Ok(witness)
             },
-            InputType::Segwit { signature, .. } => {
+            InputType::P2WPKH { signature, .. } => {
 
                 let signature = match signature {
                     Some(sig) => sig,
@@ -675,7 +662,7 @@ impl Template {
                 );
 
                 Ok(witness)
-            }
+            },
         }
     }
 
@@ -690,7 +677,10 @@ impl Template {
         let secp = secp256k1::Secp256k1::new();
         let scripts_count = taproot_spending_scripts.len();
         
-        let depth = max((scripts_count as f32).log2().ceil() as u8,1);
+        // To build a taproot tree, we need to calculate the depth of the tree.
+        // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth 
+        // as the log2 of the number of scripts rounded up to the nearest integer.
+        let depth = max(1, (scripts_count as f32).log2().ceil() as u8);
 
         let mut tr_builder = TaprootBuilder::new();
         for script in taproot_spending_scripts.iter() {
@@ -714,7 +704,7 @@ impl Template {
     }
 
     fn build_transaction() -> Transaction {
-        Transaction{
+        Transaction {
             version: transaction::Version::TWO, // Post BIP-68.
             lock_time: locktime::absolute::LockTime::ZERO, // Ignore the locktime.
             input: vec![],
@@ -722,11 +712,11 @@ impl Template {
         }
     }
 
-    fn build_input(outpoint: OutPoint) -> TxIn {
+    fn build_input(outpoint: OutPoint, sequence: Sequence) -> TxIn {
         TxIn {
             previous_output: outpoint,
             script_sig: ScriptBuf::default(), // For p2wpkh script_sig is empty.
-            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            sequence,
             witness: Witness::default(),
         }
     }

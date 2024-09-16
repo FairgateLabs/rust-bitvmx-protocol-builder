@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use bitcoin::{EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 
-use crate::{errors::ConfigError, scripts::{self, ScriptWithParams}};
+use crate::{config::Config, errors::ConfigError, scripts::{self, ScriptWithParams}};
 
 #[derive(Clone, Debug)]
 /// DefaultParams is a struct that holds the default parameters for the templates.
@@ -10,10 +12,11 @@ pub struct DefaultParams {
     speedup_from_key: PublicKey,
     speedup_to_key: PublicKey,
     speedup_amount: u64,
-    timelock_blocks: u8,
     timelock_from_key: PublicKey,
     timelock_to_key: PublicKey,
+    timelock_renew_key: PublicKey,
     locked_amount: u64,
+    locked_blocks: u16,
     ecdsa_sighash_type: EcdsaSighashType,
     taproot_sighash_type: TapSighashType,
     graph_path: String,
@@ -21,17 +24,18 @@ pub struct DefaultParams {
 
 
 impl DefaultParams {
-    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, ecdsa_sighash_type: EcdsaSighashType, taproot_sighash_type: TapSighashType, graph_path: String) -> Result<Self, ConfigError> {
+    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, locked_blocks: u16, ecdsa_sighash_type: EcdsaSighashType, taproot_sighash_type: TapSighashType, graph_path: String) -> Result<Self, ConfigError> {
         let defaults = DefaultParams {
             protocol_amount,
             speedup_from_key: *speedup_from_key,
             speedup_to_key: *speedup_to_key,
             speedup_amount,
-            timelock_blocks,
             timelock_from_key: *timelock_from_key,
             timelock_to_key: *timelock_to_key,
+            timelock_renew_key: *timelock_renew_key,
             locked_amount,
             graph_path,
+            locked_blocks,
             ecdsa_sighash_type,
             taproot_sighash_type,
         };
@@ -61,17 +65,22 @@ impl DefaultParams {
         Ok(speedup)
     }
 
-    pub fn timelock_from_script(&self) -> Result<ScriptBuf, ConfigError> {
+    pub fn timelock_from_script(&self) -> Result<ScriptWithParams, ConfigError> {
         // Using the timelock_to_key here since in a given template send by the "from" participant, 
         // the timelock can be spent by the "to" participant.
-        let timelock = scripts::timelock(&self.timelock_to_key, self.timelock_blocks);
+        let timelock = scripts::timelock(self.locked_blocks, &self.timelock_to_key);
         Ok(timelock)
     }
 
-    pub fn timelock_to_script(&self) -> Result<ScriptBuf, ConfigError>  {
+    pub fn timelock_to_script(&self) -> Result<ScriptWithParams, ConfigError>  {
         // Using the timelock_from_key here since in a given template send by the "to" participant, 
         // the timelock can be spent by the "from" participant.
-        let timelock = scripts::timelock(&self.timelock_from_key, self.timelock_blocks);
+        let timelock = scripts::timelock(self.locked_blocks, &self.timelock_from_key);
+        Ok(timelock)
+    }
+
+    pub fn timelock_renew_script(&self) -> Result<ScriptWithParams, ConfigError>  {
+        let timelock = scripts::collaborative_spend(&self.timelock_renew_key);
         Ok(timelock)
     }
 
@@ -79,8 +88,6 @@ impl DefaultParams {
         Ok(TemplateParams::new(
             self.speedup_from_script()?,
             self.speedup_amount,
-            self.timelock_from_script()?,
-            self.locked_amount,
         ))
     }
 
@@ -88,29 +95,43 @@ impl DefaultParams {
         Ok(TemplateParams::new(
             self.speedup_to_script()?,
             self.speedup_amount,
-            self.timelock_to_script()?,
-            self.locked_amount,
         ))
     }
 
     pub fn connection_params(&self, spending_scripts: &[ScriptWithParams]) -> Result<ConnectionParams, ConfigError> {
         let template_from = self.template_from_params()?;
         let template_to = self.template_to_params()?;   
+        let timelock_from = self.timelock_from_script()?;
+        let timelock_renew = self.timelock_renew_script()?;
+        let locked_amount = self.locked_amount;
+        let locked_blocks = self.locked_blocks;
 
         Ok(ConnectionParams::new(
             template_from,
             template_to, 
+            timelock_from,
+            timelock_renew,
+            locked_amount,
+            locked_blocks,
             spending_scripts,
         ))
     }
 
     pub fn reverse_connection_params(&self, spending_scripts: &[ScriptWithParams]) -> Result<ConnectionParams, ConfigError> {
         let template_from = self.template_from_params()?;
-        let template_to = self.template_to_params()?;   
+        let template_to = self.template_to_params()?;  
+        let timelock_to = self.timelock_from_script()?;
+        let timelock_renew = self.timelock_renew_script()?;
+        let locked_amount = self.locked_amount;
+        let locked_blocks = self.locked_blocks;
 
         Ok(ConnectionParams::new(
             template_to,
             template_from, 
+            timelock_to,
+            timelock_renew,
+            locked_amount,
+            locked_blocks,
             spending_scripts,   
         ))
     }
@@ -120,22 +141,52 @@ impl DefaultParams {
     }
 }
 
+impl TryFrom<&Config> for DefaultParams {
+    fn try_from(config: &Config) -> Result<Self, ConfigError> {
+        let protocol_amount = config.template_builder.protocol_amount;
+        let speedup_from_key = PublicKey::from_str(config.template_builder.speedup_from_key.as_str())?;
+        let speedup_to_key = PublicKey::from_str(config.template_builder.speedup_to_key.as_str())?;
+        let speedup_amount = config.template_builder.speedup_amount;
+        let timelock_from_key = PublicKey::from_str(config.template_builder.timelock_from_key.as_str())?;
+        let timelock_to_key = PublicKey::from_str(config.template_builder.timelock_to_key.as_str())?;
+        let timelock_renew_key = PublicKey::from_str(config.template_builder.timelock_renew_key.as_str())?;
+        let locked_amount = config.template_builder.locked_amount;
+        let locked_blocks = config.template_builder.locked_blocks;
+        let ecdsa_sighash_type = EcdsaSighashType::from_str(config.template_builder.ecdsa_sighash_type.as_str())?;
+        let taproot_sighash_type = TapSighashType::from_str(config.template_builder.taproot_sighash_type.as_str())?;
+       
+        let defaults = DefaultParams::new(
+            protocol_amount, 
+            &speedup_from_key, 
+            &speedup_to_key, 
+            speedup_amount,
+            &timelock_from_key, 
+            &timelock_to_key, 
+            &timelock_renew_key,
+            locked_amount, 
+            locked_blocks,
+            ecdsa_sighash_type,
+            taproot_sighash_type,
+        )?;
+
+        Ok(defaults)
+    }
+    
+    type Error = ConfigError;
+}
+
 #[derive(Clone, Debug)]
 /// TemplateParams is a struct that holds the parameters to create templates.
 pub struct TemplateParams {
     speedup_script: ScriptBuf,
     speedup_amount: u64,
-    timelock_script: ScriptBuf,
-    locked_amount: u64,
 }
 
 impl TemplateParams {
-    pub fn new(speedup_script: ScriptBuf, speedup_amount: u64, timelock_script: ScriptBuf, locked_amount: u64) -> Self {
+    pub fn new(speedup_script: ScriptBuf, speedup_amount: u64) -> Self {
         TemplateParams {
             speedup_script,
             speedup_amount,
-            timelock_script,
-            locked_amount,
         }
     }
 
@@ -146,14 +197,6 @@ impl TemplateParams {
     pub fn get_speedup_amount(&self) -> u64 {
         self.speedup_amount
     }
-
-    pub fn get_timelock_script(&self) -> ScriptBuf {
-        self.timelock_script.clone()
-    }
-
-    pub fn get_locked_amount(&self) -> u64 {
-        self.locked_amount
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -162,18 +205,24 @@ impl TemplateParams {
 pub struct ConnectionParams {
     template_from: TemplateParams,
     template_to: TemplateParams,
+    timelock_script: ScriptWithParams, 
+    timelock_renew: ScriptWithParams,
+    locked_amount: u64,
+    locked_blocks: u16,
     spending_scripts: Vec<ScriptWithParams>,
 }
 
 impl ConnectionParams {
-    pub fn new(template_from: TemplateParams, template_to: TemplateParams, spending_scripts: &[ScriptWithParams]) -> Self {
+    pub fn new(template_from: TemplateParams, template_to: TemplateParams, timelock_script: ScriptWithParams, timelock_renew: ScriptWithParams, locked_amount: u64, locked_blocks: u16, spending_scripts: &[ScriptWithParams]) -> Self {
         ConnectionParams {
             template_from,
             template_to,
+            timelock_script, 
+            timelock_renew,
+            locked_amount,
+            locked_blocks,
             spending_scripts: spending_scripts.to_vec(),
-        }
-
-        
+        } 
     }
 
     pub fn template_from(&self) -> TemplateParams {
@@ -184,8 +233,28 @@ impl ConnectionParams {
         self.template_to.clone()
     }
 
+    pub fn get_timelock_script(&self) -> ScriptWithParams {
+        self.timelock_script.clone()
+    }
+
+    pub fn get_timelock_renew_script(&self) -> ScriptWithParams {
+        self.timelock_renew.clone()
+    }
+
+    pub fn get_locked_amount(&self) -> u64 {
+        self.locked_amount
+    }
+
+    pub fn get_lock_blocks(&self) -> u16 {
+        self.locked_blocks
+    }
+
     pub fn spending_scripts(&self) -> Vec<ScriptBuf> {
         self.spending_scripts.iter().map(|script| script.get_script().clone()).collect()
+    }
+
+    pub fn timelock_scripts(&self) -> Vec<ScriptWithParams> {
+        vec![self.timelock_script.clone(), self.timelock_renew.clone()]
     }
 
     pub fn spending_scripts_with_params(&self) -> Vec<ScriptWithParams> {

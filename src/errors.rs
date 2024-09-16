@@ -1,4 +1,4 @@
-use bitcoin::{key::UncompressedPublicKeyError, sighash::{P2wpkhError, TaprootError}, taproot::TaprootBuilderError};
+use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
 use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
@@ -33,11 +33,14 @@ pub enum TemplateBuilderError {
     #[error("Invalid configuration")]
     ConfigurationError(#[from] ConfigError),
 
-    #[error("Invalid test configuration")]
-    TestConfigurationError(#[from] TestClientError),
+    // #[error("Invalid test configuration")]
+    // TestConfigurationError(#[from] TestClientError),
     
     #[error("Call `finalize` before building templates")]
     NotFinalized,
+
+    #[error("Failed to compute sighash in TemplateBuilder")]
+    KeyManagerError(#[from] P2wpkhError),
 }
 
 #[derive(Error, Debug)]
@@ -55,7 +58,10 @@ pub enum TemplateError {
     TaprootSighashError(#[from] TaprootError),
 
     #[error("Failed to hash template")]
-    SegwitSighashError(#[from] P2wpkhError),
+    P2WPKHSighashError(#[from] P2wpkhError),
+
+    #[error("Failed to hash template")]
+    P2WSHSighashError(#[from] transaction::InputsIndexError),
 
     #[error("Input {0} is missing")]
     MissingInput(usize),
@@ -80,6 +86,9 @@ pub enum TemplateError {
   
     #[error("Invalid input type for input {0}")]
     InvalidInputType(usize),
+
+    #[error("Invalid script params for input {0}")]
+    InvalidScriptParams(usize),
 }
 
 #[derive(Error, Debug)]
@@ -119,40 +128,10 @@ pub enum ConfigError {
 
     #[error("Speedup public key is invalid")]
     InvalidKeyForSpeedupScript(#[from] ScriptError),
-}
 
-#[derive(Error, Debug)]
-pub enum TestClientError {
-    #[error("Failed to fund address")]
-    FailedToFundAddress{
-        error: String
-    },
+    #[error("Public key in config is invalid")]
+    InvalidPublicKey(#[from] ParsePublicKeyError),
 
-    #[error("Failed to send transaction")]
-    FailedToSendTransaction{
-        error: String
-    },
-
-    #[error("Failed to create new wallet")]
-    FailedToCreateWallet{
-        error: String
-    },
-
-    #[error("Failed to get new address")]
-    FailedToGetNewAddress{
-        error: String
-    },
-
-    #[error("Failed to mine blocks")]
-    FailedToMineBlocks{
-        error: String
-    },
-
-    #[error("Failed to get transaction details")]
-    FailedToGetTransactionDetails{
-        error: String
-    },
-
-    #[error("Failed to create client")]
-    FailedToCreateClient { error: String },
+    #[error("SighashType in config is invalid")]
+    InvalidSighashType(#[from] SighashTypeParseError),
 }
