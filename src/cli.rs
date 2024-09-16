@@ -48,7 +48,7 @@ impl Cli {
     // Commands
     //
     fn add_start_template(&self) -> Result<()>{
-        let defaults = DefaultParams::try_from(Config::new()?)?;
+        let defaults = DefaultParams::try_from(&self.config)?;
         let mut builder = TemplateBuilder::new(defaults)?;
         let mut key_manager = self.key_manager()?;
         

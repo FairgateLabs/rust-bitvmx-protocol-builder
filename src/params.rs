@@ -134,8 +134,8 @@ impl DefaultParams {
     }
 }
 
-impl TryFrom<Config> for DefaultParams {
-    fn try_from(config: Config) -> Result<Self, ConfigError> {
+impl TryFrom<&Config> for DefaultParams {
+    fn try_from(config: &Config) -> Result<Self, ConfigError> {
         let protocol_amount = config.template_builder.protocol_amount;
         let speedup_from_key = PublicKey::from_str(config.template_builder.speedup_from_key.as_str())?;
         let speedup_to_key = PublicKey::from_str(config.template_builder.speedup_to_key.as_str())?;
