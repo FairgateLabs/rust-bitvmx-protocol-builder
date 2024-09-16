@@ -1,6 +1,8 @@
+use std::str::FromStr;
+
 use bitcoin::{EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 
-use crate::{errors::ConfigError, scripts::{self, ScriptWithParams}};
+use crate::{config::Config, errors::ConfigError, scripts::{self, ScriptWithParams}};
 
 #[derive(Clone, Debug)]
 /// DefaultParams is a struct that holds the default parameters for the templates.
@@ -130,6 +132,40 @@ impl DefaultParams {
             spending_scripts,   
         ))
     }
+}
+
+impl TryFrom<Config> for DefaultParams {
+    fn try_from(config: Config) -> Result<Self, ConfigError> {
+        let protocol_amount = config.template_builder.protocol_amount;
+        let speedup_from_key = PublicKey::from_str(config.template_builder.speedup_from_key.as_str())?;
+        let speedup_to_key = PublicKey::from_str(config.template_builder.speedup_to_key.as_str())?;
+        let speedup_amount = config.template_builder.speedup_amount;
+        let timelock_from_key = PublicKey::from_str(config.template_builder.timelock_from_key.as_str())?;
+        let timelock_to_key = PublicKey::from_str(config.template_builder.timelock_to_key.as_str())?;
+        let timelock_renew_key = PublicKey::from_str(config.template_builder.timelock_renew_key.as_str())?;
+        let locked_amount = config.template_builder.locked_amount;
+        let locked_blocks = config.template_builder.locked_blocks;
+        let ecdsa_sighash_type = EcdsaSighashType::from_str(config.template_builder.ecdsa_sighash_type.as_str())?;
+        let taproot_sighash_type = TapSighashType::from_str(config.template_builder.taproot_sighash_type.as_str())?;
+       
+        let defaults = DefaultParams::new(
+            protocol_amount, 
+            &speedup_from_key, 
+            &speedup_to_key, 
+            speedup_amount,
+            &timelock_from_key, 
+            &timelock_to_key, 
+            &timelock_renew_key,
+            locked_amount, 
+            locked_blocks,
+            ecdsa_sighash_type,
+            taproot_sighash_type,
+        )?;
+
+        Ok(defaults)
+    }
+    
+    type Error = ConfigError;
 }
 
 #[derive(Clone, Debug)]

@@ -70,6 +70,17 @@ impl TemplateBuilder {
             return Err(TemplateBuilderError::TemplateEnded(to.to_string()));
         }
 
+        // Add timelock connection
+        self.connect_protocol(
+            from, to, 
+            connection_params.get_locked_amount(), 
+            connection_params.get_lock_blocks(),
+            sighash_type, 
+            connection_params.template_from(), 
+            connection_params.template_to(), 
+            &connection_params.timelock_scripts()
+        )?;
+
         // Add protocol connection
         self.connect_protocol(
             from, to, 
@@ -81,27 +92,16 @@ impl TemplateBuilder {
             &connection_params.spending_scripts_with_params()
         )?;
 
-        // Add timelock connection
-        self.connect_protocol(
-            from, to, 
-            protocol_amount, 
-            connection_params.get_lock_blocks(),
-            sighash_type, 
-            connection_params.template_from(), 
-            connection_params.template_to(), 
-            &connection_params.timelock_scripts()
-        )?;
-
         // Connect the templates in the graph
         self.graph.connect(from, to);
 
         Ok(())
     }
 
-    fn connect_protocol(&mut self, from: &str, to: &str, protocol_amount: u64, locked_blocks: u16, sighash_type: TapSighashType, from_params: TemplateParams, to_params: TemplateParams, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
+    fn connect_protocol(&mut self, from: &str, to: &str, connection_amount: u64, locked_blocks: u16, sighash_type: TapSighashType, from_params: TemplateParams, to_params: TemplateParams, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
         // Create the from template if it doesn't exist and push the output that will be spent
         let from_template = self.add_or_create_template(from, from_params)?;
-        let (output, taproot_spend_info) = from_template.push_output(protocol_amount, spending_scripts)?;
+        let (output, taproot_spend_info) = from_template.push_output(connection_amount, spending_scripts)?;
 
         // Create the to template if it doesn't exist and push the input that will spend the previously created output
         let to_template = self.add_or_create_template(to, to_params)?;
@@ -149,6 +149,7 @@ impl TemplateBuilder {
     }
 
     /// Marks an existing template as one end of the DAG. It will create an output that later could be spent by any transaction outside the DAG.
+    /// The end output should use the total funds from the transaction, not just the protocol amount
     pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
         self.finalized = false;
         
@@ -165,9 +166,9 @@ impl TemplateBuilder {
         let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
 
-        let (output, _) = template.push_output(protocol_amount, spending_conditions)?;
+        let (end_output, _) = template.push_output(protocol_amount, spending_conditions)?;
 
-        Ok(output)
+        Ok(end_output)
     }
     
     /// It marks the DAG as finalized, and triggers an ordered update of the txids of each template in the DAG.
@@ -256,113 +257,16 @@ impl TemplateBuilder {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use bitcoin::{absolute, bip32::Xpub, consensus, key::rand::RngCore, locktime, secp256k1::{self, Message}, sighash::SighashCache, taproot::{TaprootBuilder, TaprootSpendInfo}, transaction, Address, Amount, CompressedPublicKey, EcdsaSighashType, Network, PublicKey, ScriptBuf, Sequence, TapSighashType, Transaction, TxOut, Txid, Witness};
-    use bitcoincore_rpc::{Auth, Client, RpcApi};
+    use bitcoin::{absolute, bip32::Xpub, key::rand::RngCore, secp256k1::{self, Message}, transaction, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid};
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
-    use crate::{errors::{TemplateBuilderError, TemplateError, TestClientError}, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, ScriptArgs, Template}};
+    use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, Template}};
     use super::TemplateBuilder;
-
-    const ONE_BTC: Amount = Amount::from_sat(100_000_000); // 1 BTC
-
-    struct TestClient {
-        network: Network,
-        client: Client,
-        wallet_address: Address,
-    }
-    
-    impl TestClient {
-        fn new(network: Network, url: &str, user: &str, pass: &str, wallet_name: &str) -> Result<Self, TestClientError> {
-            let client = Client::new(
-                url,
-                Auth::UserPass(
-                    user.to_string(),
-                    pass.to_string(),
-                ),
-            ).map_err(|e| TestClientError::FailedToCreateClient{ error: e.to_string() })?;
-    
-            let wallet_address = Self::init_wallet(network, wallet_name, &client)?;
-    
-            Ok(Self {
-                network,
-                client,
-                wallet_address,
-            })
-        }   
-    
-        pub fn fund_address(&self, address: &Address, amount: Amount) -> Result<(Txid, u32), TestClientError> {
-            // send BTC to address
-            let txid = self.client.send_to_address(
-                address,
-                amount,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ).map_err(|e| TestClientError::FailedToFundAddress{ error: e.to_string() })?;
-        
-            // mine a block to confirm transaction
-            self.client.generate_to_address(1, &self.wallet_address)
-                .map_err(|e| TestClientError::FailedToMineBlocks{ error: e.to_string() })?;
-        
-            // get transaction details
-            let tx_info = self.client.get_transaction(&txid, Some(true))
-                .map_err(|e| TestClientError::FailedToGetTransactionDetails{ error: e.to_string() })?;
-    
-            let vout = tx_info
-            .details
-            .first()
-            .expect("No details found for transaction")
-            .vout;
-
-            let txid = tx_info.info.txid;
-
-            Ok((txid, vout))
-        }
-    
-        pub fn send_transaction(&self, tx: Transaction) -> Result<Txid, TestClientError> {
-            let serialized_tx = consensus::encode::serialize_hex(&tx);
-            let txid = self.client.send_raw_transaction(serialized_tx)
-                .map_err(|e| TestClientError::FailedToSendTransaction { error: e.to_string() })?;
-    
-            // mine a block to confirm transaction
-            self.client.generate_to_address(1, &self.wallet_address)
-                .map_err(|e| TestClientError::FailedToMineBlocks{ error: e.to_string() })?;
-
-            Ok(txid)
-        }
-
-        pub fn get_new_address(&self, pk: PublicKey) -> Address {
-            let compressed = CompressedPublicKey::try_from(pk).unwrap();
-            let address = Address::p2wpkh(&compressed, self.network).as_unchecked().clone();
-            address.clone().require_network(self.network).unwrap()
-        }
-    
-        fn init_wallet(network: Network, wallet_name: &str, rpc: &Client) -> Result<Address, TestClientError> {
-            let _ = match rpc.create_wallet(wallet_name, None, None, None, None) {
-                Ok(r) => r,
-                Err(e) => return Err(TestClientError::FailedToCreateWallet{ error: e.to_string() }),
-            };
-        
-            let wallet = rpc
-                .get_new_address(None, None)
-                .map_err(|e| TestClientError::FailedToGetNewAddress{ error: e.to_string() })?
-                .require_network(network)
-                .map_err(|e| TestClientError::FailedToGetNewAddress{ error: e.to_string() })?;
-        
-            rpc.generate_to_address(105, &wallet)
-                .map_err(|e| TestClientError::FailedToMineBlocks{ error: e.to_string() })?;
-        
-            Ok(wallet)
-        }
-    }
 
     #[test]
     fn test_single_connection() -> Result<(), TemplateBuilderError> {
-        let protocol_amount = 200;
-        let speedup_amount = 9_999_859;
-        let locked_amount = 5_000_000_000;
+        let protocol_amount = 2400000;
+        let speedup_amount = 2400000;
+        let locked_amount = 95000000;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -387,9 +291,11 @@ mod tests {
 
         let template_a = signed_templates.iter().find(|template| template.get_name() == "A").unwrap();
         let next_inputs = template_a.get_next_inputs();
-        assert_eq!(next_inputs.len(), 1);
+        assert_eq!(next_inputs.len(), 2);
         assert_eq!(next_inputs[0].get_to(), "B");
         assert_eq!(next_inputs[0].get_index(), 0);
+        assert_eq!(next_inputs[1].get_to(), "B");
+        assert_eq!(next_inputs[1].get_index(), 1);
 
         // We should have 3 outputs in the transaction, the speedup output, the timelocked output and the protocol output.
         let transaction_a = template_a.get_transaction();
@@ -409,13 +315,15 @@ mod tests {
 
         let template_b = signed_templates.iter().find(|template| template.get_name() == "B").unwrap();
 
-        assert_eq!(template_b.get_inputs().len(), 1);
+        assert_eq!(template_b.get_inputs().len(), 2);
 
         // The third output from A is the protocol output we will be consuming in B
         let previous_outputs = template_b.get_previous_outputs();        
-        assert_eq!(previous_outputs.len(), 1);
+        assert_eq!(previous_outputs.len(), 2);
         assert_eq!(previous_outputs[0].get_from(), "A");
-        assert_eq!(previous_outputs[0].get_index(), 2);
+        assert_eq!(previous_outputs[0].get_index(), 1);
+        assert_eq!(previous_outputs[1].get_from(), "A");
+        assert_eq!(previous_outputs[1].get_index(), 2);
 
         for input in template_b.get_inputs() {
             let verifying_key = input.get_verifying_key().unwrap();
@@ -446,24 +354,20 @@ mod tests {
         }
 
         let transaction_b = template_b.get_transaction();
-        assert_eq!(transaction_b.input.len(), 1);
+        assert_eq!(transaction_b.input.len(), 2);
         
         let protocol_input = transaction_b.input.first().unwrap();
         assert_eq!(protocol_input.previous_output.txid, template_a.get_transaction().compute_txid());
 
         // We should have 3 outputs in the transaction, the speedup output, the timelocked output and the protocol output.
-        assert_eq!(transaction_b.output.len(), 3);
+        assert_eq!(transaction_b.output.len(), 2);
 
         // The first output has the speedup amount
         let speedup_output = transaction_b.output.first().unwrap();
         assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
-
-        // The second output has the locked amount
-        let locked_output = transaction_b.output.get(1).unwrap();
-        assert_eq!(locked_output.value, Amount::from_sat(locked_amount));
         
-        // The third output has the protocol amount
-        let protocol_output = transaction_b.output.get(2).unwrap();
+        // The second output has the end protocol amount
+        let protocol_output = transaction_b.output.get(1).unwrap();
         assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
 
         Ok(())
@@ -594,220 +498,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_send_template_transactions() -> Result<(), TemplateBuilderError>{
-        let network = Network::Regtest;
-
-        let mut key_manager = test_key_manager()?;
-        let mut builder = test_template_builder()?;
-
-        //let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        //let spending_scripts = test_spending_scripts(&verifying_key);
-        
-        let pk = key_manager.derive_keypair(0)?;
-        let wpkh = pk.wpubkey_hash().expect("key is compressed");
-        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
-
-        let script_with_params = ScriptWithParams::new(script_pubkey.clone());
-        let spending_scripts = vec![script_with_params.clone(), script_with_params.clone()];
-
-        let client = test_client(network)?;
-        let user_address = client.get_new_address(pk);
-        let (previous_tx, vout) = client.fund_address(&user_address, ONE_BTC).unwrap();
-
-        builder.add_start("start", previous_tx, vout, ONE_BTC.to_sat(), script_pubkey)?;
-        builder.add_connection("start", "end", &spending_scripts)?;
-        builder.end("end", &spending_scripts)?;
-
-        let templates = builder.finalize_and_build()?;
-        //let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
-
-        let args = ScriptArgs::new(0,  ScriptBuf::from_bytes(vec![1, 2, 3]), vec![vec![32, 33, 34, 35]]);
-        let mut start = templates.iter().find(|template| template.get_name() == "start").unwrap().clone();
-
-
-        match start.get_input(0).get_type() {
-            InputType::P2WPKH { sighash, sighash_type, .. } => {
-                let signature: secp256k1::ecdsa::Signature = key_manager.sign_ecdsa_message(&Message::from(sighash.unwrap()), pk)?;
-                let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: *sighash_type };
-
-                assert!(SignatureVerifier::default().verify_ecdsa_signature(&segwit_signature.signature, &Message::from(sighash.unwrap()), pk));
-    
-                start.push_ecdsa_signature(0, segwit_signature, &pk)?;
-            }, 
-
-            InputType::Taproot { sighash_type, spending_paths, .. } => {
-                for spending_path in spending_paths.values() {
-                    let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &pk)?;
-                    let taproot_signature = bitcoin::taproot::Signature{ signature, sighash_type: *sighash_type };
-    
-                    start.push_taproot_signature(0, &spending_path.get_taproot_leaf(), taproot_signature, &pk)?;
-                }
-            }
-        } 
-
-        let start_tx = start.get_transaction_for_input(args)?;
-
-        println!("Transaction is: {:#?}", start_tx);
-
-        let txid = client.send_transaction(start_tx)?;
-
-        println!("Transaction {} sent: {}", start.get_name(), txid);
-
-        // let end = signed_templates.iter().find(|template| template.get_name() == "end").unwrap();
-
-        // for template in signed_templates {
-        //     let value: Vec<u8> = vec![32, 33, 34, 35];
-        //     let spending_leaf = spending_scripts[0].get_script();
-        //     let args = ScriptArgs::new(0, spending_leaf.clone(), vec![value]);
-
-        //     let tx = template.get_transaction_for_input(args)?;
-
-        //     println!("Sending transaction: {}", template.get_name());
-        //     println!("Transaction is: {:#?}", tx);
-
-        //     let txid = client.send_transaction(tx)?;
-
-        //     println!("Transaction {} sent: {}", template.get_name(), txid);
-        // }
-    
-        Ok(())
-    } 
-
-    #[test]
-    fn test_send_simple_tx() -> Result<(), TemplateBuilderError> {
-        let output_amount = Amount::from_sat(90_000_000);
-        let speedup_amount = Amount::from_sat(2_500_000);
-        let taproot_amount = Amount::from_sat(2_500_000);
-        let timelock_amount = Amount::from_sat(4_990_000);
-
-        let network = Network::Regtest;
-        let mut key_manager = test_key_manager()?;
-
-        let pk = key_manager.derive_keypair(0)?;
-        let wpkh = pk.wpubkey_hash().expect("key is compressed");
-        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
-
-        let speedup_pk = key_manager.derive_keypair(1)?;
-        let speedup_wpkh = speedup_pk.wpubkey_hash().expect("key is compressed");
-        let speedup_script_pubkey = ScriptBuf::new_p2wpkh(&speedup_wpkh);
-
-        let taproot_pk = key_manager.derive_keypair(2)?;
-        let taproot_script_pubkey = taproot_spend_info(taproot_pk, &[script_pubkey.clone(), script_pubkey.clone()])?.1;
-
-        let timelock_pk = key_manager.derive_keypair(3)?;
-        let timelock = scripts::timelock(100, &timelock_pk);
-        //let timelock_script_pubkey = timelock.get_script();
-
-        let timelock_script_pubkey = ScriptBuf::new_p2wsh(&timelock.get_script().wscript_hash());
-
-        let client = test_client(network)?;
-        let user_address = client.get_new_address(pk);
-        let (previous_tx, vout) = client.fund_address(&user_address, ONE_BTC).unwrap();
-
-        let input = transaction::TxIn {
-            previous_output: transaction::OutPoint {
-                txid: previous_tx,
-                vout,
-            },
-            script_sig: ScriptBuf::default(), // For p2wpkh script_sig is empty.
-            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
-            witness: Witness::default(),
-        };
-
-        let speedup_output = TxOut {
-            value: speedup_amount,
-            script_pubkey: speedup_script_pubkey.clone()
-        };
-
-        let output = TxOut {
-            value: output_amount,
-            script_pubkey: script_pubkey.clone(),
-        };
-
-        let taproot_output = TxOut {
-            value: taproot_amount,
-            script_pubkey: taproot_script_pubkey,
-        };
-
-        let timelock_output = TxOut {
-            value: timelock_amount,
-            script_pubkey: timelock_script_pubkey.clone(),
-        };
-
-        let mut tx = Transaction {
-            version: transaction::Version::TWO, // Post BIP-68.
-            lock_time: locktime::absolute::LockTime::ZERO, // Ignore the locktime.
-            input: vec![input],
-            output: vec![speedup_output, timelock_output, output, taproot_output],
-        };
-
-        let mut sighasher = SighashCache::new(tx.clone());
-        let sighash = sighasher.p2wpkh_signature_hash(
-            0,
-            &script_pubkey,
-            ONE_BTC,
-            EcdsaSighashType::All,
-        )?;
-
-        let signature = key_manager.sign_ecdsa_message(&Message::from(sighash), pk)?;
-        let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: EcdsaSighashType::All };
-
-        let witness = Witness::p2wpkh(
-            &segwit_signature, 
-            &pk.inner
-        );
-
-        tx.input[0].witness = witness;
-
-        println!("Transaction is: {:#?}", tx);
-
-        let txid = client.send_transaction(tx)?;
-
-        println!("Transaction sent: {}", txid);
-
-        Ok(())
-    }
-
-
-    fn taproot_spend_info(internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<(TaprootSpendInfo, ScriptBuf), TemplateError> {
-        let secp = secp256k1::Secp256k1::new();
-        let scripts_count = taproot_spending_scripts.len();
-        
-        let depth = (scripts_count as f32).log2().ceil() as u8;
-
-        let mut tr_builder = TaprootBuilder::new();
-        for script in taproot_spending_scripts.iter() {
-            tr_builder = tr_builder.add_leaf(depth, script.clone())?;
-        }
-
-        // If the number of spend conditions is odd, add the last one again
-        if scripts_count % 2 != 0 {
-            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].clone())?;
-        }
-    
-        let tr_spend_info = tr_builder.finalize(&secp, internal_key.into()).map_err(|_| TemplateError::TapTreeFinalizeError)?;
-
-        let script_pubkey = ScriptBuf::new_p2tr(
-            &secp,
-            tr_spend_info.internal_key(),
-            tr_spend_info.merkle_root(),
-        );
-
-        Ok((tr_spend_info, script_pubkey))
-    }
-
-
-
-    fn test_client(network: Network) -> Result<TestClient, TestClientError> {
-        let url = "http://127.0.0.1:18443";
-        let user = "foo";
-        let pass = "rpcpassword";
-        let wallet = "test_wallet";
-
-        TestClient::new(network, url, user, pass, wallet)
-    }
-
     fn test_template_builder() -> Result<TemplateBuilder, TemplateBuilderError> {
         let mut key_manager = test_key_manager()?;
 
@@ -817,12 +507,12 @@ mod tests {
         let speedup_to_key = &key_manager.derive_public_key(master_xpub, 1)?;
         let timelock_from_key = &key_manager.derive_public_key(master_xpub, 2)?;
         let timelock_to_key = &key_manager.derive_public_key(master_xpub, 3)?;
-        // This needs to be an aggregated key
+        // TODO This needs to be an aggregated key
         let timelock_renew_key = &key_manager.derive_public_key(master_xpub, 4)?;
 
-        let protocol_amount = 200;
-        let speedup_amount = 9_999_859;
-        let locked_amount = 5_000_000_000;
+        let protocol_amount = 2_400_000;
+        let speedup_amount = 2_400_000;
+        let locked_amount = 95_000_000;
         let locked_blocks: u16 = 200;
         let taproot_sighash_type = TapSighashType::All;
         let ecdsa_sighash_type = EcdsaSighashType::All;

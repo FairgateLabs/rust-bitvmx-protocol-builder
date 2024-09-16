@@ -93,11 +93,9 @@ pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithPar
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
         { blocks.to_le_bytes().to_vec() }
         OP_CSV
-        OP_IF
         OP_DROP
         { timelocked_public_key.to_bytes() }
         OP_CHECKSIG
-        OP_ENDIF
     );
 
     let mut script_with_params = ScriptWithParams::new(script);
@@ -147,7 +145,7 @@ pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> 
 
 pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey) -> ScriptWithParams {
     let script = script!(
-        {ots_checksig_verify(verifying_key, false)}
+        {ots_checksig_verify(verifying_key, true)}
     );
 
     let mut script_with_params = ScriptWithParams::new(script);

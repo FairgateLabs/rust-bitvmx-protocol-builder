@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cmp, collections::HashMap};
 use lazy_static::lazy_static;
 use bitcoin::{hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, SegwitV0Sighash, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
 
@@ -378,23 +378,6 @@ impl Template {
         }
     }
 
-    // pub fn get_params_for_spending_path(&self, input_index: usize, spending_leaf: &ScriptBuf) -> Result<Vec<ScriptParam>, TemplateError> {
-    //     let input = &self.inputs[input_index];
-
-    //     match &input.input_type {
-    //         InputType::Taproot { spending_paths, .. } => {
-    //             let leaf_hash = TapLeafHash::from_script(spending_leaf, LeafVersion::TapScript);
-    //             let path = match spending_paths.get(&leaf_hash) {
-    //                 Some(sp) => sp,
-    //                 None => return Err(TemplateError::MissingSpendingPath(input_index)),
-    //             };
-
-    //             Ok(path.script_params.clone())
-    //         },
-    //         _ => Err(TemplateError::InvalidInputType(input_index)),
-    //     }
-    // }
-
     pub fn get_transaction_for_inputs(&mut self, params: Vec<ScriptArgs>) -> Result<Transaction, TemplateError> {
         for param in params {
             let input_index = param.input_index;
@@ -443,12 +426,8 @@ impl Template {
                 witness.push(signature.serialize());
                 witness.push(params.spending_leaf.to_bytes());
                 witness.push(control_block.serialize());
-        
-                // let script_params = &path.script_params;
-                // if script_params.len() != params.values.len() {
-                //     return Err(TemplateError::InvalidScriptParams(params.input_index));
-                // }
 
+                // TODO fix the relationship between values and OT Signatures
                 for value in params.values.iter() {
                     // We only need to push the winternitz signed values
                     // witness.push(param.get_verifying_key().to_bytes());
@@ -490,7 +469,10 @@ impl Template {
         let secp = secp256k1::Secp256k1::new();
         let scripts_count = taproot_spending_scripts.len();
         
-        let depth = (scripts_count as f32).log2().ceil() as u8;
+        // To build a taproot tree, we need to calculate the depth of the tree.
+        // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth 
+        // as the log2 of the number of scripts rounded up to the nearest integer.
+        let depth = cmp::max(1, (scripts_count as f32).log2().ceil() as u8);
 
         let mut tr_builder = TaprootBuilder::new();
         for script in taproot_spending_scripts.iter() {
