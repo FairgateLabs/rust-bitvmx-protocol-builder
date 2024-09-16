@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, cmp::max};
 use lazy_static::lazy_static;
 
 use bitcoin::{EcdsaSighashType, SegwitV0Sighash,hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
@@ -231,8 +231,16 @@ impl<'de> Deserialize<'de> for InputType {
                         sighash_type: tap_sighash_type.ok_or_else(|| serde::de::Error::missing_field("sighash_type"))?,
                         taproot_spend_info: {
                             let internal_key = taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
-                            let taproot_builder = TaprootBuilder::new();
-                            taproot_builder.finalize(&SECP, internal_key.into()).map_err(|_| serde::de::Error::custom("Failed to finalize taproot"))?
+                            let spending_paths_ok = spending_paths.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
+                            let scripts: Vec<ScriptBuf> = spending_paths_ok.values().into_iter().map(|sp| sp.get_taproot_leaf()).collect();
+                            println!("scripts: {:?}", scripts.len());
+                            match Template::taproot_spend_info(internal_key, &scripts){
+                                Ok((taproot_spend_info, _)) => taproot_spend_info,
+                                Err(e) => {
+                                    println!("Error creating taproot spend info: {:?}", e);
+                                    return Err(serde::de::Error::custom("Error creating taproot spend info"))
+                                }
+                            }
                         },
                         taproot_internal_key: taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?,                      
                         spending_paths: match spending_paths {
@@ -682,7 +690,7 @@ impl Template {
         let secp = secp256k1::Secp256k1::new();
         let scripts_count = taproot_spending_scripts.len();
         
-        let depth = (scripts_count as f32).log2().ceil() as u8;
+        let depth = max((scripts_count as f32).log2().ceil() as u8,1);
 
         let mut tr_builder = TaprootBuilder::new();
         for script in taproot_spending_scripts.iter() {

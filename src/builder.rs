@@ -662,6 +662,9 @@ mod tests {
         let locked_amount = 5_000_000_000;
         let taproot_sighash_type = TapSighashType::All;
         let ecdsa_sighash_type = EcdsaSighashType::All;
+        let graph_path = temp_storage_path();
+
+        println!("graph_path: {}", graph_path);
 
         let defaults = DefaultParams::new(
             protocol_amount, 
@@ -674,7 +677,7 @@ mod tests {
             locked_amount, 
             ecdsa_sighash_type,
             taproot_sighash_type,
-            temp_storage_path(),
+            graph_path,
         )?;
 
         let builder = TemplateBuilder::new(defaults)?;
