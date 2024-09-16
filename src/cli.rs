@@ -49,8 +49,9 @@ impl Cli {
     //
     fn add_start_template(&self) -> Result<()>{
         let defaults = DefaultParams::try_from(Config::new()?)?;
+        let mut builder = TemplateBuilder::new(defaults)?;
         let mut key_manager = self.key_manager()?;
-
+        
         // TODO test values, replace for real values from command line params.
         let pk = key_manager.derive_keypair(0)?;
         let wpkh = pk.wpubkey_hash().expect("key is compressed");
@@ -58,8 +59,6 @@ impl Cli {
         let txid= Hash::all_zeros();
         let vout = 0;
         let amount = 100000;
-
-        let mut builder = TemplateBuilder::new(defaults)?;
 
         builder.add_start("A", txid, vout, amount, script_pubkey)?;
 

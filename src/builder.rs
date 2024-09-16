@@ -593,7 +593,6 @@ mod tests {
             let public_key = key_manager.derive_public_key(master_xpub, index as u32)?;
     
             for input in template.get_inputs().iter() {
-
                 match input.get_type() {
                     InputType::Taproot { spending_paths, .. } => {
                         for spending_path in spending_paths.values() {
