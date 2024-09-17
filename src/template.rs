@@ -102,14 +102,14 @@ impl Serialize for InputType {
                 state.serialize_field("taproot_internal_key", taproot_internal_key)?;
                 state.end()
             }
-            InputType::Segwit {
+            InputType::P2WPKH {
                 sighash_type,
                 script_pubkey,
                 sighash,
                 signature,
                 amount,
             } => {
-                let mut state = serializer.serialize_struct("Segwit", 5)?;
+                let mut state = serializer.serialize_struct("P2WPKH", 5)?;
                 state.serialize_field("ecdsa_sighash_type", sighash_type)?;
                 state.serialize_field("script_pubkey", script_pubkey)?;
                 state.serialize_field("sighash", sighash)?;
@@ -154,7 +154,7 @@ impl<'de> Deserialize<'de> for InputType {
             {
                 let mut tap_sighash_type = None;
                 let mut ecdsa_sighash_type = None;
-                let mut spending_paths: Option<HashMap<TapLeafHash, SpendingInfo>> = None;
+                let mut spending_paths: Option<HashMap<TapLeafHash, SpendingPath>> = None;
                 let mut taproot_internal_key: Option<PublicKey> = None;
                 let mut script_pubkey = None;
                 let mut sighash = None;
@@ -238,11 +238,10 @@ impl<'de> Deserialize<'de> for InputType {
                             let internal_key = taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
                             let spending_paths_ok = spending_paths.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
                             let scripts: Vec<ScriptBuf> = spending_paths_ok.values().into_iter().map(|sp| sp.get_taproot_leaf()).collect();
-                            println!("scripts: {:?}", scripts.len());
                             match Template::taproot_spend_info(internal_key, &scripts){
                                 Ok((taproot_spend_info, _)) => taproot_spend_info,
                                 Err(e) => {
-                                    println!("Error creating taproot spend info: {:?}", e);
+                                    eprintln!("Error creating taproot spend info: {:?}", e);
                                     return Err(serde::de::Error::custom("Error creating taproot spend info"))
                                 }
                             }
@@ -255,7 +254,7 @@ impl<'de> Deserialize<'de> for InputType {
                         },
                     })
                 } else {
-                    Ok(InputType::Segwit {
+                    Ok(InputType::P2WPKH {
                         sighash_type: ecdsa_sighash_type.ok_or_else(|| serde::de::Error::missing_field("ecdsa_sighash_type"))?,
                         script_pubkey: script_pubkey.ok_or_else(|| serde::de::Error::missing_field("script_pubkey"))?,
                         sighash,

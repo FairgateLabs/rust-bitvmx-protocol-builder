@@ -24,7 +24,7 @@ pub struct DefaultParams {
 
 
 impl DefaultParams {
-    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_blocks: u8, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, locked_amount: u64, locked_blocks: u16, ecdsa_sighash_type: EcdsaSighashType, taproot_sighash_type: TapSighashType, graph_path: String) -> Result<Self, ConfigError> {
+    pub fn new(protocol_amount: u64, speedup_from_key: &PublicKey, speedup_to_key: &PublicKey, speedup_amount: u64, timelock_from_key: &PublicKey, timelock_to_key: &PublicKey, timelock_renew_key: &PublicKey, locked_amount: u64, locked_blocks: u16, ecdsa_sighash_type: EcdsaSighashType, taproot_sighash_type: TapSighashType, graph_path: String) -> Result<Self, ConfigError> {
         let defaults = DefaultParams {
             protocol_amount,
             speedup_from_key: *speedup_from_key,
@@ -154,6 +154,7 @@ impl TryFrom<&Config> for DefaultParams {
         let locked_blocks = config.template_builder.locked_blocks;
         let ecdsa_sighash_type = EcdsaSighashType::from_str(config.template_builder.ecdsa_sighash_type.as_str())?;
         let taproot_sighash_type = TapSighashType::from_str(config.template_builder.taproot_sighash_type.as_str())?;
+        let graph_path = config.template_builder.graph_path.clone();
        
         let defaults = DefaultParams::new(
             protocol_amount, 
@@ -167,6 +168,7 @@ impl TryFrom<&Config> for DefaultParams {
             locked_blocks,
             ecdsa_sighash_type,
             taproot_sighash_type,
+            graph_path,
         )?;
 
         Ok(defaults)

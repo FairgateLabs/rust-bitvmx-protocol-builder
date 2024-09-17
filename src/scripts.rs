@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum KeyType {
     EcdsaPublicKey,
     WinternitzPublicKey,

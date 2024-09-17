@@ -23,6 +23,7 @@ pub struct TemplateBuilderConfig {
     pub locked_blocks: u16,
     pub ecdsa_sighash_type: String,
     pub taproot_sighash_type: String,
+    pub graph_path: String,
 }
 
 #[derive(Debug, Deserialize)]

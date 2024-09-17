@@ -5,8 +5,6 @@ use clap::{Parser, Subcommand};
 use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
-use std::env;
-use bitcoin::secp256k1::rand::{self, RngCore};
 use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams};
 
 pub struct Cli {
@@ -90,17 +88,6 @@ impl Cli {
     
         Ok(key_manager)
     }
-}
-
-fn temp_storage_path() -> String {
-    let dir = env::temp_dir();
-
-    let storage_path = dir.join(format!("secure_storage_{}.db", random_u32()));
-    storage_path.to_str().expect("Failed to get path to temp file").to_string()
-}
-
-fn random_u32() -> u32 {
-    rand::thread_rng().next_u32()
 }
 
 

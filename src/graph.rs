@@ -71,7 +71,8 @@ impl Graph {
             Err(e) => return Err(GraphError::StorageError(e)),
         };
 
-        for (key, value) in map {
+        for (mut key, value) in map {
+            key = key.trim_start_matches("template_").to_string();
             templates.push((key, value));
         }
 
