@@ -677,7 +677,7 @@ mod tests {
         let binding = serde_json::to_string(&builder.graph.get_template("A")?).unwrap();
         let serialized_template = binding.as_str();
 
-        let expected_output_json = json!({
+        let expected_output = json!({
             "name": "A",
             "txid": "13cc433a86a274f0a67382327b81a00f2afcb3e66c9c82d462e988026cdb3318",
             "transaction": {
@@ -810,13 +810,9 @@ mod tests {
                     "signature_verifying_key": null
                 }
             ]
-        });
-        
-        let expected_output = expected_output_json.to_string();
+        }).to_string();
 
-        let differences = json_diff::compare_jsons(&expected_output, &serialized_template);
-
-        assert!(differences.is_ok());
+        assert!(json_diff::compare_jsons(&expected_output, &serialized_template).is_ok());
 
         Ok(())
     }

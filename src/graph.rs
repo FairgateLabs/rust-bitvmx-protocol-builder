@@ -1,4 +1,4 @@
-use std::collections::{hash_map::ValuesMut, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use storage_backend::storage::Storage;
 use crate::errors::GraphError;
 use std::path::Path;
@@ -7,7 +7,6 @@ use serde_json::from_str;
 
 pub struct Graph {
     storage: Storage,
-    templates: HashMap<String, Template>,
     end_templates: Vec<String>,
 }
 
@@ -16,22 +15,21 @@ impl Graph {
         let storage = Storage::new_with_path(&path.as_ref().to_path_buf()).map_err(|e| GraphError::StorageError(e))?;
         Ok(Graph { 
             storage,
-            templates: HashMap::new(),
             end_templates: Vec::new(),
       })
     }
 
     pub fn add_template(&mut self, name: &str, template: Template) -> Result<(), GraphError> {
-        self.storage.write(&format!("template_{}", name), &serde_json::to_string(&template)?)?;
+        self.storage.write(&format_template_name(name), &serde_json::to_string(&template)?)?;
 
-        if !self.storage.has_key(&format!("graph_{}", name))?{
-            self.storage.write(&format!("graph_{}", name), "")?;
+        if !self.storage.has_key(&format_name_node(name))?{
+            self.storage.write(&format_name_node(name), "")?;
         }
         Ok(())
     }
       
     pub fn get_template(&self, name: &str) -> Result<Option<Template>, GraphError> {
-        match self.storage.read(&format!("template_{}", name)) {
+        match self.storage.read(&format_template_name(name)) {
             Ok(value)=>{
                 match value {
                     Some(template) => {
@@ -44,12 +42,8 @@ impl Graph {
         }
     }
 
-    pub fn get_template_mut(&mut self, name: &str) -> Option<&mut Template> {
-        self.templates.get_mut(name)
-    }
-
     pub fn contains_template(&self, name: &str) -> Result<bool, GraphError> {
-        match self.storage.has_key(&format!("template_{}", name)) {
+        match self.storage.has_key(&format_template_name(name)) {
             Ok(value) => Ok(value),
             Err(e) => Err(GraphError::StorageError(e)),
         }
@@ -79,10 +73,6 @@ impl Graph {
         Ok(templates)
     }
 
-    pub fn templates_mut(&mut self) -> ValuesMut<String, Template> {
-        self.templates.values_mut()
-    }
-
     pub fn end_template(&mut self, name: &str) {
         self.end_templates.push(name.to_string());
     }
@@ -92,7 +82,7 @@ impl Graph {
     }
 
     pub fn connect(&mut self, from: &str, to: &str) -> Result<(), GraphError>{
-        let mut dependents = match self.storage.read(&format!("graph_{}", from))? {
+        let mut dependents = match self.storage.read(&format_name_node(from))? {
             Some(dependents) => dependents,
             None => return Err(GraphError::NodeNotFound),            
         };
@@ -105,7 +95,7 @@ impl Graph {
             dependents.push_str(&format!(",{}", to));
         }
 
-        self.storage.write(&format!("graph_{}", from), &dependents)?;
+        self.storage.write(&format_name_node(from), &dependents)?;
         Ok(())
     }
 
@@ -126,7 +116,7 @@ impl Graph {
     }
 
     fn get_dependents(&self, name: &str) -> Result<Option<Vec<String>>, GraphError> {
-        let dependents = match self.storage.read(&format!("graph_{}", name))?{
+        let dependents = match self.storage.read(&format_name_node(name))?{
             Some(dependents) => dependents,
             None => return Ok(None),
         };
@@ -159,5 +149,13 @@ impl Graph {
 
         Ok(())
     }
+}
+
+fn format_template_name(name: &str) -> String {
+    format!("template_{}", name)
+}
+
+fn format_name_node(name: &str) -> String {
+    format!("graph_{}", name)
 }
 
