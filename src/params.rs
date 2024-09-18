@@ -44,6 +44,10 @@ impl DefaultParams {
         self.protocol_amount
     }
 
+    pub fn get_locked_amount(&self) -> u64 {
+        self.locked_amount
+    }
+
     pub fn get_ecdsa_sighash_type(&self) -> EcdsaSighashType {
         self.ecdsa_sighash_type
     }

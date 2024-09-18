@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::{PublicKey, ScriptBuf};
+use bitcoin::{opcodes::all::OP_PUSHNUM_1, PublicKey, ScriptBuf};
 
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
@@ -103,13 +103,22 @@ pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithPar
     script_with_params
 }
 
+// TODO aggregated_key must be an aggregated key and not a single public key
 pub fn collaborative_spend(aggregated_key: &PublicKey) -> ScriptWithParams {
     let script = script!(
         { aggregated_key.to_bytes() }
         OP_CHECKSIG
     );
 
-    let mut script_with_params = ScriptWithParams::new(script);
+    let wrapped = script!{
+        OP_IF
+        OP_TRUE
+        OP_ELSE
+        {script}
+        OP_ENDIF
+    };
+
+    let mut script_with_params = ScriptWithParams::new(wrapped);
     script_with_params.add_param("aggregated_signature", 0, KeyType::EcdsaPublicKey, 0);
     script_with_params
 }
@@ -163,7 +172,7 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
     let checksum_size: usize = usize::try_from(log_digits_per_message as u32).unwrap();
     let total_size = message_size + checksum_size as u32;
 
-    script! {
+    let verify = script! {
         // Verify the hash chain for each digit
         // Repeat this for every of the n many digits
         for digit_index in 0..total_size {
@@ -244,5 +253,16 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
                 }
             }
         }   
-    }
+    };
+
+    let wrapped = script!{
+        OP_IF
+        OP_TRUE
+        OP_ELSE
+        {verify}
+        OP_ENDIF
+    };
+
+    wrapped
+
 }

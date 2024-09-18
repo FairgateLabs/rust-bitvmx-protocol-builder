@@ -272,7 +272,13 @@ impl Template {
 
     pub fn push_taproot_input(&mut self, sighash_type: TapSighashType, previous_output: Output, locked_blocks: u16, taproot_spend_info: TaprootSpendInfo, taproot_spending_scripts: &[ScriptWithParams]) -> Input {
         let pevious_outpoint = OutPoint { txid: Hash::all_zeros(), vout: previous_output.index as u32 };
-        let txin = Self::build_input(pevious_outpoint, Sequence::from_height(locked_blocks));
+        
+        let sequence = match locked_blocks {
+            0 => Sequence::ENABLE_RBF_NO_LOCKTIME,
+            _ => Sequence::from_height(locked_blocks),
+        };
+
+        let txin = Self::build_input(pevious_outpoint, sequence);
 
         self.transaction.input.push(txin);
         self.previous_outputs.push(previous_output);
@@ -421,18 +427,19 @@ impl Template {
                 if !control_block.verify_taproot_commitment(&SECP, taproot_spend_info.output_key().to_inner(), &params.spending_leaf) {
                     return Err(TemplateError::InvalidSpendingPath(params.input_index));
                 }
-        
-                let mut witness = Witness::default();
-                witness.push(signature.serialize());
-                witness.push(params.spending_leaf.to_bytes());
-                witness.push(control_block.serialize());
 
+                let mut witness = Witness::default();
+        
                 // TODO fix the relationship between values and OT Signatures
                 for value in params.values.iter() {
                     // We only need to push the winternitz signed values
                     // witness.push(param.get_verifying_key().to_bytes());
                     witness.push(value.clone());
                 }
+
+                // witness.push(signature.serialize());
+                witness.push(params.spending_leaf.to_bytes());
+                witness.push(control_block.serialize());
         
                 Ok(witness)
             },

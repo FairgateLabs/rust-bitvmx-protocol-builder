@@ -74,7 +74,7 @@ impl TemplateBuilder {
         self.connect_protocol(
             from, to, 
             connection_params.get_locked_amount(), 
-            connection_params.get_lock_blocks(),
+            0,
             sighash_type, 
             connection_params.template_from(), 
             connection_params.template_to(), 
@@ -149,8 +149,8 @@ impl TemplateBuilder {
     }
 
     /// Marks an existing template as one end of the DAG. It will create an output that later could be spent by any transaction outside the DAG.
-    /// The end output should use the total funds from the transaction, not just the protocol amount
-    pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
+    /// The end output should use the total funds from the transaction, minus fees, not just the protocol amount
+    pub fn end(&mut self, name: &str, amount: u64, spending_conditions: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
         self.finalized = false;
         
         if !self.graph.contains_template(name) {
@@ -163,10 +163,10 @@ impl TemplateBuilder {
 
         self.graph.end_template(name);
 
-        let protocol_amount = self.defaults.get_protocol_amount();
+        //let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
 
-        let (end_output, _) = template.push_output(protocol_amount, spending_conditions)?;
+        let (end_output, _) = template.push_output(amount, spending_conditions)?;
 
         Ok(end_output)
     }
@@ -267,6 +267,7 @@ mod tests {
         let protocol_amount = 2400000;
         let speedup_amount = 2400000;
         let locked_amount = 95000000;
+        let end_amount = protocol_amount + locked_amount;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -280,7 +281,7 @@ mod tests {
 
         builder.add_start("A", txid, vout, amount, script_pubkey)?;
         builder.add_connection("A", "B", &spending_scripts)?;
-        builder.end("B", &spending_scripts)?;
+        builder.end("B", end_amount, &spending_scripts)?;
 
         let mut templates = builder.finalize_and_build()?;
 
@@ -376,6 +377,7 @@ mod tests {
     #[test]
     fn test_rounds() -> Result<(), TemplateBuilderError> {
         let rounds = 3;
+        let end_amount = 98000000;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -393,7 +395,7 @@ mod tests {
         
         builder.add_start("A", txid, vout, amount, script_pubkey)?;
         builder.add_connection("A", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, &spending_scripts)?;
+        builder.end(&to_rounds, end_amount, &spending_scripts)?;
 
         let templates = builder.finalize_and_build()?;
     
@@ -410,6 +412,7 @@ mod tests {
     #[test]
     fn test_multiple_connections() -> Result<(), TemplateBuilderError> {
         let rounds = 3;
+        let end_amount = 98000000;
 
         let mut key_manager = test_key_manager()?;
         let master_xpub = key_manager.generate_master_xpub()?;
@@ -437,8 +440,8 @@ mod tests {
         let (from_rounds, to_rounds) = builder.add_rounds(rounds, "H", "I", &spending_scripts_from, &spending_scripts_to)?;
 
         builder.add_connection("G", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, &spending_scripts)?;
-        builder.end("E", &spending_scripts)?;
+        builder.end(&to_rounds, end_amount, &spending_scripts)?;
+        builder.end("E", end_amount, &spending_scripts)?;
     
         let mut templates = builder.finalize_and_build()?;
         let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
@@ -465,14 +468,16 @@ mod tests {
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
+        let end_amount = 98000000;
+
         let mut builder = test_template_builder()?;
 
         builder.add_start("A", txid, vout, amount, script_pubkey.clone())?;
         builder.add_connection("A", "B", &spending_scripts)?;
-        builder.end("B", &spending_scripts)?;
+        builder.end("B", end_amount, &spending_scripts)?;
 
         // Ending a template twice should fail
-        let result = builder.end("B", &spending_scripts);
+        let result = builder.end("B", end_amount, &spending_scripts);
         assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyEnded(_))));
 
         // Adding a connection to an ended template should fail
@@ -483,7 +488,7 @@ mod tests {
         assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
 
         // Cannot end a template that doesn't exist in the graph
-        let result = builder.end("C", &spending_scripts);
+        let result = builder.end("C", end_amount, &spending_scripts);
         assert!(matches!(result, Err(TemplateBuilderError::MissingTemplate(_))));
 
         // Cannot mark an existing template in the graph as the starting point
