@@ -37,6 +37,10 @@ impl TemplateBuilder {
     /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG. 
     /// Short version of the connect_rounds method, it uses the seedup scripts from the config.
     pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> { 
+        if rounds == 0 {
+            return Err(TemplateBuilderError::InvalidZeroRounds);
+        }
+        
         let direct_connection = self.defaults.connection_params(spending_scripts_from)?;
         let reverse_connection = self.defaults.reverse_connection_params(spending_scripts_to)?;
 
@@ -163,7 +167,6 @@ impl TemplateBuilder {
 
         self.graph.end_template(name);
 
-        //let protocol_amount = self.defaults.get_protocol_amount();
         let template = self.get_template_mut(name)?;
 
         let (end_output, _) = template.push_output(amount, spending_conditions)?;
@@ -257,9 +260,9 @@ impl TemplateBuilder {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use bitcoin::{absolute, bip32::Xpub, key::rand::RngCore, secp256k1::{self, Message}, transaction, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid};
-    use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
-    use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, Template}};
+    use bitcoin::{absolute, key::rand::RngCore, secp256k1, transaction, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid};
+    use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, winternitz::{WinternitzPublicKey, WinternitzType}};
+    use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}};
     use super::TemplateBuilder;
 
     #[test]
@@ -283,14 +286,9 @@ mod tests {
         builder.add_connection("A", "B", &spending_scripts)?;
         builder.end("B", end_amount, &spending_scripts)?;
 
-        let mut templates = builder.finalize_and_build()?;
+        let templates = builder.finalize_and_build()?;
 
-        let mut key_manager = test_key_manager()?;
-        let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
-
-        assert!(signed_templates.len() == 2);
-
-        let template_a = signed_templates.iter().find(|template| template.get_name() == "A").unwrap();
+        let template_a = templates.iter().find(|template| template.get_name() == "A").unwrap();
         let next_inputs = template_a.get_next_inputs();
         assert_eq!(next_inputs.len(), 2);
         assert_eq!(next_inputs[0].get_to(), "B");
@@ -314,7 +312,7 @@ mod tests {
         let protocol_output = transaction_a.output.get(2).unwrap();
         assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
 
-        let template_b = signed_templates.iter().find(|template| template.get_name() == "B").unwrap();
+        let template_b = templates.iter().find(|template| template.get_name() == "B").unwrap();
 
         assert_eq!(template_b.get_inputs().len(), 2);
 
@@ -325,34 +323,6 @@ mod tests {
         assert_eq!(previous_outputs[0].get_index(), 1);
         assert_eq!(previous_outputs[1].get_from(), "A");
         assert_eq!(previous_outputs[1].get_index(), 2);
-
-        for input in template_b.get_inputs() {
-            let verifying_key = input.get_verifying_key().unwrap();
-
-            match input.get_type() {
-                InputType::Taproot { spending_paths, .. } => {
-                    for spending_path in spending_paths.values() {
-                        let sighash = spending_path.get_sighash().unwrap();
-                        let message = &Message::from(sighash);
-
-                        assert!(SignatureVerifier::default().verify_schnorr_signature(
-                            &spending_path.get_signature().unwrap().signature, 
-                            message, 
-                            verifying_key)
-                        );
-                    }
-                },
-                InputType::P2WPKH { sighash, signature, .. } => {
-                    let message = &Message::from(sighash.unwrap());
-
-                    assert!(SignatureVerifier::default().verify_ecdsa_signature(
-                        &signature.unwrap().signature, 
-                        message, 
-                        verifying_key)
-                    );
-                }
-            }
-        }
 
         let transaction_b = template_b.get_transaction();
         assert_eq!(transaction_b.input.len(), 2);
@@ -367,9 +337,11 @@ mod tests {
         let speedup_output = transaction_b.output.first().unwrap();
         assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
         
-        // The second output has the end protocol amount
-        let protocol_output = transaction_b.output.get(1).unwrap();
-        assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
+        println!("{:#?}", transaction_b);
+
+        // The second output has the total end amount
+        let end_output = transaction_b.output.get(1).unwrap();
+        assert_eq!(end_output.value, Amount::from_sat(end_amount));
 
         Ok(())
     }
@@ -415,7 +387,6 @@ mod tests {
         let end_amount = 98000000;
 
         let mut key_manager = test_key_manager()?;
-        let master_xpub = key_manager.generate_master_xpub()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
         let pk = key_manager.derive_keypair(0)?;
 
@@ -443,15 +414,8 @@ mod tests {
         builder.end(&to_rounds, end_amount, &spending_scripts)?;
         builder.end("E", end_amount, &spending_scripts)?;
     
-        let mut templates = builder.finalize_and_build()?;
-        let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
-
-        assert!(signed_templates.len() == 13);
-
-        let mut template_names: Vec<String> = signed_templates.iter().map(|t| t.get_name().to_string()).collect();
-
-        assert!(verify_templates_signatures(master_xpub, signed_templates)?);
-        
+        let templates = builder.finalize_and_build()?;
+        let mut template_names: Vec<String> = templates.iter().map(|t| t.get_name().to_string()).collect();
         template_names.sort();
 
         assert_eq!(&template_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
@@ -558,66 +522,6 @@ mod tests {
         )?;
     
         Ok(key_manager)
-    }
-
-    fn sign_templates<'a>(key_manager: &'a mut KeyManager<DatabaseKeyStore>, templates: &'a mut Vec<Template>) -> Result<&'a mut Vec<Template>, TemplateBuilderError> {
-        for (index, template) in templates.iter_mut().enumerate() {
-            let public_key = key_manager.derive_keypair(index as u32)?;
-    
-            for (input_index, input) in template.get_inputs().iter().enumerate() {
-                match input.get_type() {
-                    InputType::Taproot { sighash_type, spending_paths, .. } => {
-                        for spending_path in spending_paths.values() {
-                            let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &public_key)?;
-                            let taproot_signature = bitcoin::taproot::Signature{ signature, sighash_type: *sighash_type };
-    
-                            template.push_taproot_signature(input_index, &spending_path.get_taproot_leaf(), taproot_signature, &public_key)?;
-                        }
-                    },
-                    InputType::P2WPKH { sighash, sighash_type, .. } => {
-                        let signature: secp256k1::ecdsa::Signature = key_manager.sign_ecdsa_message(&Message::from(sighash.unwrap()), public_key)?;
-                        let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: *sighash_type };
-    
-                        template.push_ecdsa_signature(input_index, segwit_signature, &public_key)?;
-                    }
-                }
-            }
-        }
-    
-        Ok(templates)
-    
-        //taproot_signature.serialize().to_vec();
-        //let mut sig_ser = signature.serialize_der().to_vec();
-        //sig_ser.push(sighash_type as u8);
-    }
-
-    fn verify_templates_signatures(master_xpub: Xpub, signed_templates: &[Template]) -> Result<bool, TemplateBuilderError> {
-        let  mut key_manager = test_key_manager()?;
-
-        for (index, template) in signed_templates.iter().enumerate() {
-            let public_key = key_manager.derive_public_key(master_xpub, index as u32)?;
-    
-            for input in template.get_inputs().iter() {
-                match input.get_type() {
-                    InputType::Taproot { spending_paths, .. } => {
-                        for spending_path in spending_paths.values() {
-                            let message = &Message::from(spending_path.get_sighash().unwrap());
-                            if !SignatureVerifier::default().verify_schnorr_signature(&spending_path.get_signature().unwrap().signature, message, public_key) {
-                                return Ok(false);
-                            }
-                        }
-                    },
-                    InputType::P2WPKH { sighash, signature, .. } => {
-                        let message = &Message::from(sighash.unwrap());
-                        if !SignatureVerifier::default().verify_ecdsa_signature(&signature.unwrap().signature, message, public_key) {
-                            return Ok(false);
-                        }
-                    }
-                }
-            }
-        }
-    
-        Ok(true)
     }
 
     fn previous_tx_info(pk: PublicKey) -> (Txid, u32, u64, ScriptBuf) {

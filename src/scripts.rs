@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::{opcodes::all::OP_PUSHNUM_1, PublicKey, ScriptBuf};
+use bitcoin::{PublicKey, ScriptBuf};
 
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
@@ -266,3 +266,10 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
     wrapped
 
 }
+
+
+// // scriptPubKey
+// <PubKey1> OP_CHECKSIG <PubKey2> OP_CHECKSIGADD <PubKey3> OP_CHECKSIGADD OP_2 OP_NUMEQUAL
+
+// // scriptSig, missing signatures are pushed as empty vectors
+// <Signature1> <Signature2> <>
