@@ -7,3 +7,4 @@ pub mod params;
 pub mod scripts;
 pub mod template;
 pub mod unspendable;
+pub mod tests;
