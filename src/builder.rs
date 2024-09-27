@@ -30,8 +30,6 @@ impl TemplateBuilder {
     /// Creates a connection between two templates. 
     /// Short version of the connect method, it uses the seedup scripts from the config.
     pub fn add_connection(&mut self, from: &str, to: &str, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
-        check_empty_scripts(spending_scripts)?;
-        
         let connection_params = self.defaults.connection_params(spending_scripts)?;
         self.connect(from, to, self.defaults.get_protocol_amount(), self.defaults.get_taproot_sighash_type(), connection_params)
     }
