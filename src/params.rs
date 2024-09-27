@@ -8,17 +8,17 @@ use crate::{config::Config, errors::ConfigError, scripts::{self, ScriptWithParam
 /// DefaultParams is a struct that holds the default parameters for the templates.
 /// It is used by the template builder to create the templates when using TemplateBuilder's shortcut functions add_start(), add_connection(), and add_rounds().
 pub struct DefaultParams { 
-    protocol_amount: u64,
-    speedup_from_key: PublicKey,
-    speedup_to_key: PublicKey,
-    speedup_amount: u64,
-    timelock_from_key: PublicKey,
-    timelock_to_key: PublicKey,
-    timelock_renew_key: PublicKey,
-    locked_amount: u64,
-    locked_blocks: u16,
-    ecdsa_sighash_type: EcdsaSighashType,
-    taproot_sighash_type: TapSighashType,
+    protocol_amount: u64,                 // The amount of satoshis to be consumed in the protocol output for each template
+    speedup_from_key: PublicKey,          // The public key to validate an input trying to spend the speedup output of each 'from' template
+    speedup_to_key: PublicKey,            // The public key to validate an input trying to spend the speedup output of each 'to' template
+    speedup_amount: u64,                  // The amount of satoshis to be consumed in the speedup output for each template
+    timelock_from_key: PublicKey,         // The public key to validate an input trying to spend the timelock output of each 'from' template
+    timelock_to_key: PublicKey,           // The public key to validate an input trying to spend the timelock output of each 'to' template
+    timelock_renew_key: PublicKey,        // The public key to validate an input trying to renew the timelock output of each template
+    locked_amount: u64,                   // The amount of satoshis to be consumed in the timelock output for each template
+    locked_blocks: u16,                   // The number of blocks a transaction needs to wait to consume the timelock output of each template
+    ecdsa_sighash_type: EcdsaSighashType, // The sighash type used to compute the sighash of a non-taproot input
+    taproot_sighash_type: TapSighashType, // The sighash type used to compute the sighash of a taproot input
 }
 
 impl DefaultParams {

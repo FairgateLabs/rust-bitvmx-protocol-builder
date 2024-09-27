@@ -1,4 +1,4 @@
-use std::{cmp, collections::HashMap, vec};
+use std::{cmp, vec};
 use lazy_static::lazy_static;
 use bitcoin::{hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, SegwitV0Sighash, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
 
@@ -65,7 +65,7 @@ pub enum InputType {
     Taproot {
         sighash_type: TapSighashType,
         taproot_spend_info: TaprootSpendInfo,
-        spending_paths: HashMap<TapLeafHash, SpendingPath>,
+        spending_paths: Vec<SpendingPath>,
     },
     P2WPKH {
         sighash_type: EcdsaSighashType,
@@ -210,11 +210,11 @@ impl Template {
                 InputType::Taproot { sighash_type, spending_paths, .. } => {
                     let tx_outs  = self.previous_outputs.iter().map(|po| po.txout.clone()).collect::<Vec<TxOut>>();
 
-                    for (leaf_hash, spending_path) in spending_paths {
+                    for spending_path in spending_paths {
                         let sighash = sighasher.taproot_script_spend_signature_hash(
                             input.index,
                             &sighash::Prevouts::All(&tx_outs),
-                            *leaf_hash,
+                            TapLeafHash::from_script(&spending_path.get_taproot_leaf(), LeafVersion::TapScript),
                             *sighash_type,
                         )?;
     
@@ -275,7 +275,7 @@ impl Template {
         self.inputs.push(input.clone());
     }
 
-    pub fn push_taproot_input(&mut self, sighash_type: TapSighashType, previous_output: Output, locked_blocks: u16, taproot_spend_info: TaprootSpendInfo, taproot_spending_scripts: &[ScriptWithParams]) -> Input {
+    pub fn push_taproot_input(&mut self, sighash_type: TapSighashType, previous_output: Output, locked_blocks: u16, taproot_spend_info: TaprootSpendInfo, taproot_spending_scripts: &[ScriptWithParams]) -> Input {        
         let pevious_outpoint = OutPoint { txid: Hash::all_zeros(), vout: previous_output.index as u32 };
         
         let sequence = match locked_blocks {
@@ -292,10 +292,8 @@ impl Template {
             sighash_type,
             taproot_spend_info,
             spending_paths: taproot_spending_scripts.iter().map(|s| {
-                let leaf_hash = TapLeafHash::from_script(s.get_script(), LeafVersion::TapScript);
                 let path = SpendingPath::new(s.get_script().clone());
-
-                (leaf_hash, path)
+                path
             }).collect()
         };
 

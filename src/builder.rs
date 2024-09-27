@@ -30,17 +30,15 @@ impl TemplateBuilder {
     /// Creates a connection between two templates. 
     /// Short version of the connect method, it uses the seedup scripts from the config.
     pub fn add_connection(&mut self, from: &str, to: &str, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
+        check_empty_scripts(spending_scripts)?;
+        
         let connection_params = self.defaults.connection_params(spending_scripts)?;
         self.connect(from, to, self.defaults.get_protocol_amount(), self.defaults.get_taproot_sighash_type(), connection_params)
     }
 
     /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG. 
     /// Short version of the connect_rounds method, it uses the seedup scripts from the config.
-    pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> { 
-        if rounds == 0 {
-            return Err(TemplateBuilderError::InvalidZeroRounds);
-        }
-        
+    pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> {         
         let direct_connection = self.defaults.connection_params(spending_scripts_from)?;
         let reverse_connection = self.defaults.reverse_connection_params(spending_scripts_to)?;
 
@@ -51,6 +49,8 @@ impl TemplateBuilder {
 
     /// Creates a new template as the starting point of the DAG.
     pub fn start(&mut self, name: &str, sighash_type: EcdsaSighashType, previous_tx: Txid, vout: u32, amount: u64, script_pubkey: ScriptBuf, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
+        check_empty_template_name(name)?;
+
         self.finalized = false;
 
         if self.graph.contains_template(name) {
@@ -64,6 +64,10 @@ impl TemplateBuilder {
 
     /// Creates a connection between two templates.
     pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
+        check_empty_template_name(from)?;
+        check_empty_template_name(to)?;
+        check_empty_scripts(&connection_params.spending_scripts_with_params())?;
+        
         self.finalized = false;
 
         if self.graph.is_ended(from) {
@@ -119,6 +123,12 @@ impl TemplateBuilder {
 
     /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG.
     pub fn connect_rounds(&mut self, rounds: u32, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, round_params: RoundParams) -> Result<(String, String), TemplateBuilderError> {
+        check_zero_rounds(rounds)?;
+        check_empty_template_name(from)?;
+        check_empty_template_name(to)?;
+        check_empty_scripts(&round_params.direct_connection().spending_scripts_with_params())?;
+        check_empty_scripts(&round_params.reverse_connection().spending_scripts_with_params())?;
+        
         // To create the names for the intermediate templates in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
         let mut to_round;
@@ -154,7 +164,10 @@ impl TemplateBuilder {
 
     /// Marks an existing template as one end of the DAG. It will create an output that later could be spent by any transaction outside the DAG.
     /// The end output should use the total funds from the transaction, minus fees, not just the protocol amount
-    pub fn end(&mut self, name: &str, amount: u64, spending_conditions: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
+    pub fn end(&mut self, name: &str, amount: u64, spending_scripts: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
+        check_empty_template_name(name)?;
+        check_empty_scripts(spending_scripts)?;
+        
         self.finalized = false;
         
         if !self.graph.contains_template(name) {
@@ -169,7 +182,7 @@ impl TemplateBuilder {
 
         let template = self.get_template_mut(name)?;
 
-        let (end_output, _) = template.push_output(amount, spending_conditions)?;
+        let (end_output, _) = template.push_output(amount, spending_scripts)?;
 
         Ok(end_output)
     }
@@ -255,4 +268,28 @@ impl TemplateBuilder {
             None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
         }
     }
+}
+
+fn check_empty_scripts(spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
+    if spending_scripts.is_empty() {
+        return Err(TemplateBuilderError::EmptySpendingScripts);
+    }
+    
+    Ok(())
+}
+
+fn check_empty_template_name(name: &str) -> Result<(), TemplateBuilderError> {
+    if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
+        return Err(TemplateBuilderError::MissingTemplateName);
+    }
+    
+    Ok(())
+}
+
+fn check_zero_rounds(rounds: u32) -> Result<(), TemplateBuilderError> {
+    if rounds == 0 {
+        return Err(TemplateBuilderError::InvalidZeroRounds);
+    } 
+    
+    Ok(())
 }

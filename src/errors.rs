@@ -40,7 +40,13 @@ pub enum TemplateBuilderError {
     KeyManagerError(#[from] P2wpkhError),
 
     #[error("Cannot create zero rounds")]
-    InvalidZeroRounds
+    InvalidZeroRounds,
+
+    #[error("Spending scripts cannot be empty")]
+    EmptySpendingScripts,
+
+    #[error("Template name is empty")]
+    MissingTemplateName,
 }
 
 #[derive(Error, Debug)]
@@ -83,6 +89,9 @@ pub enum TemplateError {
 
     #[error("Invalid script params for input {0}")]
     InvalidScriptParams(usize),
+
+    #[error("Invalid locktime {0}")]
+    InvalidLockTime(u16),
 
     #[error("Missing signature veryfing key for input {0}")]
     MissingPublicKey(usize),
