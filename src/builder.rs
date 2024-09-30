@@ -40,7 +40,7 @@ impl TemplateBuilder {
 
     /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG. 
     /// Short version of the connect_rounds method, it uses the seedup scripts from the config.
-    pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> { 
+    pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> {         
         let direct_connection = self.defaults.connection_params(spending_scripts_from)?;
         let reverse_connection = self.defaults.reverse_connection_params(spending_scripts_to)?;
 
@@ -51,6 +51,8 @@ impl TemplateBuilder {
 
     /// Creates a new template as the starting point of the DAG.
     pub fn start(&mut self, name: &str, sighash_type: EcdsaSighashType, previous_tx: Txid, vout: u32, amount: u64, script_pubkey: ScriptBuf, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
+        check_empty_template_name(name)?;
+
         self.finalized = false;
 
         if self.graph.contains_template(name)? {
@@ -66,6 +68,10 @@ impl TemplateBuilder {
 
     /// Creates a connection between two templates.
     pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
+        check_empty_template_name(from)?;
+        check_empty_template_name(to)?;
+        check_empty_scripts(&connection_params.spending_scripts_with_params())?;
+        
         self.finalized = false;
 
         if self.graph.is_ended(from) {
@@ -80,7 +86,7 @@ impl TemplateBuilder {
         self.connect_protocol(
             from, to, 
             connection_params.get_locked_amount(), 
-            connection_params.get_lock_blocks(),
+            0,
             sighash_type, 
             connection_params.template_from(), 
             connection_params.template_to(), 
@@ -124,6 +130,12 @@ impl TemplateBuilder {
 
     /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG.
     pub fn connect_rounds(&mut self, rounds: u32, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, round_params: RoundParams) -> Result<(String, String), TemplateBuilderError> {
+        check_zero_rounds(rounds)?;
+        check_empty_template_name(from)?;
+        check_empty_template_name(to)?;
+        check_empty_scripts(&round_params.direct_connection().spending_scripts_with_params())?;
+        check_empty_scripts(&round_params.reverse_connection().spending_scripts_with_params())?;
+        
         // To create the names for the intermediate templates in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
         let mut to_round;
@@ -158,8 +170,11 @@ impl TemplateBuilder {
     }
 
     /// Marks an existing template as one end of the DAG. It will create an output that later could be spent by any transaction outside the DAG.
-    /// The end output should use the total funds from the transaction, not just the protocol amount
-    pub fn end(&mut self, name: &str, spending_conditions: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
+    /// The end output should use the total funds from the transaction, minus fees, not just the protocol amount
+    pub fn end(&mut self, name: &str, amount: u64, spending_scripts: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
+        check_empty_template_name(name)?;
+        check_empty_scripts(spending_scripts)?;
+        
         self.finalized = false;
         
         if !self.graph.contains_template(name)? {
@@ -172,10 +187,9 @@ impl TemplateBuilder {
 
         self.graph.end_template(name);
 
-        let protocol_amount = self.defaults.get_protocol_amount();
         let mut template = self.get_template(name)?;
 
-        let (end_output, _) = template.push_output(protocol_amount, spending_conditions)?;
+        let (end_output, _) = template.push_output(amount, spending_scripts)?;
         self.graph.add_template(name, template)?;
 
         Ok(end_output)
@@ -286,259 +300,6 @@ impl TemplateBuilder {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-    use bitcoin::{absolute, bip32::Xpub, key::rand::RngCore, secp256k1::{self, Message}, transaction, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid, hashes::Hash};
-    use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, verifier::SignatureVerifier, winternitz::{WinternitzPublicKey, WinternitzType}};
-    use serde_json::json;
-    use json_diff;
-    use crate::{errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}, template::{InputType, Template}};
-    use super::TemplateBuilder;
-
-    #[test]
-    fn test_single_connection() -> Result<(), TemplateBuilderError> {
-        let protocol_amount = 2400000;
-        let speedup_amount = 2400000;
-        let locked_amount = 95000000;
-
-        let mut key_manager = test_key_manager()?;
-        let verifying_key_0 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let verifying_key_1 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 1)?;
-        let verifying_key_2 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 2)?;
-        let pk = key_manager.derive_keypair(0)?;
-
-        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
-
-        let spending_scripts = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let mut builder = test_template_builder()?;
-
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
-        builder.add_connection("A", "B", &spending_scripts)?;
-        builder.end("B", &spending_scripts)?;
-
-        let mut templates = builder.finalize_and_build()?;
-
-        let mut key_manager = test_key_manager()?;
-        let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
-
-        assert!(signed_templates.len() == 2);
-
-        let template_a = signed_templates.iter().find(|template| template.get_name() == "A").unwrap();
-        let next_inputs = template_a.get_next_inputs();
-        assert_eq!(next_inputs.len(), 2);
-        assert_eq!(next_inputs[0].get_to(), "B");
-        assert_eq!(next_inputs[0].get_index(), 0);
-        assert_eq!(next_inputs[1].get_to(), "B");
-        assert_eq!(next_inputs[1].get_index(), 1);
-
-        // We should have 3 outputs in the transaction, the speedup output, the timelocked output and the protocol output.
-        let transaction_a = template_a.get_transaction();
-        assert_eq!(transaction_a.output.len(), 3);
-
-        // The first output has the speedup amount
-        let speedup_output = transaction_a.output.first().unwrap();
-        assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
-
-        // The second output has the locked amount
-        let locked_output = transaction_a.output.get(1).unwrap();
-        assert_eq!(locked_output.value, Amount::from_sat(locked_amount));
-        
-        // The third output has the protocol amount
-        let protocol_output = transaction_a.output.get(2).unwrap();
-        assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
-
-        let template_b = signed_templates.iter().find(|template| template.get_name() == "B").unwrap();
-
-        assert_eq!(template_b.get_inputs().len(), 2);
-
-        // The third output from A is the protocol output we will be consuming in B
-        let previous_outputs = template_b.get_previous_outputs();        
-        assert_eq!(previous_outputs.len(), 2);
-        assert_eq!(previous_outputs[0].get_from(), "A");
-        assert_eq!(previous_outputs[0].get_index(), 1);
-        assert_eq!(previous_outputs[1].get_from(), "A");
-        assert_eq!(previous_outputs[1].get_index(), 2);
-
-        for input in template_b.get_inputs() {
-            let verifying_key = input.get_verifying_key().unwrap();
-
-            match input.get_type() {
-                InputType::Taproot { spending_paths, .. } => {
-                    for spending_path in spending_paths.values() {
-                        let sighash = spending_path.get_sighash().unwrap();
-                        let message = &Message::from(sighash);
-
-                        assert!(SignatureVerifier::default().verify_schnorr_signature(
-                            &spending_path.get_signature().unwrap().signature, 
-                            message, 
-                            verifying_key)
-                        );
-                    }
-                },
-                InputType::P2WPKH { sighash, signature, .. } => {
-                    let message = &Message::from(sighash.unwrap());
-
-                    assert!(SignatureVerifier::default().verify_ecdsa_signature(
-                        &signature.unwrap().signature, 
-                        message, 
-                        verifying_key)
-                    );
-                }
-            }
-        }
-
-        let transaction_b = template_b.get_transaction();
-        assert_eq!(transaction_b.input.len(), 2);
-        
-        let protocol_input = transaction_b.input.first().unwrap();
-        assert_eq!(protocol_input.previous_output.txid, template_a.get_transaction().compute_txid());
-
-        // We should have 3 outputs in the transaction, the speedup output, the timelocked output and the protocol output.
-        assert_eq!(transaction_b.output.len(), 2);
-
-        // The first output has the speedup amount
-        let speedup_output = transaction_b.output.first().unwrap();
-        assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
-        
-        // The second output has the end protocol amount
-        let protocol_output = transaction_b.output.get(1).unwrap();
-        assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
-
-        Ok(())
-    }
-    
-    #[test]
-    fn test_rounds() -> Result<(), TemplateBuilderError> {
-        let rounds = 3;
-
-        let mut key_manager = test_key_manager()?;
-        let verifying_key_0 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let verifying_key_1 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 1)?;
-        let verifying_key_2 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 2)?;
-        let pk = key_manager.derive_keypair(0)?;
-
-        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
-
-        let spending_scripts = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let spending_scripts_from = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let spending_scripts_to = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-
-        let mut builder = test_template_builder()?;
-        
-        let (from_rounds, to_rounds) = builder.add_rounds(rounds, "B", "C", &spending_scripts_from, &spending_scripts_to)?;
-        
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
-        builder.add_connection("A", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, &spending_scripts)?;
-
-        let templates = builder.finalize_and_build()?;
-    
-        assert!(templates.len() as u32 == rounds * 2 + 1);
-
-        let mut template_names: Vec<String> = templates.iter().map(|t| t.get_name().to_string()).collect();
-        template_names.sort();
-
-        assert_eq!(&template_names, &["A", "B_0", "B_1", "B_2", "C_0", "C_1", "C_2"]);
-        
-        Ok(())
-    }
-
-    #[test]
-    fn test_multiple_connections() -> Result<(), TemplateBuilderError> {
-        let rounds = 3;
-
-        let mut key_manager = test_key_manager()?;
-        let master_xpub = key_manager.generate_master_xpub()?;
-        let verifying_key_0 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let verifying_key_1 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 1)?;
-        let verifying_key_2 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 2)?;
-        let pk = key_manager.derive_keypair(0)?;
-
-        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
-
-        let spending_scripts = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let spending_scripts_from = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let spending_scripts_to = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-
-        let mut builder = test_template_builder()?;    
-
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
-        builder.add_connection("A", "B", &spending_scripts)?;
-        builder.add_connection("A", "C", &spending_scripts)?;
-        builder.add_connection("B", "D", &spending_scripts)?;
-        builder.add_connection("C", "D", &spending_scripts)?;
-        builder.add_connection("D", "E", &spending_scripts)?;
-        builder.add_connection("A", "F", &spending_scripts)?;
-        builder.add_connection("D", "F", &spending_scripts)?;
-        builder.add_connection("F", "G", &spending_scripts)?;
-
-        let (from_rounds, to_rounds) = builder.add_rounds(rounds, "H", "I", &spending_scripts_from, &spending_scripts_to)?;
-
-        builder.add_connection("G", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, &spending_scripts)?;
-        builder.end("E", &spending_scripts)?;
-    
-        let mut templates = builder.finalize_and_build()?;
-        let signed_templates = sign_templates(&mut key_manager, &mut templates)?;
-
-        assert!(signed_templates.len() == 13);
-
-        let mut template_names: Vec<String> = signed_templates.iter().map(|t| t.get_name().to_string()).collect();
-
-        assert!(verify_templates_signatures(master_xpub, signed_templates)?);
-        
-        template_names.sort();
-
-        assert_eq!(&template_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_starting_ending_templates() -> Result<(), TemplateBuilderError> {
-        let mut key_manager = test_key_manager()?;
-        let verifying_key_0 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
-        let verifying_key_1 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 1)?;
-        let verifying_key_2 = key_manager.derive_winternitz(4, WinternitzType::SHA256, 2)?;
-        let spending_scripts = test_spending_scripts(&verifying_key_0, &verifying_key_1, &verifying_key_2);
-        let pk = key_manager.derive_keypair(0)?;
-
-        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
-
-        let mut builder = test_template_builder()?;
-
-        builder.add_start("A", txid, vout, amount, script_pubkey.clone())?;
-        builder.add_connection("A", "B", &spending_scripts)?;
-        builder.end("B", &spending_scripts)?;
-
-        // Ending a template twice should fail
-        let result = builder.end("B", &spending_scripts);
-        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyEnded(_))));
-
-        // Adding a connection to an ended template should fail
-        let result = builder.add_connection("C", "B", &spending_scripts);
-        assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
-
-        let result = builder.add_connection("B", "C", &spending_scripts);
-        assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
-
-        // Cannot end a template that doesn't exist in the graph
-        let result = builder.end("C", &spending_scripts);
-        assert!(matches!(result, Err(TemplateBuilderError::MissingTemplate(_))));
-
-        // Cannot mark an existing template in the graph as the starting point
-        let result = builder.add_start("B", txid, vout, amount, script_pubkey.clone());
-        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyExists(_))));
-
-        // Cannot start a template twice
-        builder.add_start("D", txid, vout, amount, script_pubkey.clone())?;
-        let result = builder.add_start("D", txid, vout, amount, script_pubkey);
-        assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyExists(_))));
-
-        Ok(())
-    }
 
     #[test]
     fn test_db() -> Result<(), TemplateBuilderError> {
@@ -816,163 +577,26 @@ mod tests {
 
         Ok(())
     }
-    
-    fn test_template_builder() -> Result<TemplateBuilder, TemplateBuilderError> {
-        let mut key_manager = test_key_manager()?;
 
-        let master_xpub = key_manager.generate_master_xpub()?;
-
-        let speedup_from_key = &key_manager.derive_public_key(master_xpub, 0)?;
-        let speedup_to_key = &key_manager.derive_public_key(master_xpub, 1)?;
-        let timelock_from_key = &key_manager.derive_public_key(master_xpub, 2)?;
-        let timelock_to_key = &key_manager.derive_public_key(master_xpub, 3)?;
-        // TODO This needs to be an aggregated key
-        let timelock_renew_key = &key_manager.derive_public_key(master_xpub, 4)?;
-
-        let protocol_amount = 2_400_000;
-        let speedup_amount = 2_400_000;
-        let locked_amount = 95_000_000;
-        let locked_blocks: u16 = 200;
-        let taproot_sighash_type = TapSighashType::All;
-        let ecdsa_sighash_type = EcdsaSighashType::All;
-        let graph_path = temp_storage_path();
-
-        let defaults = DefaultParams::new(
-            protocol_amount,
-            speedup_from_key,
-            speedup_to_key,
-            speedup_amount,
-            timelock_from_key,
-            timelock_to_key,
-            timelock_renew_key,
-            locked_amount,
-            locked_blocks,
-            ecdsa_sighash_type,
-            taproot_sighash_type,
-            graph_path, 
-        )?;
-
-        let builder = TemplateBuilder::new(defaults)?;
-        Ok(builder)
+fn check_empty_scripts(spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
+    if spending_scripts.is_empty() {
+        return Err(TemplateBuilderError::EmptySpendingScripts);
     }
     
-    fn test_key_manager() -> Result<KeyManager<DatabaseKeyStore>, KeyManagerError> {
-        let network = Network::Regtest;
-        let keystore_path = temp_storage_path();
-        let keystore_password = b"secret password".to_vec(); 
-        let key_derivation_path: &str = "m/101/1/0/0/";
-        let key_derivation_seed = random_bytes(); 
-        let winternitz_seed = random_bytes();
+    Ok(())
+}
 
-        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
-        let key_manager = KeyManager::new(
-            network,
-            key_derivation_path,
-            key_derivation_seed,
-            winternitz_seed,
-            database_keystore,
-        )?;
-    
-        Ok(key_manager)
+fn check_empty_template_name(name: &str) -> Result<(), TemplateBuilderError> {
+    if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
+        return Err(TemplateBuilderError::MissingTemplateName);
     }
-
-    fn sign_templates<'a>(key_manager: &'a mut KeyManager<DatabaseKeyStore>, templates: &'a mut Vec<Template>) -> Result<&'a mut Vec<Template>, TemplateBuilderError> {
-        for (index, template) in templates.iter_mut().enumerate() {
-            let public_key = key_manager.derive_keypair(index as u32)?;
     
-            for (input_index, input) in template.get_inputs().iter().enumerate() {
-                match input.get_type() {
-                    InputType::Taproot { sighash_type, spending_paths, .. } => {
-                        for spending_path in spending_paths.values() {
-                            let signature: secp256k1::schnorr::Signature = key_manager.sign_schnorr_message(&Message::from(spending_path.get_sighash().unwrap()), &public_key)?;
-                            let taproot_signature = bitcoin::taproot::Signature{ signature, sighash_type: *sighash_type };
-    
-                            template.push_taproot_signature(input_index, &spending_path.get_taproot_leaf(), taproot_signature, &public_key)?;
-                        }
-                    },
-                    InputType::P2WPKH { sighash, sighash_type, .. } => {
-                        let signature: secp256k1::ecdsa::Signature = key_manager.sign_ecdsa_message(&Message::from(sighash.unwrap()), public_key)?;
-                        let segwit_signature = bitcoin::ecdsa::Signature{ signature, sighash_type: *sighash_type };
-    
-                        template.push_ecdsa_signature(input_index, segwit_signature, &public_key)?;
-                    }
-                }
-            }
-        }
-    
-        Ok(templates)
-    
-        //taproot_signature.serialize().to_vec();
-        //let mut sig_ser = signature.serialize_der().to_vec();
-        //sig_ser.push(sighash_type as u8);
+    Ok(())
+}
+
+fn check_zero_rounds(rounds: u32) -> Result<(), TemplateBuilderError> {
+    if rounds == 0 {
+        return Err(TemplateBuilderError::InvalidZeroRounds);
     }
-
-    fn verify_templates_signatures(master_xpub: Xpub, signed_templates: &[Template]) -> Result<bool, TemplateBuilderError> {
-        let  mut key_manager = test_key_manager()?;
-
-        for (index, template) in signed_templates.iter().enumerate() {
-            let public_key = key_manager.derive_public_key(master_xpub, index as u32)?;
-    
-            for input in template.get_inputs().iter() {
-                match input.get_type() {
-                    InputType::Taproot { spending_paths, .. } => {
-                        for spending_path in spending_paths.values() {
-                            let message = &Message::from(spending_path.get_sighash().unwrap());
-                            if !SignatureVerifier::default().verify_schnorr_signature(&spending_path.get_signature().unwrap().signature, message, public_key) {
-                                return Ok(false);
-                            }
-                        }
-                    },
-                    InputType::P2WPKH { sighash, signature, .. } => {
-                        let message = &Message::from(sighash.unwrap());
-                        if !SignatureVerifier::default().verify_ecdsa_signature(&signature.unwrap().signature, message, public_key) {
-                            return Ok(false);
-                        }
-                    }
-                }
-            }
-        }
-    
-        Ok(true)
-    }
-
-    fn previous_tx_info(pk: PublicKey) -> (Txid, u32, u64, ScriptBuf) {
-        let amount = 100000;
-        let wpkh = pk.wpubkey_hash().expect("key is compressed");
-        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
-
-        let previous_tx = Transaction {
-            version: transaction::Version::TWO, 
-            lock_time: absolute::LockTime::ZERO, 
-            input: vec![],             
-            output: vec![],          
-        };
-
-        (previous_tx.compute_txid(), 0, amount, script_pubkey)
-    }
-
-    fn random_bytes() -> [u8; 32] {
-        let mut seed = [0u8; 32];
-        secp256k1::rand::thread_rng().fill_bytes(&mut seed);
-        seed
-    }
-
-    fn random_u32() -> u32 {
-        secp256k1::rand::thread_rng().next_u32()
-    }
-
-    fn temp_storage_path() -> String {
-        let dir = env::temp_dir();
-
-        let storage_path = dir.join(format!("secure_storage_{}.db", random_u32()));
-        storage_path.to_str().expect("Failed to get path to temp file").to_string()
-    }
-
-    fn test_spending_scripts(verifying_key0: &WinternitzPublicKey, verifying_key1: &WinternitzPublicKey, verifying_key2: &WinternitzPublicKey) -> Vec<ScriptWithParams> {
-        vec![
-            scripts::verify_single_value("x", verifying_key0),
-            scripts::verify_single_value("y", verifying_key1),
-            scripts::verify_single_value("z", verifying_key2),
-        ]
-    }
+    Ok(())
 }

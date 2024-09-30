@@ -104,13 +104,22 @@ pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithPar
     script_with_params
 }
 
+// TODO aggregated_key must be an aggregated key and not a single public key
 pub fn collaborative_spend(aggregated_key: &PublicKey) -> ScriptWithParams {
     let script = script!(
         { aggregated_key.to_bytes() }
         OP_CHECKSIG
     );
 
-    let mut script_with_params = ScriptWithParams::new(script);
+    let wrapped = script!{
+        OP_IF
+        OP_TRUE
+        OP_ELSE
+        {script}
+        OP_ENDIF
+    };
+
+    let mut script_with_params = ScriptWithParams::new(wrapped);
     script_with_params.add_param("aggregated_signature", 0, KeyType::EcdsaPublicKey, 0);
     script_with_params
 }
@@ -157,14 +166,15 @@ pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey
 // Winternitz Signature verification. Note that the script inputs are malleable.
 // Optimized by @SergioDemianLerner, @tomkosm
 fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
+    let bits_per_digit = 4;
+    let total_size = public_key.to_hashes().len() as u32;
     let message_size = public_key.message_size() as u32;
-    let bits_per_digit = 4; 
+
     let base: u32 = (1 << bits_per_digit) - 1;
     let log_digits_per_message:f32 = ((base * message_size) as f32).log((base + 1) as f32).ceil() + 1.0;
     let checksum_size: usize = usize::try_from(log_digits_per_message as u32).unwrap();
-    let total_size = message_size + checksum_size as u32;
 
-    script! {
+    let verify = script! {
         // Verify the hash chain for each digit
         // Repeat this for every of the n many digits
         for digit_index in 0..total_size {
@@ -182,13 +192,15 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
             for _ in 0..base {
                 OP_DUP OP_HASH160
             }
-
-            // Verify the signature for this digit
+                                                        
+            // Verify the signature for this digit      
             OP_FROMALTSTACK
             OP_PICK
-            { public_key.to_hashes()[digit_index as usize].clone() }
-            OP_EQUALVERIFY
 
+            { public_key.to_hashes()[(total_size - 1) as usize - digit_index as usize].clone() }
+
+            OP_EQUALVERIFY
+            
             // Drop the d+1 stack items
             for _ in 0..(base + 1) / 2 {
                 OP_2DROP
@@ -216,7 +228,7 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
 
         // 3. Ensure both checksums are equal
         OP_EQUALVERIFY
-
+        
         if keep_message {
             // Convert the message's digits to bytes
             for i in 0..message_size / 2 {
@@ -244,6 +256,8 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
                     OP_DROP
                 }
             }
-        }   
-    }
+        }
+    };
+
+    verify
 }

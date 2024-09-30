@@ -15,7 +15,6 @@ pub struct TemplateBuilderConfig {
     pub speedup_from_key: String,
     pub speedup_to_key: String,
     pub speedup_amount: u64,
-    pub timelock_blocks: u8,
     pub timelock_from_key: String,
     pub timelock_to_key: String,
     pub timelock_renew_key: String,

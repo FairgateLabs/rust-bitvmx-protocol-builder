@@ -1,7 +1,10 @@
 [package]
 name = "bitvmx-template-builder"
-version = "0.1.0"
+description = "Library designed to construct and manage Directed Acyclic Graphs (DAGs) of BitVMX pre-signed transactions"
+version = "0.0.1"
 edition = "2021"
+authors = ["Diego Masini <diego.masini@gmail.com>"]
+repository = "https://github.com/FairgateLabs/rust-bitvmx-template-builder"
 
 [lib]
 name = "template_builder"

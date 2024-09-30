@@ -32,15 +32,21 @@ pub enum TemplateBuilderError {
 
     #[error("Invalid configuration")]
     ConfigurationError(#[from] ConfigError),
-
-    // #[error("Invalid test configuration")]
-    // TestConfigurationError(#[from] TestClientError),
     
     #[error("Call `finalize` before building templates")]
     NotFinalized,
 
     #[error("Failed to compute sighash in TemplateBuilder")]
     KeyManagerError(#[from] P2wpkhError),
+
+    #[error("Cannot create zero rounds")]
+    InvalidZeroRounds,
+
+    #[error("Spending scripts cannot be empty")]
+    EmptySpendingScripts,
+
+    #[error("Template name is empty")]
+    MissingTemplateName,
 }
 
 #[derive(Error, Debug)]
@@ -89,6 +95,12 @@ pub enum TemplateError {
 
     #[error("Invalid script params for input {0}")]
     InvalidScriptParams(usize),
+
+    #[error("Invalid locktime {0}")]
+    InvalidLockTime(u16),
+
+    #[error("Missing signature veryfing key for input {0}")]
+    MissingPublicKey(usize),
 }
 
 #[derive(Error, Debug)]
