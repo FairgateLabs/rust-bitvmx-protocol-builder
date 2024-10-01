@@ -141,8 +141,8 @@ pub fn aggregated_signature(aggregated_key: &PublicKey) -> ScriptWithParams {
 
 pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> ScriptWithParams {        
     let script = script!(
-        {ots_checksig_verify(f_key, false)}
-        {ots_checksig_verify(input_key, false)}
+        {ots_checksig(f_key)}
+        {ots_checksig(input_key)}
     );
 
     let mut script_with_params = ScriptWithParams::new(script);
@@ -154,7 +154,7 @@ pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> 
 
 pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey) -> ScriptWithParams {
     let script = script!(
-        {ots_checksig_verify(verifying_key, true)}
+        { ots_checksig(verifying_key) }
     );
 
     let mut script_with_params = ScriptWithParams::new(script);
@@ -163,44 +163,40 @@ pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey
 }
 
 // Winternitz Signature verification. Note that the script inputs are malleable.
-// Optimized by @SergioDemianLerner, @tomkosm
-fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
-    let bits_per_digit = 4;
-    let total_size = public_key.to_hashes().len() as u32;
+pub fn ots_checksig(public_key: &WinternitzPublicKey) -> ScriptBuf {
+    let total_size = public_key.total_len() as u32;
     let message_size = public_key.message_size() as u32;
-
-    let base: u32 = (1 << bits_per_digit) - 1;
-    let log_digits_per_message:f32 = ((base * message_size) as f32).log((base + 1) as f32).ceil() + 1.0;
-    let checksum_size: usize = usize::try_from(log_digits_per_message as u32).unwrap();
+    let checksum_size = public_key.checksum_size() as u32;
+    let base = public_key.get_base() as u32;
+    let bits_per_digit = public_key.get_bits_per_digit() as u32;
+    let public_key_hashes = public_key.to_hashes();
 
     let verify = script! {
         // Verify the hash chain for each digit
-        // Repeat this for every of the n many digits
         for digit_index in 0..total_size {
             // Verify that the digit is in the range [0, d]
-            // See https://github.com/BitVM/BitVM/issues/35
             { base }
             OP_MIN
 
             // Push two copies of the digit onto the altstack
-            OP_DUP
-            OP_TOALTSTACK
-            OP_TOALTSTACK
+            OP_DUP OP_TOALTSTACK OP_TOALTSTACK
 
             // Hash the input hash d times and put every result on the stack
             for _ in 0..base {
                 OP_DUP OP_HASH160
             }
-                                                        
-            // Verify the signature for this digit      
+
+            // Compute the offset of the hash table entry for this digit 
+            { base }
             OP_FROMALTSTACK
+            OP_SUB
+
+            // Verify the signature for this digit   
             OP_PICK
-
-            { public_key.to_hashes()[(total_size - 1) as usize - digit_index as usize].clone() }
-
+            { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
             OP_EQUALVERIFY
-            
-            // Drop the d+1 stack items
+
+            // Drop the hash table entries from the stack
             for _ in 0..(base + 1) / 2 {
                 OP_2DROP
             }
@@ -208,54 +204,50 @@ fn ots_checksig_verify(public_key: &WinternitzPublicKey, keep_message: bool) -> 
 
         // Verify the Checksum
         // 1. Compute the checksum of the message's digits
-        OP_FROMALTSTACK OP_DUP OP_NEGATE
+        OP_FROMALTSTACK
+        OP_DUP
+        OP_NEGATE
+
         for _ in 1..message_size {
             OP_FROMALTSTACK OP_TUCK OP_SUB
         }
+
         { base * message_size }
         OP_ADD
 
         // 2. Sum up the signed checksum's digits
         OP_FROMALTSTACK
+
         for _ in 0..checksum_size - 1 {
             for _ in 0..bits_per_digit {
-                OP_DUP OP_ADD
+                OP_DUP
+                OP_ADD
             }
+
             OP_FROMALTSTACK
             OP_ADD
         }
 
         // 3. Ensure both checksums are equal
-        OP_EQUALVERIFY
-        
-        if keep_message {
-            // Convert the message's digits to bytes
-            for i in 0..message_size / 2 {
-                OP_SWAP
-                for _ in 0..bits_per_digit {
-                    OP_DUP OP_ADD
-                }
-                OP_ADD
-                // Push all bytes to the altstack, except for the last byte containing the OP_EQUALVERIFY result
-                if i != (message_size / 2) - 1 {
-                    OP_TOALTSTACK
-                }
-            }
-            // Read the bytes from the altstack and push them to the stack
-            for _ in 0..message_size / 2 - 1{
-                OP_FROMALTSTACK
-            }
+        OP_EQUAL
+
+        // Drop the message's digits from the stack keeping only the OP_EQUAL result 
+        OP_TOALTSTACK
+        if message_size == 1 {
+            OP_DROP
         } else {
-            // Drop the message's digits from the stack keeping only the last OP_EQUALVERIFY result 
-            for i in 0..(message_size) / 2 {
-                OP_SWAP
-                if i != (message_size / 2) - 1 {
+            if message_size % 2 == 0 {
+                for _ in 0..(message_size / 2) {
                     OP_2DROP
-                } else {
-                    OP_DROP
                 }
+            } else {
+                for _ in 0..(message_size / 2) {
+                    OP_2DROP
+                }
+                OP_DROP
             }
         }
+        OP_FROMALTSTACK
     };
 
     verify
