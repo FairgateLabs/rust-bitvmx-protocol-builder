@@ -5,12 +5,14 @@ mod tests {
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, winternitz::{WinternitzPublicKey, WinternitzType}};
     use crate::{builder::TemplateBuilder, errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}};
 
+    const PROTOCOL_AMOUNT:u64 = 2_400_000;
+    const SPEEDUP_AMOUNT:u64 = 2_400_000;
+    const LOCKED_AMOUNT:u64 = 95_000_000;
+    const END_AMOUNT:u64 = 98_000_000;
+
     #[test]
     fn test_single_connection() -> Result<(), TemplateBuilderError> {
-        let protocol_amount = 2400000;
-        let speedup_amount = 2400000;
-        let locked_amount = 95000000;
-        let end_amount = protocol_amount + locked_amount;
+        let end_amount = PROTOCOL_AMOUNT + LOCKED_AMOUNT;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -42,15 +44,15 @@ mod tests {
 
         // The first output has the speedup amount
         let speedup_output = transaction_a.output.first().unwrap();
-        assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
+        assert_eq!(speedup_output.value, Amount::from_sat(SPEEDUP_AMOUNT));
 
         // The second output has the locked amount
         let locked_output = transaction_a.output.get(1).unwrap();
-        assert_eq!(locked_output.value, Amount::from_sat(locked_amount));
+        assert_eq!(locked_output.value, Amount::from_sat(LOCKED_AMOUNT));
         
         // The third output has the protocol amount
         let protocol_output = transaction_a.output.get(2).unwrap();
-        assert_eq!(protocol_output.value, Amount::from_sat(protocol_amount));
+        assert_eq!(protocol_output.value, Amount::from_sat(PROTOCOL_AMOUNT));
 
         let template_b = templates.iter().find(|template| template.get_name() == "B").unwrap();
 
@@ -75,13 +77,52 @@ mod tests {
 
         // The first output has the speedup amount
         let speedup_output = transaction_b.output.first().unwrap();
-        assert_eq!(speedup_output.value, Amount::from_sat(speedup_amount));
+        assert_eq!(speedup_output.value, Amount::from_sat(SPEEDUP_AMOUNT));
         
-        println!("{:#?}", transaction_b);
-
         // The second output has the total end amount
         let end_output = transaction_b.output.get(1).unwrap();
         assert_eq!(end_output.value, Amount::from_sat(end_amount));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_connections() -> Result<(), TemplateBuilderError> {
+        let rounds = 3;
+
+        let mut key_manager = test_key_manager()?;
+        let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
+        let pk = key_manager.derive_keypair(0)?;
+
+        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
+
+        let spending_scripts = test_spending_scripts(&verifying_key);
+        let spending_scripts_from = test_spending_scripts(&verifying_key);
+        let spending_scripts_to = test_spending_scripts(&verifying_key);
+
+        let mut builder = test_template_builder()?;    
+
+        builder.add_start("A", txid, vout, amount, script_pubkey)?;
+        builder.add_connection("A", "B", &spending_scripts)?;
+        builder.add_connection("A", "C", &spending_scripts)?;
+        builder.add_connection("B", "D", &spending_scripts)?;
+        builder.add_connection("C", "D", &spending_scripts)?;
+        builder.add_connection("D", "E", &spending_scripts)?;
+        builder.add_connection("A", "F", &spending_scripts)?;
+        builder.add_connection("D", "F", &spending_scripts)?;
+        builder.add_connection("F", "G", &spending_scripts)?;
+
+        let (from_rounds, to_rounds) = builder.add_rounds(rounds, "H", "I", &spending_scripts_from, &spending_scripts_to)?;
+
+        builder.add_connection("G", &from_rounds, &spending_scripts)?;
+        builder.end(&to_rounds, END_AMOUNT, &spending_scripts)?;
+        builder.end("E", END_AMOUNT, &spending_scripts)?;
+    
+        let templates = builder.finalize_and_build()?;
+        let mut template_names: Vec<String> = templates.iter().map(|t| t.get_name().to_string()).collect();
+        template_names.sort();
+
+        assert_eq!(&template_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
 
         Ok(())
     }
@@ -114,8 +155,44 @@ mod tests {
     }
 
     #[test]
+    fn test_cyclic_rounds() -> Result<(), TemplateBuilderError> {
+        let rounds = 1;
+
+        let mut key_manager = test_key_manager()?;
+        let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
+        let pk = key_manager.derive_keypair(0)?;
+
+        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
+
+        let spending_scripts = test_spending_scripts(&verifying_key);
+
+        let mut builder = test_template_builder()?;
+        
+        builder.add_rounds(rounds, "A", "B", &spending_scripts, &spending_scripts)?;
+        let (from_rounds, to_rounds) = builder.add_rounds(rounds, "B", "A", &spending_scripts, &spending_scripts)?;
+        
+        builder.add_start("A", txid, vout, amount, script_pubkey)?;
+        builder.add_connection("A", &from_rounds, &spending_scripts)?;
+        builder.end(&to_rounds, END_AMOUNT, &spending_scripts)?;
+        
+        let result = builder.finalize_and_build();
+        
+        match result {
+            Err(TemplateBuilderError::GraphBuildingError(_graph_error)) => {
+            }
+            Err(_) => {
+                panic!("Expected GraphCycleDetected error, got a different error");
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }    
+
+        Ok(())
+    }
+
+    #[test]
     fn test_multiples_templates_cyclic_connection() -> Result<(), TemplateBuilderError> {
-        let end_amount = 98000000;
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
         let pk = key_manager.derive_keypair(0)?;
@@ -130,7 +207,7 @@ mod tests {
         builder.add_connection("A", "B", &spending_scripts)?;
         builder.add_connection("B", "C", &spending_scripts)?;
         builder.add_connection("C", "A", &spending_scripts)?;
-        builder.end("C", end_amount, &spending_scripts)?;
+        builder.end("C", END_AMOUNT, &spending_scripts)?;
 
         let result = builder.finalize_and_build();
 
@@ -165,11 +242,30 @@ mod tests {
         
         Ok(())
     }
+
+    #[test]
+    fn test_empty_node_name() -> Result<(), TemplateBuilderError> {
+        let mut key_manager = test_key_manager()?;
+        let pk = key_manager.derive_keypair(0)?;
+        let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
+        let mut builder = test_template_builder()?;
+        
+        match builder.add_start("", txid, vout, amount, script_pubkey) {
+            Err(TemplateBuilderError::MissingTemplateName) => {
+            }
+            Err(_) => {
+                panic!("Expected MissingTemplateName error, got a different error");
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+        Ok(())
+    }
     
     #[test]
     fn test_rounds() -> Result<(), TemplateBuilderError> {
         let rounds = 3;
-        let end_amount = 98000000;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -187,7 +283,7 @@ mod tests {
         
         builder.add_start("A", txid, vout, amount, script_pubkey)?;
         builder.add_connection("A", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, end_amount, &spending_scripts)?;
+        builder.end(&to_rounds, END_AMOUNT, &spending_scripts)?;
 
         let templates = builder.finalize_and_build()?;
     
@@ -225,9 +321,27 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_connections() -> Result<(), TemplateBuilderError> {
-        let rounds = 3;
-        let end_amount = 98000000;
+    fn test_add_rounds_empty_spending_scripts() -> Result<(), TemplateBuilderError> {
+        let rounds = 1;
+
+        let mut builder = test_template_builder()?;
+        
+        match builder.add_rounds(rounds, "B", "C", &[], &[]) {
+            Err(TemplateBuilderError::EmptySpendingScripts) => {
+            }
+            Err(_) => {
+                panic!("Expected EmptySpendingScripts error, got a different error");
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }        
+        Ok(())
+    }
+
+    #[test]
+    fn test_builder_empty_spending_scripts() -> Result<(), TemplateBuilderError> {
+        let rounds = 1;
 
         let mut key_manager = test_key_manager()?;
         let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
@@ -236,32 +350,23 @@ mod tests {
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
         let spending_scripts = test_spending_scripts(&verifying_key);
-        let spending_scripts_from = test_spending_scripts(&verifying_key);
-        let spending_scripts_to = test_spending_scripts(&verifying_key);
 
-        let mut builder = test_template_builder()?;    
-
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
-        builder.add_connection("A", "B", &spending_scripts)?;
-        builder.add_connection("A", "C", &spending_scripts)?;
-        builder.add_connection("B", "D", &spending_scripts)?;
-        builder.add_connection("C", "D", &spending_scripts)?;
-        builder.add_connection("D", "E", &spending_scripts)?;
-        builder.add_connection("A", "F", &spending_scripts)?;
-        builder.add_connection("D", "F", &spending_scripts)?;
-        builder.add_connection("F", "G", &spending_scripts)?;
-
-        let (from_rounds, to_rounds) = builder.add_rounds(rounds, "H", "I", &spending_scripts_from, &spending_scripts_to)?;
-
-        builder.add_connection("G", &from_rounds, &spending_scripts)?;
-        builder.end(&to_rounds, end_amount, &spending_scripts)?;
-        builder.end("E", end_amount, &spending_scripts)?;
-    
-        let templates = builder.finalize_and_build()?;
-        let mut template_names: Vec<String> = templates.iter().map(|t| t.get_name().to_string()).collect();
-        template_names.sort();
-
-        assert_eq!(&template_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
+        let mut builder = test_template_builder()?;
+        
+        let (from_rounds, _to_rounds) = builder.add_rounds(rounds, "B", "C", &spending_scripts, &spending_scripts)?;
+        
+        builder.add_start("A", txid, vout, amount, script_pubkey)?;        
+        
+        match builder.add_connection("A", &from_rounds, &[]) {
+            Err(TemplateBuilderError::EmptySpendingScripts) => {
+            }
+            Err(_) => {
+                panic!("Expected EmptySpendingScripts error, got a different error");
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+            }
+        }
 
         Ok(())
     }
@@ -275,16 +380,14 @@ mod tests {
 
         let (txid, vout, amount, script_pubkey) = previous_tx_info(pk);
 
-        let end_amount = 98000000;
-
         let mut builder = test_template_builder()?;
 
         builder.add_start("A", txid, vout, amount, script_pubkey.clone())?;
         builder.add_connection("A", "B", &spending_scripts)?;
-        builder.end("B", end_amount, &spending_scripts)?;
+        builder.end("B", END_AMOUNT, &spending_scripts)?;
 
         // Ending a template twice should fail
-        let result = builder.end("B", end_amount, &spending_scripts);
+        let result = builder.end("B", END_AMOUNT, &spending_scripts);
         assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyEnded(_))));
 
         // Adding a connection to an ended template should fail
@@ -295,7 +398,7 @@ mod tests {
         assert!(matches!(result, Err(TemplateBuilderError::TemplateEnded(_))));
 
         // Cannot end a template that doesn't exist in the graph
-        let result = builder.end("C", end_amount, &spending_scripts);
+        let result = builder.end("C", END_AMOUNT, &spending_scripts);
         assert!(matches!(result, Err(TemplateBuilderError::MissingTemplate(_))));
 
         // Cannot mark an existing template in the graph as the starting point
@@ -322,22 +425,19 @@ mod tests {
         // TODO This needs to be an aggregated key
         let timelock_renew_key = &key_manager.derive_public_key(master_xpub, 4)?;
 
-        let protocol_amount = 2_400_000;
-        let speedup_amount = 2_400_000;
-        let locked_amount = 95_000_000;
         let locked_blocks: u16 = 200;
         let taproot_sighash_type = TapSighashType::All;
         let ecdsa_sighash_type = EcdsaSighashType::All;
 
         let defaults = DefaultParams::new(
-            protocol_amount, 
+            PROTOCOL_AMOUNT, 
             speedup_from_key, 
             speedup_to_key, 
-            speedup_amount, 
+            SPEEDUP_AMOUNT, 
             timelock_from_key, 
             timelock_to_key, 
             timelock_renew_key,
-            locked_amount, 
+            LOCKED_AMOUNT, 
             locked_blocks,
             ecdsa_sighash_type,
             taproot_sighash_type,
