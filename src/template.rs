@@ -1,4 +1,4 @@
-use std::{cmp, vec};
+use std::{cmp::max, vec};
 use lazy_static::lazy_static;
 
 use bitcoin::{EcdsaSighashType, SegwitV0Sighash,hashes::Hash, key::Secp256k1, locktime, secp256k1::{self, All}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighash, TapSighashType, Transaction, TxIn, TxOut, Txid, Witness};
@@ -102,14 +102,12 @@ impl Serialize for InputType {
                 sighash_type,
                 script_pubkey,
                 sighash,
-                signature,
                 amount,
             } => {
                 let mut state = serializer.serialize_struct("P2WPKH", 5)?;
                 state.serialize_field("ecdsa_sighash_type", sighash_type)?;
                 state.serialize_field("script_pubkey", script_pubkey)?;
                 state.serialize_field("sighash", sighash)?;
-                state.serialize_field("signature", signature)?;
                 state.serialize_field("amount", amount)?;
                 state.end()
             }
@@ -131,7 +129,6 @@ impl<'de> Deserialize<'de> for InputType {
             TaprootInternalKey,
             ScriptPubkey,
             Sighash,
-            Signature,
             Amount,
         }
 
@@ -150,11 +147,10 @@ impl<'de> Deserialize<'de> for InputType {
             {
                 let mut tap_sighash_type = None;
                 let mut ecdsa_sighash_type = None;
-                let mut spending_paths: Option<HashMap<TapLeafHash, SpendingPath>> = None;
+                let mut spending_paths: Option<Vec<SpendingPath>> = None;
                 let mut taproot_internal_key: Option<PublicKey> = None;
                 let mut script_pubkey = None;
                 let mut sighash = None;
-                let mut signature = None;
                 let mut amount = None;
 
                 while let Some(key) = map.next_key()? {
@@ -166,7 +162,6 @@ impl<'de> Deserialize<'de> for InputType {
                             if let Some(value) = map.next_value()?{
                                 tap_sighash_type = Some(value);
                             };
-                            
                         }
                         Field::EcdsaSighashType => {
                             if ecdsa_sighash_type.is_some() {
@@ -208,14 +203,6 @@ impl<'de> Deserialize<'de> for InputType {
                                 sighash = Some(value);
                             }
                         }
-                        Field::Signature => {
-                            if signature.is_some() {
-                                return Err(serde::de::Error::duplicate_field("signature"));
-                            }
-                            if let Some(value) =  map.next_value()?{
-                                signature = Some(value);   
-                            }
-                        }
                         Field::Amount => {
                             if amount.is_some() {
                                 return Err(serde::de::Error::duplicate_field("amount"));
@@ -233,7 +220,7 @@ impl<'de> Deserialize<'de> for InputType {
                         taproot_spend_info: {
                             let internal_key = taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
                             let spending_paths_ok = spending_paths.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
-                            let scripts: Vec<ScriptBuf> = spending_paths_ok.values().into_iter().map(|sp| sp.get_taproot_leaf()).collect();
+                            let scripts: Vec<ScriptBuf> = spending_paths_ok.into_iter().map(|sp| sp.get_taproot_leaf()).collect();
                             match Template::taproot_spend_info(internal_key, &scripts){
                                 Ok((taproot_spend_info, _)) => taproot_spend_info,
                                 Err(e) => {
@@ -245,7 +232,7 @@ impl<'de> Deserialize<'de> for InputType {
                         taproot_internal_key: taproot_internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?,                      
                         spending_paths: match spending_paths {
                             Some(paths) => paths,
-                            None => HashMap::new(),
+                            None => Vec::new(),
                             
                         },
                     })
@@ -254,7 +241,6 @@ impl<'de> Deserialize<'de> for InputType {
                         sighash_type: ecdsa_sighash_type.ok_or_else(|| serde::de::Error::missing_field("ecdsa_sighash_type"))?,
                         script_pubkey: script_pubkey.ok_or_else(|| serde::de::Error::missing_field("script_pubkey"))?,
                         sighash,
-                        signature,
                         amount: amount.ok_or_else(|| serde::de::Error::missing_field("amount"))?,
                     })
                 }
@@ -266,7 +252,6 @@ impl<'de> Deserialize<'de> for InputType {
             "spending_paths",
             "script_pubkey",
             "sighash",
-            "signature",
             "amount",
         ];
         deserializer.deserialize_struct("InputType", FIELDS, InputTypeVisitor)
