@@ -3,7 +3,7 @@ mod tests {
     use std::env;
     use bitcoin::{absolute, key::rand::RngCore, secp256k1, transaction, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, Transaction, Txid};
     use key_manager::{errors::KeyManagerError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore, winternitz::{WinternitzPublicKey, WinternitzType}};
-    use crate::{builder::TemplateBuilder, errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams}};
+    use crate::{builder::TemplateBuilder, errors::TemplateBuilderError, params::DefaultParams, scripts::{self, ScriptWithParams, kickoff}};
 
     const PROTOCOL_AMOUNT:u64 = 2_400_000;
     const SPEEDUP_AMOUNT:u64 = 2_400_000;
@@ -410,6 +410,19 @@ mod tests {
         let result = builder.add_start("D", txid, vout, amount, script_pubkey);
         assert!(matches!(result, Err(TemplateBuilderError::TemplateAlreadyExists(_))));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_kickoff() -> Result<(), TemplateBuilderError> {
+        let mut key_manager = test_key_manager()?;
+        let verifying_key = key_manager.derive_winternitz(4, WinternitzType::SHA256, 0)?;
+        let script_with_params = kickoff(&verifying_key, &verifying_key);
+        let params = script_with_params.get_params();
+
+        assert!(params.get(0).unwrap().name() == "f");
+        assert!(params.get(1).unwrap().name() == "input");
+        
         Ok(())
     }
 

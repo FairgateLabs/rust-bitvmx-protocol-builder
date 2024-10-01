@@ -267,10 +267,11 @@ mod tests {
     use super::*;
 
     const AGGREGATED_SIGNATURE: &str = "aggregated_signature";
+    const PUB_KEY: &str = "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2";
 
     fn get_script_buff() -> ScriptBuf {
-        let pub_key = "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2";
-        let aggregated_key = PublicKey::from_str(pub_key);
+        
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
         let script = script!(
             { aggregated_key.unwrap().to_bytes() }
             OP_CHECKSIG
@@ -314,6 +315,14 @@ mod tests {
         let params = script_with_params.get_params();
 
         assert!(params.windows(2).all(|w| w[0].get_param_position() <= w[1].get_param_position()))        
+    }
+
+    #[test]
+    fn test_get_signature() {
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
+        let  script_with_params = signature(&aggregated_key.unwrap());
+
+        assert_eq!(script_with_params.get_params().get(0).unwrap().name, "signature");
     }
 
 }
