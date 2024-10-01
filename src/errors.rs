@@ -1,8 +1,10 @@
-use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
+use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, psbt::Input, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
 use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
 use config as settings;
+
+use crate::connections::InputType;
 
 #[derive(Error, Debug)]
 pub enum TemplateBuilderError {
@@ -133,4 +135,19 @@ pub enum ConfigError {
 
     #[error("SighashType in config is invalid")]
     InvalidSighashType(#[from] SighashTypeParseError),
+}
+
+#[derive(Error, Debug)]
+pub enum ProtocolBuilderError {
+    #[error("Missing spend info for input of type {0}")]
+    MissingSpendInfoForInputType(String),
+
+    #[error("Spend info is not needed for input of type {0}")]
+    UnnecessarySpendInfoForInputType(String),
+
+    #[error("Failed to build taptree for given spending conditions")]
+    TapTreeError(#[from] TaprootBuilderError),
+
+    #[error("Failed to finalize taptree for given spending conditions")]
+    TapTreeFinalizeError,
 }

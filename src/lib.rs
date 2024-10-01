@@ -8,3 +8,5 @@ pub mod scripts;
 pub mod template;
 pub mod unspendable;
 pub mod tests;
+
+pub mod connections;
