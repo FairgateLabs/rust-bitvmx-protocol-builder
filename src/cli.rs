@@ -1,11 +1,14 @@
+use std::path::PathBuf;
+
 use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, Network, ScriptBuf};
 use clap::{Parser, Subcommand};
-use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
+use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore, winternitz::WinternitzType};
+use storage_backend::storage::Storage;
 use tracing::info;
 
-use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams};
+use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams, scripts};
 
 pub struct Cli {
     config: Config,
@@ -21,7 +24,51 @@ pub struct Menu {
 
 #[derive(Subcommand)]
 enum Commands {
-    AddStartTemplate,
+    AddStartTemplate{
+        #[clap(short, long, help = "Name of the template")]
+        name: String,
+        
+        #[clap(short, long, help = "Amount in satoshis")]
+        amount: u64,
+
+        #[clap(short, long, help = "")]
+        index: u32,
+
+        #[clap(short, long, help = "")]
+        vout: u32,
+    },
+
+    AddConnectionTemplate{
+        #[clap(short, long, help = "Name of the node you are connecting from")]
+        from: String,
+
+        #[clap(short, long, help = "Name of the node you are connecting to")]
+        to: String,
+
+        #[clap(short, long, help = "Path to store the spending scripts")]
+        storage_path: PathBuf,
+    },
+
+    CreateSpendingScripts{
+        #[clap(short, long, help = "Number of spending scripts to create")]
+        count: u32,
+
+        #[clap(short, long, help = "Path to store the spending scripts")]
+        storage_path: PathBuf,
+    },
+
+    EndTransactionTemplate{
+        #[clap(short, long, help = "Name of the template")]
+        name: String,
+
+        #[clap(short, long, help = "Amount in satoshis")]
+        amount: u64,
+
+        #[clap(short, long, help = "Path to store the spending scripts")]
+        storage_path: PathBuf,
+    },
+
+    FinalizeAndBuildTemplate,
 }
 
 impl Cli {
@@ -36,8 +83,20 @@ impl Cli {
         let menu = Menu::parse();
 
         match &menu.command {
-            Commands::AddStartTemplate => {
-                self.add_start_template()?;
+            Commands::AddStartTemplate{name, amount, index, vout} => {
+                self.add_start_template(name, *amount, *index, *vout)?;
+            }
+            Commands::AddConnectionTemplate{from, to, storage_path} => {
+                self.add_connection_template(from, to, storage_path)?;
+            }
+            Commands::CreateSpendingScripts{count, storage_path} => {
+                self.create_spending_scripts(*count, storage_path)?;
+            }
+            Commands::EndTransactionTemplate{name, amount, storage_path} => {
+                self.end_transaction_template(name, *amount, storage_path)?;
+            }
+            Commands::FinalizeAndBuildTemplate => {
+                self.finalize_and_build_template()?;
             }
         }
 
@@ -47,22 +106,84 @@ impl Cli {
     // 
     // Commands
     //
-    fn add_start_template(&self) -> Result<()>{
+    fn add_start_template(&self, name: &str, amount: u64, index: u32, vout: u32) -> Result<()>{
         let defaults = DefaultParams::try_from(&self.config)?;
         let mut builder = TemplateBuilder::new(defaults)?;
         let mut key_manager = self.key_manager()?;
         
         // TODO test values, replace for real values from command line params.
-        let pk = key_manager.derive_keypair(0)?;
+        let pk = key_manager.derive_keypair(index)?;
         let wpkh = pk.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
         let txid= Hash::all_zeros();
-        let vout = 0;
-        let amount = 100000;
 
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
+        builder.add_start(name, txid, vout, amount, script_pubkey)?;
 
         info!("New start template created.");
+
+        Ok(())
+    }
+
+    fn add_connection_template(&self, from: &str, to: &str, storage_path: &PathBuf) -> Result<()> {
+        let defaults = DefaultParams::try_from(&self.config)?;
+        let mut builder = TemplateBuilder::new(defaults)?;
+        let mut spending_scripts_vec = Vec::new();
+
+        let storage = Storage::new_with_path(storage_path)?;
+        let spending_scripts = storage.partial_compare("script_")?;
+        for (_, script) in spending_scripts {
+            let script: scripts::ScriptWithParams = serde_json::from_str(&script)?;
+            spending_scripts_vec.push(script);
+        }
+
+        builder.add_connection(from, to, &spending_scripts_vec)?;
+
+        info!("A connection from template {} to template {} has been created.", from, to);
+
+        Ok(())
+    }
+
+    fn create_spending_scripts(&self, count: u32, storage_path: &PathBuf) -> Result<()> {
+        let mut key_manager = self.key_manager()?;
+        let storage = Storage::new_with_path(storage_path)?;
+
+        for i in 0..count {
+            let pk = key_manager.derive_winternitz(4, WinternitzType::SHA256, i)?;
+            let name = &format!("script_{}", i);
+            let script = scripts::verify_single_value(name, &pk);
+            storage.write(name, &serde_json::to_string(&script)?)?;
+        }
+        
+        info!("{} spending scripts created and saved in {}.", count, storage_path.display());
+
+        Ok(())
+    }
+
+    fn end_transaction_template(&self,name: &str, amount: u64, storage_path: &PathBuf) -> Result<()> {
+        let defaults = DefaultParams::try_from(&self.config)?;
+        let mut builder = TemplateBuilder::new(defaults)?;
+        let mut spending_scripts_vec = Vec::new();
+        let storage = Storage::open(storage_path)?;
+
+        let spending_scripts = storage.partial_compare("script_")?;
+        for (_, script) in spending_scripts {
+            let script: scripts::ScriptWithParams = serde_json::from_str(&script)?;
+            spending_scripts_vec.push(script);
+        }
+
+        builder.end(name, amount, &spending_scripts_vec)?;
+
+        info!("End transaction template created.");
+
+        Ok(())
+    }
+
+    fn finalize_and_build_template(&self) -> Result<()> {
+        let defaults = DefaultParams::try_from(&self.config)?;
+        let mut builder = TemplateBuilder::new(defaults)?;
+        let templates = builder.finalize_and_build()?;
+
+        info!("Templates built: {:?}", templates);
 
         Ok(())
     }
