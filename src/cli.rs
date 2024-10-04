@@ -45,15 +45,32 @@ enum Commands {
         #[clap(short, long, help = "Name of the node you are connecting to")]
         to: String,
 
-        #[clap(short, long, help = "Path to store the spending scripts")]
+        #[clap(short, long, help = "Path to store the spending scripts", default_value = "spending_scripts.db")]
         storage_path: PathBuf,
+    },
+
+    AddRoundsTemplate{
+        #[clap(short, long, help = "Name of the node you are connecting from")]
+        from: String,
+
+        #[clap(short, long, help = "Name of the node you are connecting to")]
+        to: String,
+
+        #[clap(short, long, help = "")]
+        rounds: u32,
+
+        #[clap(short, long, help = "Path to store the spending scripts you are connecting from")]
+        storage_path_from: PathBuf,
+
+        #[clap(short, long, help = "Path to store the spending scripts you are connecting to")]
+        storage_path_to: PathBuf,
     },
 
     CreateSpendingScripts{
         #[clap(short, long, help = "Number of spending scripts to create")]
         count: u32,
 
-        #[clap(short, long, help = "Path to store the spending scripts")]
+        #[clap(short, long, help = "Path to store the spending scripts", default_value = "spending_scripts.db")]
         storage_path: PathBuf,
     },
 
@@ -64,7 +81,7 @@ enum Commands {
         #[clap(short, long, help = "Amount in satoshis")]
         amount: u64,
 
-        #[clap(short, long, help = "Path to store the spending scripts")]
+        #[clap(short, long, help = "Path to store the spending scripts", default_value = "spending_scripts.db")]
         storage_path: PathBuf,
     },
 
@@ -88,6 +105,9 @@ impl Cli {
             }
             Commands::AddConnectionTemplate{from, to, storage_path} => {
                 self.add_connection_template(from, to, storage_path)?;
+            }
+            Commands::AddRoundsTemplate{from, to, rounds, storage_path_from, storage_path_to} => {
+                self.add_rounds_template(from, to, *rounds, storage_path_from, storage_path_to)?;
             }
             Commands::CreateSpendingScripts{count, storage_path} => {
                 self.create_spending_scripts(*count, storage_path)?;
@@ -143,6 +163,19 @@ impl Cli {
         Ok(())
     }
 
+    fn add_rounds_template(&self, from: &str, to: &str, rounds: u32, storage_path_from: &PathBuf, storage_path_to: &PathBuf) -> Result<()> {
+        let defaults = DefaultParams::try_from(&self.config)?;
+        let mut builder = TemplateBuilder::new(defaults)?;
+        let spending_scripts_from = obtain_spending_scripts_from_storage(storage_path_from)?;
+        let spending_scripts_to = obtain_spending_scripts_from_storage(storage_path_to)?;
+
+        let (rounds_from, rounds_to) = builder.add_rounds( rounds, from, to, &spending_scripts_from, &spending_scripts_to)?;
+
+        info!("A template from '{}' to '{}' with {} rounds has been created.", rounds_from, rounds_to, rounds);
+
+        Ok(())
+    }
+
     fn create_spending_scripts(&self, count: u32, storage_path: &PathBuf) -> Result<()> {
         let mut key_manager = self.key_manager()?;
         let storage = Storage::new_with_path(storage_path)?;
@@ -162,16 +195,10 @@ impl Cli {
     fn end_transaction_template(&self,name: &str, amount: u64, storage_path: &PathBuf) -> Result<()> {
         let defaults = DefaultParams::try_from(&self.config)?;
         let mut builder = TemplateBuilder::new(defaults)?;
-        let mut spending_scripts_vec = Vec::new();
-        let storage = Storage::open(storage_path)?;
+        
+        let spending_scripts = obtain_spending_scripts_from_storage(storage_path)?;
 
-        let spending_scripts = storage.partial_compare("script_")?;
-        for (_, script) in spending_scripts {
-            let script: scripts::ScriptWithParams = serde_json::from_str(&script)?;
-            spending_scripts_vec.push(script);
-        }
-
-        builder.end(name, amount, &spending_scripts_vec)?;
+        builder.end(name, amount, &spending_scripts)?;
 
         info!("End transaction template created.");
 
@@ -209,6 +236,17 @@ impl Cli {
     
         Ok(key_manager)
     }
+}
+
+fn obtain_spending_scripts_from_storage(storage_path: &PathBuf) -> Result<Vec<scripts::ScriptWithParams>, anyhow::Error> {
+    let mut spending_scripts_vec = Vec::new();
+    let storage = Storage::open(storage_path)?;
+    let spending_scripts = storage.partial_compare("script_")?;
+    for (_, script) in spending_scripts {
+        let script: scripts::ScriptWithParams = serde_json::from_str(&script)?;
+        spending_scripts_vec.push(script);
+    }
+    Ok(spending_scripts_vec)
 }
 
 
