@@ -33,15 +33,6 @@ jobs:
           cd ..
           git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
 
-      - name: Show directory tree
-        run: |
-          if command -v tree &> /dev/null
-          then
-            tree -L 2 ..
-          else
-            ls -R ..
-          fi
-
       - name: Build project
         run: cargo build --verbose
 
@@ -49,21 +40,26 @@ jobs:
         run: cargo test --verbose
   
   test-with-coverage:
-    if: contains(github.event.pull_request.title, '[cov]')
+    if: ${{ contains(github.event.pull_request.title, '[cov]') }}
     runs-on: ubuntu-latest
     
     permissions:
       contents: write
       pull-requests: write
       repository-projects: write
-    
-    defaults:
-      run:
-        working-directory: ./src
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Set up Git credentials for key manager
+      run: |
+        git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
+    
+    - name: Clone rust-bitvmx-key-manager
+      run: |
+        cd ..
+        git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
     
     - name: Build project
       run: cargo build --verbose
