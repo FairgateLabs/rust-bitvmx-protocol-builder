@@ -5,10 +5,9 @@ use bitcoin::{PublicKey, ScriptBuf};
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::WinternitzPublicKey;
-
 use crate::errors::ScriptError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum KeyType {
     EcdsaPublicKey,
     WinternitzPublicKey,
@@ -251,4 +250,71 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey) -> ScriptBuf {
     };
 
     verify
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use bitcoin::PublicKey;
+    use super::*;
+
+    const AGGREGATED_SIGNATURE: &str = "aggregated_signature";
+    const PUB_KEY: &str = "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2";
+
+    fn get_script_buff() -> ScriptBuf {
+        
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
+        let script = script!(
+            { aggregated_key.unwrap().to_bytes() }
+            OP_CHECKSIG
+        );
+    
+        return script!{
+            OP_IF
+            OP_TRUE
+            OP_ELSE
+            {script}
+            OP_ENDIF
+        };
+    }
+
+    #[test]
+    fn test_get_key_index() {
+        let test_script_param: ScriptParam = ScriptParam::new("test_script", 10, KeyType::EcdsaPublicKey, 20);
+        
+        assert_eq!(test_script_param.get_verifying_key_index(), 10);
+        assert_eq!(test_script_param.get_param_position(), 20);
+        assert_eq!(test_script_param.get_verifying_key_type(), KeyType::EcdsaPublicKey);
+    }
+
+    #[test]
+    fn test_script_with_param() {
+        let mut script_with_params = ScriptWithParams::new(get_script_buff());
+        script_with_params.add_param(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaPublicKey, 0);
+        
+        assert_eq!(script_with_params.get_param(AGGREGATED_SIGNATURE).unwrap().name, AGGREGATED_SIGNATURE);
+        assert_eq!(script_with_params.get_param(AGGREGATED_SIGNATURE).unwrap().get_param_position(), 0);
+        assert_eq!(script_with_params.get_param(AGGREGATED_SIGNATURE).unwrap().get_verifying_key_index(), 0);
+        assert_eq!(script_with_params.get_param(AGGREGATED_SIGNATURE).unwrap().get_verifying_key_type(), KeyType::EcdsaPublicKey);        
+    }
+
+    #[test]
+    fn test_script_with_multiples_params() {
+        let mut script_with_params = ScriptWithParams::new(get_script_buff());
+        script_with_params.add_param(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaPublicKey, 0);
+        script_with_params.add_param(AGGREGATED_SIGNATURE, 2, KeyType::EcdsaPublicKey, 2);
+        script_with_params.add_param(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaPublicKey, 1);
+        let params = script_with_params.get_params();
+
+        assert!(params.windows(2).all(|w| w[0].get_param_position() <= w[1].get_param_position()))        
+    }
+
+    #[test]
+    fn test_get_signature() {
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
+        let  script_with_params = signature(&aggregated_key.unwrap());
+
+        assert_eq!(script_with_params.get_params().get(0).unwrap().name, "signature");
+    }
+
 }

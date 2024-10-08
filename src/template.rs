@@ -475,3 +475,116 @@ impl Template {
         Ok(key)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use bitcoin::PublicKey;
+    use bitcoin_scriptexec::treepp::*;
+
+    use super::*;
+
+    const PUB_KEY: &str = "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2";
+
+    fn get_script_buff() -> ScriptBuf {
+        
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
+        let script = script!(
+            { aggregated_key.unwrap().to_bytes() }
+            OP_CHECKSIG
+        );
+    
+        return script!{
+            OP_IF
+            OP_TRUE
+            OP_ELSE
+            {script}
+            OP_ENDIF
+        };
+    }
+
+    fn get_test_output() -> Output{
+        let taproot_spending_scripts = [ScriptWithParams::new(get_script_buff())];
+
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();
+        let internal_key = Template::create_unspendable_key();
+
+        let (_taproot_spend_info, script) = Template::taproot_spend_info(internal_key.unwrap(), scripts).unwrap();
+        let txout = Template::build_output(1, &script);
+        
+        return Output::new("test".to_string(),0, txout);
+    }    
+
+    #[test]
+    fn test_get_tx_output() {
+        let output = get_test_output();
+
+        assert_eq!(output.get_txout().value, Amount::from_sat(1));
+    }
+
+    #[test]
+    fn test_push_segwit_input() {
+        let taproot_spending_scripts = [ScriptWithParams::new(get_script_buff())];
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();        
+        let output = get_test_output();        
+        let mut template = Template::new("test", &scripts[0], 1);
+        let input = Template::push_segwit_input(&mut template, EcdsaSighashType::from_consensus(1), output, get_script_buff(), 1);
+
+        assert_eq!(input.to, "test");        
+    }
+
+    #[test]
+    fn test_get_tx_input() {
+        let taproot_spending_scripts = [ScriptWithParams::new(get_script_buff())];
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();
+        let output = get_test_output();                
+        let mut template = Template::new("test", &scripts[0], 1);
+        
+        Template::push_segwit_input(&mut template, EcdsaSighashType::from_consensus(1), output, get_script_buff(), 1);        
+        
+        let spending_info = &SpendingInformation::new_taproot_spending(0, get_script_buff());
+        let tx_for_input = Template::get_transaction_for_input(&mut template, spending_info);
+        
+        assert_eq!(tx_for_input.unwrap().input.len(), 1)
+    }
+
+    #[test]
+    fn test_get_tx_inputs() {
+        let taproot_spending_scripts = [ScriptWithParams::new(get_script_buff())];
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();
+        let output = get_test_output();                
+        let mut template = Template::new("test", &scripts[0], 1);
+        
+        Template::push_segwit_input(&mut template, EcdsaSighashType::from_consensus(1), output, get_script_buff(), 1);        
+        
+        let spending_info = &SpendingInformation::new_taproot_spending(0, get_script_buff());
+        let tx_for_input = Template::get_transaction_for_inputs(&mut template, vec![spending_info]);
+        
+        assert_eq!(tx_for_input.unwrap().input.len(), 1)
+    }
+
+    #[test]
+    fn test_get_witness_for_inputs() {
+        let taproot_spending_scripts = [ScriptWithParams::new(get_script_buff())];
+        let scripts: &[ScriptBuf] = &taproot_spending_scripts.iter().map(|s| s.get_script().clone()).collect::<Vec<ScriptBuf>>();
+        let output = get_test_output();                
+        let mut template = Template::new("test", &scripts[0], 1);
+        let sighash = Some(SegwitV0Sighash::from_raw_hash(bitcoin::hashes::sha256d::Hash::hash("asd".as_bytes())));
+
+        let input = Input::new("B", 0, InputType::P2WPKH { sighash_type: EcdsaSighashType::from_consensus(1),
+             script_pubkey: get_script_buff(),
+              sighash: sighash,
+              amount: Amount::from_int_btc(1)});
+
+        template.push_next_input(input);              
+        Template::push_segwit_input(&mut template, EcdsaSighashType::from_consensus(1), output, get_script_buff(), 1);        
+        
+        let taproot_spending_info = &SpendingInformation::new_taproot_spending(0, get_script_buff());
+        let p2wpkh_spending_info = &&SpendingInformation::new_p2wpkh_spending(0);
+        let _tx_taproot_for_input = Template::get_witness_for_input(&mut template, taproot_spending_info);
+        let _tx_p2wpkh_for_input = Template::get_witness_for_input(&mut template, p2wpkh_spending_info);
+        
+        assert!(_tx_taproot_for_input.unwrap().is_empty());
+        assert!(_tx_p2wpkh_for_input.unwrap().is_empty());
+    }
+}
