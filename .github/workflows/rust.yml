@@ -60,9 +60,6 @@ jobs:
       run: |
         cd ..
         git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
-    
-    - name: Build project
-      run: cargo build --verbose
 
     - name: Run cargo-tarpaulin
       uses: actions-rs/tarpaulin@v0.1
@@ -77,10 +74,3 @@ jobs:
         badge: true
         format: 'markdown'
         output: 'both'
-
-    - name: Add Coverage PR Comment
-      uses: marocchino/sticky-pull-request-comment@v2
-      if: github.event_name == 'pull_request'
-      with:
-        recreate: true
-        path: code-coverage-results.md
