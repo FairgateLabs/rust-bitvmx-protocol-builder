@@ -39,9 +39,11 @@ jobs:
     steps:
       - name: Build project
         run: cargo build --verbose
+        working-directory: ./rust-bitvmx-template-builder
 
       - name: Run tests
         run: cargo test --verbose
+        working-directory: ./rust-bitvmx-template-builder
 
   test-with-coverage:
     if: ${{ contains(github.event.pull_request.title, '[cov]') }}
@@ -56,11 +58,13 @@ jobs:
     steps:
       - name: Build project
         run: cargo build --verbose
+        working-directory: ./rust-bitvmx-template-builder
 
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           version: '0.15.0'
+          working-directory: ./rust-bitvmx-template-builder
           args: '--out Xml --output-dir resources --exclude-files src/tests/* src/config/* src/config.rs src/main.rs src/cli.rs --no-fail-fast'
 
       - name: Code Coverage Summary Report
