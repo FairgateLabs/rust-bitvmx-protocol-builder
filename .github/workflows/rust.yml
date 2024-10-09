@@ -17,17 +17,14 @@ permissions:
   contents: read 
   
 jobs:
-  setup:
+  test:
+    if: ${{ !contains(github.event.pull_request.title, '[cov]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Set up Git credentials for key manager
         run: |
           git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
 
-  test:
-    if: ${{ !contains(github.event.pull_request.title, '[cov]') }}
-    runs-on: ubuntu-latest
-    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
@@ -52,9 +49,13 @@ jobs:
       repository-projects: write
 
     steps:
+    - name: Set up Git credentials for key manager
+      run: |
+        git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
+    
     - name: Checkout repository
       uses: actions/checkout@v4
-    
+        
     - name: Clone rust-bitvmx-key-manager
       run: |
         cd ..
