@@ -1,14 +1,13 @@
 use anyhow::{Ok, Result};
 
-use bitcoin::{hashes::Hash, Network, ScriptBuf};
+use bitcoin::{hashes::Hash, Amount, EcdsaSighashType, ScriptBuf};
 use clap::{Parser, Subcommand};
-use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
-use crate::{builder::TemplateBuilder, config::Config, params::DefaultParams};
+use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}};
 
 pub struct Cli {
-    config: Config,
+    pub config: Config,
 }
 
 #[derive(Parser)]
@@ -47,45 +46,21 @@ impl Cli {
     // 
     // Commands
     //
-    fn add_start_template(&self) -> Result<()>{
-        let defaults = DefaultParams::try_from(&self.config)?;
-        let mut builder = TemplateBuilder::new(defaults)?;
-        let mut key_manager = self.key_manager()?;
-        
+    fn add_start_template(&self) -> Result<()>{ 
         // TODO test values, replace for real values from command line params.
-        let pk = key_manager.derive_keypair(0)?;
-        let wpkh = pk.wpubkey_hash().expect("key is compressed");
-        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
-        let txid= Hash::all_zeros();
-        let vout = 0;
-        let amount = 100000;
+        let sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let output_index = 0;
+        let script = ScriptBuf::from(vec![0x00]);
+        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        builder.add_start("A", txid, vout, amount, script_pubkey)?;
+        let mut builder = Builder::new("single_connection"); 
+        let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &sighash_type)?
+            .build()?;
 
-        info!("New start template created.");
+        info!("New protocol {0} created.", protocol.get_name());
 
         Ok(())
-    }
-    
-    fn key_manager(&self) -> Result<KeyManager<DatabaseKeyStore>> {
-        let network = self.config.key_manager.network.parse::<Network>()?;
-
-        let key_derivation_path = self.config.key_manager.key_derivation_path.as_str(); 
-        let key_derivation_seed = self.config.key_manager.key_derivation_seed.as_bytes().try_into()?;
-        let winternitz_seed = self.config.key_manager.winternitz_seed.as_bytes().try_into()?;
-
-        let keystore_path = self.config.storage.path.as_str();
-        let keystore_password = self.config.storage.password.as_bytes().to_vec();
-
-        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
-        let key_manager = KeyManager::new(
-            network,
-            key_derivation_path,
-            key_derivation_seed,
-            winternitz_seed,
-            database_keystore,
-        )?;
-    
-        Ok(key_manager)
     }
 }

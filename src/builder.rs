@@ -1,152 +1,289 @@
-use bitcoin::{EcdsaSighashType, ScriptBuf, TapSighashType, Transaction, Txid};
+use std::cmp;
 
-use crate::{errors::TemplateBuilderError, graph::Graph, params::{ConnectionParams, DefaultParams, RoundParams, TemplateParams}, scripts::ScriptWithParams, template::{Output, Template}};
+use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness};
 
-pub struct TemplateBuilder {
-    graph: Graph,
-    defaults: DefaultParams,
-    finalized: bool,
+use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, unspendable::unspendable_key};
+
+pub struct Builder {
+    protocol: Protocol,
 }
 
-impl TemplateBuilder {
-    pub fn new(defaults: DefaultParams) -> Result<Self, TemplateBuilderError> {
-        let builder = TemplateBuilder {
-            graph: Graph::new(),
-            defaults,
-            finalized: false,
+#[derive(Clone, Debug)]
+pub struct Protocol {
+    name: String,
+    graph: TransactionGraph,
+}
+
+#[derive(Clone, Debug)]
+pub struct SpendingArgs {
+    args: Vec<Vec<u8>>, 
+    taproot_leaf: Option<ScriptBuf>,
+}
+
+impl SpendingArgs {
+    pub fn new_taproot_args(taproot_leaf: &ScriptBuf) -> Self {
+        SpendingArgs {
+            args: vec![],
+            taproot_leaf: Some(taproot_leaf.clone())
+        }
+    }
+
+    pub fn new_args() -> Self {
+        SpendingArgs {
+            args: vec![],
+            taproot_leaf: None,
+        }
+    }
+
+    pub fn push_slice(&mut self, args: &[u8]) -> &mut Self{
+        self.args.push(args.to_vec());
+        self
+    }
+
+    pub fn push_taproot_signature(&mut self, taproot_signature: bitcoin::taproot::Signature) -> &mut Self {
+        self.push_slice(&taproot_signature.serialize());
+        self
+    }
+
+    pub fn push_ecdsa_signature(&mut self, ecdsa_signature: bitcoin::ecdsa::Signature) -> &mut Self {
+        self.push_slice(&ecdsa_signature.serialize());
+        self
+    }
+
+    pub fn get_taproot_leaf(&self) -> Option<ScriptBuf> {
+        self.taproot_leaf.clone()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Vec<u8>>{
+        self.args.iter()
+    }
+}
+
+impl Protocol {
+    pub fn new(name: &str) -> Self {
+        Protocol {
+            name: name.to_string(),
+            graph: TransactionGraph::new(),
+        }
+    }
+
+    pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, output_key: TweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        let script_pubkey = ScriptBuf::new_p2tr_tweaked(output_key);
+        let value = Amount::from_sat(value);
+
+        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(output_key);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+        
+        Ok(self)
+    }
+    
+    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: UntweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        let secp = secp256k1::Secp256k1::new();
+        let value = Amount::from_sat(value);
+        let script_pubkey = ScriptBuf::new_p2tr(&secp, internal_key, None);
+
+        let spending_type = OutputSpendingType::new_taproot_key_spend(internal_key);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+
+        Ok(self)
+    }
+
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+        let secp = secp256k1::Secp256k1::new();
+        let value = Amount::from_sat(value);
+        let spend_info = Protocol::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
+
+        let script_pubkey = ScriptBuf::new_p2tr(
+            &secp,
+            spend_info.internal_key(),
+            spend_info.merkle_root(),
+        );
+        
+        let spending_type = OutputSpendingType::new_taproot_script_spend(spending_scripts, spend_info);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        let witness_public_key_hash = public_key.wpubkey_hash().expect("key is compressed");
+        let value = Amount::from_sat(value);
+        let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
+
+        let spending_type = OutputSpendingType::new_segwit_key_spend(public_key, value);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+
+        Ok(self)
+    }
+
+    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        let value = Amount::from_sat(value);
+        let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.clone()));
+
+        let spending_type = OutputSpendingType::new_segwit_script_spend(script, value);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+        Ok(self)
+    }
+
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_p2wpkh_output(transaction_name, value, speedup_public_key)?;
+        Ok(self)
+    }
+
+    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script, renew_script])
+    }
+
+    pub fn add_taproot_tweaked_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_script_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wsh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_timelock_input(&mut self, transaction_name: &str, previous_output: u32, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        let sequence = match blocks {
+            0 => Sequence::ENABLE_RBF_NO_LOCKTIME,
+            _ => Sequence::from_height(blocks),
         };
 
-        Ok(builder)
+        self.add_transaction_input(Hash::all_zeros(), previous_output, transaction_name, sequence, sighash_type)?;
+        Ok(self)
     }
 
-    /// Creates a new template as the starting point of the DAG. 
-    /// Short version of the start method, it uses the seedup scripts from the config.
-    pub fn add_start(&mut self, name: &str, previous_tx: Txid, vout: u32, amount: u64, script_pubkey: ScriptBuf) -> Result<(), TemplateBuilderError> {
-        let template_params = self.defaults.template_from_params()?;
-        let sighash_type = self.defaults.get_ecdsa_sighash_type();
-        self.start(name, sighash_type, previous_tx, vout, amount, script_pubkey, template_params)
-    }
-
-    /// Creates a connection between two templates. 
-    /// Short version of the connect method, it uses the seedup scripts from the config.
-    pub fn add_connection(&mut self, from: &str, to: &str, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
-        let connection_params = self.defaults.connection_params(spending_scripts)?;
-        self.connect(from, to, self.defaults.get_protocol_amount(), self.defaults.get_taproot_sighash_type(), connection_params)
-    }
-
-    /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG. 
-    /// Short version of the connect_rounds method, it uses the seedup scripts from the config.
-    pub fn add_rounds(&mut self, rounds: u32, from: &str, to: &str, spending_scripts_from: &[ScriptWithParams], spending_scripts_to: &[ScriptWithParams]) -> Result<(String, String), TemplateBuilderError> {         
-        let direct_connection = self.defaults.connection_params(spending_scripts_from)?;
-        let reverse_connection = self.defaults.reverse_connection_params(spending_scripts_to)?;
-
-        let round_params = RoundParams::new(direct_connection, reverse_connection);
+    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, output_key: TweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_tweaked_key_spend_output(from, value, output_key)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
-        self.connect_rounds(rounds, from, to, self.defaults.get_protocol_amount(), self.defaults.get_taproot_sighash_type(), round_params)
-    }   
+        self.add_taproot_tweaked_key_spend_input(to, output_index, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
 
-    /// Creates a new template as the starting point of the DAG.
-    pub fn start(&mut self, name: &str, sighash_type: EcdsaSighashType, previous_tx: Txid, vout: u32, amount: u64, script_pubkey: ScriptBuf, template_params: TemplateParams) -> Result<(), TemplateBuilderError> {
-        check_empty_template_name(name)?;
+        self.connect(connection_name, from, output_index, to, input_index)
+    }
 
-        self.finalized = false;
+    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: UntweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_key_spend_output(from, value, internal_key)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
+        
+        self.add_taproot_key_spend_input(to, output_index, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
 
-        if self.graph.contains_template(name) {
-            return Err(TemplateBuilderError::TemplateAlreadyExists(name.to_string()));
+        self.connect(connection_name, from, output_index, to, input_index)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_output(from, value, internal_key, spending_scripts)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
+        
+        self.add_taproot_script_spend_input(to, output_index, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
+
+        self.connect(connection_name, from, output_index, to, input_index)
+    }
+
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_p2wpkh_output(from, value, public_key)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
+        
+        self.add_p2wpkh_input(to, output_index, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
+
+        self.connect(connection_name, from, output_index, to, input_index)
+    }
+
+    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptBuf, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_p2wsh_output(from, value, script)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
+        
+        self.add_p2wsh_input(to, output_index, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
+
+        self.connect(connection_name, from, output_index, to, input_index)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
+        let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
+        
+        self.add_timelock_input(to, output_index, blocks, sighash_type)?;
+        let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
+
+        self.connect("timelock", from, output_index, to, input_index)
+    }
+
+    pub fn connect_with_external_transaction(&mut self, txid: Txid, output_index: u32, output_spending_type: OutputSpendingType, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_input(txid, output_index, to, Sequence::ENABLE_RBF_NO_LOCKTIME, sighash_type)?;
+        self.graph.connect_with_external_transaction(output_spending_type, to)?;
+        Ok(self)
+    }
+
+    pub fn connect(&mut self, connection_name: &str, from: &str, output_index: u32, to: &str, input_index: u32) -> Result<&mut Self, ProtocolBuilderError> {
+        let from_tx = self.get_transaction(from)?;
+        let to_tx = self.get_transaction(to)?;
+
+        if output_index >= from_tx.output.len() as u32 {
+            return Err(ProtocolBuilderError::MissingOutput(from.to_string(), output_index));
         }
-        
-        let template = self.add_or_create_template(name, template_params)?;
-        template.push_start_input(sighash_type, previous_tx, vout, amount, script_pubkey);
-        Ok(())
-    }
 
-    /// Creates a connection between two templates.
-    pub fn connect(&mut self, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, connection_params: ConnectionParams) -> Result<(), TemplateBuilderError> {
-        check_empty_template_name(from)?;
-        check_empty_template_name(to)?;
-        check_empty_scripts(&connection_params.spending_scripts_with_params())?;
-        
-        self.finalized = false;
-
-        if self.graph.is_ended(from) {
-            return Err(TemplateBuilderError::TemplateEnded(from.to_string()));
-        }
-        
-        if self.graph.is_ended(to) {
-            return Err(TemplateBuilderError::TemplateEnded(to.to_string()));
+        if input_index >= to_tx.input.len() as u32 {
+            return Err(ProtocolBuilderError::MissingInput(to.to_string(), input_index));
         }
 
-        // Add timelock connection
-        self.connect_protocol(
-            from, to, 
-            connection_params.get_locked_amount(), 
-            0,
-            sighash_type, 
-            connection_params.template_from(), 
-            connection_params.template_to(), 
-            &connection_params.timelock_scripts()
-        )?;
+        self.graph.connect(connection_name, from, output_index, to, input_index)?;
 
-        // Add protocol connection
-        self.connect_protocol(
-            from, to, 
-            protocol_amount, 
-            0,
-            sighash_type, 
-            connection_params.template_from(), 
-            connection_params.template_to(), 
-            &connection_params.spending_scripts_with_params()
-        )?;
-
-        // Connect the templates in the graph
-        self.graph.connect(from, to);
-
-        Ok(())
+        Ok(self)
     }
 
-    fn connect_protocol(&mut self, from: &str, to: &str, connection_amount: u64, locked_blocks: u16, sighash_type: TapSighashType, from_params: TemplateParams, to_params: TemplateParams, spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
-        // Create the from template if it doesn't exist and push the output that will be spent
-        let from_template = self.add_or_create_template(from, from_params)?;
-        let (output, taproot_spend_info) = from_template.push_output(connection_amount, spending_scripts)?;
-
-        // Create the to template if it doesn't exist and push the input that will spend the previously created output
-        let to_template = self.add_or_create_template(to, to_params)?;
-        let next_input = to_template.push_taproot_input(sighash_type, output, locked_blocks, taproot_spend_info, spending_scripts);
-   
-        // Add to the from_template the recently created next input for later updates of the txid in connected inputs
-        self.get_template_mut(from)?.push_next_input(next_input);
-
-        Ok(())
-    }
-
-    /// Creates a connection between two templates for a given number of rounds creating the intermediate templates to complete the DAG.
-    pub fn connect_rounds(&mut self, rounds: u32, from: &str, to: &str, protocol_amount: u64, sighash_type: TapSighashType, round_params: RoundParams) -> Result<(String, String), TemplateBuilderError> {
-        check_zero_rounds(rounds)?;
-        check_empty_template_name(from)?;
-        check_empty_template_name(to)?;
-        check_empty_scripts(&round_params.direct_connection().spending_scripts_with_params())?;
-        check_empty_scripts(&round_params.reverse_connection().spending_scripts_with_params())?;
+    /// Creates a connection between two transactions for a given number of rounds creating the intermediate transactions to complete the DAG.
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptBuf], spending_scripts_to: &[ScriptBuf], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {  
+        Self::check_empty_connection_name(connection_name)?;
+        Self::check_zero_rounds(rounds)?;
+        Self::check_empty_transaction_name(from)?;
+        Self::check_empty_transaction_name(to)?;
+        Self::check_empty_scripts(spending_scripts_from)?;
+        Self::check_empty_scripts(spending_scripts_to)?;
         
-        // To create the names for the intermediate templates in the rounds. We will use the following format: {name}_{round}.
+        // To create the names for the intermediate transactions in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
         let mut to_round;
 
-        // In each round we will connect the from template to the to template and then the to template to the from template.
-        // we need to do this because the templates are connected in a DAG.
+        // In each round we will connect the from transaction to the to transaction and then the to transaction to the from transaction.
+        // we need to do this because the transactions are connected in a DAG.
         for round in 0..rounds - 1{
-            // Create the new names for the intermediate templates in the direct connection (from -> to).
+            // Create the new names for the intermediate transactions in the direct connection (from -> to).
             from_round = format!("{0}_{1}", from, round);
             to_round = format!("{0}_{1}", to, round);
 
-            // Connection between the from and to templates using the spending_scripts_from.
-            self.connect(&from_round, &to_round, protocol_amount, sighash_type, round_params.direct_connection())?;
+            // Connection between the from and to transactions using the spending_scripts_from.
+            self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
-            // Create the new names for the intermediate templates in the reverse connection (to -> from).
+            // Create the new names for the intermediate transactions in the reverse connection (to -> from).
             from_round = format!("{0}_{1}", from, round + 1);
             to_round = format!("{0}_{1}", to, round);
 
-            // Reverse connection between the to and from templates using the spending_scripts_to.
-            self.connect(&to_round, &from_round, protocol_amount, sighash_type, round_params.reverse_connection())?;
+            // Reverse connection between the to and from transactions using the spending_scripts_to.
+            self.add_taproot_script_spend_connection(connection_name, &to_round, value, Self::create_unspendable_key()?, spending_scripts_to, &from_round, sighash_type)?;
         };
 
         // We don't need the last reverse connection, thus why we perform the last direct connection outside the loop.
@@ -155,139 +292,536 @@ impl TemplateBuilder {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using spending_scripts_from.
-        self.connect(&from_round, &to_round, protocol_amount, sighash_type, round_params.direct_connection())?;
+        self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    /// Marks an existing template as one end of the DAG. It will create an output that later could be spent by any transaction outside the DAG.
-    /// The end output should use the total funds from the transaction, minus fees, not just the protocol amount
-    pub fn end(&mut self, name: &str, amount: u64, spending_scripts: &[ScriptWithParams]) -> Result<Output, TemplateBuilderError> {
-        check_empty_template_name(name)?;
-        check_empty_scripts(spending_scripts)?;
-        
-        self.finalized = false;
-        
-        if !self.graph.contains_template(name) {
-            return Err(TemplateBuilderError::MissingTemplate(name.to_string()));
-        }
-
-        if self.graph.is_ended(name) {
-            return Err(TemplateBuilderError::TemplateAlreadyEnded(name.to_string()));
-        }
-
-        self.graph.end_template(name);
-
-        let template = self.get_template_mut(name)?;
-
-        let (end_output, _) = template.push_output(amount, spending_scripts)?;
-
-        Ok(end_output)
+    pub fn build(&mut self) -> Result<&Self, ProtocolBuilderError> {
+        self.update_transaction_ids()?;
+        self.compute_sighashes()?;
+        Ok(self)
     }
-    
-    /// It marks the DAG as finalized, and triggers an ordered update of the txids of each template in the DAG.
-    pub fn finalize(&mut self) -> Result<(), TemplateBuilderError> {
-        self.finalized = true;
-        self.update_inputs()?;
+
+    pub fn get_transaction_to_send(&self, transaction_name: &str, spending_args: &[SpendingArgs]) -> Result<Transaction, ProtocolBuilderError> {
+        let mut transaction = self.graph.get_transaction(transaction_name)?.clone();
+
+        for (input_index, spending_condition) in self.graph.get_transaction_spending_info(transaction_name)?.iter().enumerate() {
+            let witness = self.get_witness_for_input(input_index, spending_condition, &spending_args[input_index])?;
+            transaction.input[input_index].witness = witness;
+        }
+
+        Ok(transaction)
+    }
+
+    pub fn next_transactions(&self, transaction_name: &str) -> Result<Vec<String>, ProtocolBuilderError> {
+        let next_transactions = self.graph.get_dependencies(transaction_name)?.iter().map(|(tx, _)| tx.clone()).collect();
+        Ok(next_transactions)
+    }
+
+    pub fn get_sighashes(&self, transaction_name: &str) -> Result<Vec<Vec<Message>>, ProtocolBuilderError> {
+        let hashed_messages: Vec<Vec<Message>> = self.graph
+            .get_transaction_spending_info(transaction_name)?
+            .iter()
+            .map(|spending_info| spending_info.hashed_messages().clone())
+            .collect();
+
+        Ok(hashed_messages)
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn get_transaction_names(&self) -> Vec<String> {
+        self.graph.get_transaction_names()
+    }
+
+    fn get_transaction(&self, transaction_name: &str) -> Result<&Transaction, ProtocolBuilderError> {
+        self.graph.get_transaction(transaction_name).map_err(ProtocolBuilderError::from)
+    }
+
+    fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {
+        let mut transaction = self.get_or_create_transaction(transaction_name);
+
+        transaction.output.push(transaction::TxOut {
+            value,
+            script_pubkey,
+        });
+
+        self.graph.add_transaction_output(transaction_name, transaction, spending_type)?;
+
         Ok(())
     }
 
-    /// After marking the DAG as finalized with all the txids updated, it computes the spend signature hashes for each template.
-    pub fn build_templates(&mut self) -> Result<Vec<Template>, TemplateBuilderError> {
-        if !self.finalized {
-            return Err(TemplateBuilderError::NotFinalized);
-        }
+    fn add_transaction_input(&mut self, previous_txid: Txid, previous_output: u32, transaction_name: &str, sequence: Sequence, sighash_type: &SighashType) -> Result<(), ProtocolBuilderError>{
+        let mut transaction = self.get_or_create_transaction(transaction_name);
 
-        for template in self.graph.templates_mut() {
-            template.compute_spend_signature_hashes()?;
-        } 
+        transaction.input.push(transaction::TxIn {
+            previous_output: OutPoint { txid: previous_txid, vout: previous_output},
+            script_sig: ScriptBuf::default(),
+            sequence,
+            witness: Witness::default(),
+        });
 
-        Ok(self.graph.templates().cloned().collect())
+        self.graph.add_transaction_input(transaction_name, transaction, sighash_type)?;
+
+        Ok(())
     }
 
-    /// Finalizes the DAG and builds the templates in one step.
-    pub fn finalize_and_build(&mut self) -> Result<Vec<Template>, TemplateBuilderError> {
-        self.finalize()?;
-        self.build_templates()
+    fn get_or_create_transaction(&mut self, transaction_name: &str) -> Transaction {
+        if !self.graph.contains_transaction(transaction_name) {
+            let transaction = Protocol::transaction_template();
+            self.graph.add_transaction(transaction_name, transaction);
+        };
+    
+        self.graph.get_transaction(transaction_name).unwrap().clone()
     }
 
-    /// Returns the transactions of the finalized templates.
-    pub fn get_transactions(&self) -> Result<Vec<Transaction>, TemplateBuilderError> {
-        if !self.finalized {
-            return Err(TemplateBuilderError::NotFinalized);
+    fn transaction_template() -> Transaction{
+        Transaction {
+            version: transaction::Version::TWO, // Post BIP-68.
+            lock_time: locktime::absolute::LockTime::ZERO, // Ignore the locktime.
+            input: vec![],
+            output: vec![],
         }
+    }
+
+    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+        let scripts_count = taproot_spending_scripts.len();
         
-        Ok(self.graph.templates().map(|template| template.get_transaction()).collect())
-    }
+        // To build a taproot tree, we need to calculate the depth of the tree.
+        // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth 
+        // as the log2 of the number of scripts rounded up to the nearest integer.
+        let depth = cmp::max(1, (scripts_count as f32).log2().ceil() as u8);
 
-    /// Resets the builder to its initial state discarding all the templates and the graph.
-    pub fn reset(&mut self) {
-        self.graph = Graph::new();
-        self.finalized = false;
-    }
-
-    /// Adds a new template to the templates HashMap and the graph if it doesn't exist, otherwise it returns the existing template.
-    fn add_or_create_template(&mut self, name: &str, template_params: TemplateParams) -> Result<&mut Template, TemplateBuilderError> {
-        if !self.graph.contains_template(name) {
-
-            let template = Template::new(
-                name, 
-                &template_params.get_speedup_script(), 
-                template_params.get_speedup_amount(), 
-            );
-
-            self.graph.add_template(name, template);
+        let mut tr_builder = TaprootBuilder::new();
+        for script in taproot_spending_scripts.iter() {
+            tr_builder = tr_builder.add_leaf(depth, script.clone())?;
         }
 
-        self.get_template_mut(name)
+        // If the number of spend conditions is odd, add the last one again
+        if scripts_count % 2 != 0 {
+            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].clone())?;
+        }
+    
+        let tr_spend_info = tr_builder.finalize(
+            secp, 
+            internal_key.into()
+        ).map_err(|_| ProtocolBuilderError::TapTreeFinalizeError)?;
+
+        Ok(tr_spend_info)
     }
 
-    /// Updates the txids of each template in the DAG in topological order.
-    /// It will update the txid of the template and the txid of the connected inputs.
-    fn update_inputs(&mut self) -> Result <(), TemplateBuilderError> {
-        let sorted_templates = self.graph.sort()?;
+    fn get_dependencies(&self, transaction_name: &str) -> Result<Vec<(String, u32)>, ProtocolBuilderError> {
+        self.graph.get_dependencies(transaction_name).map_err(ProtocolBuilderError::from)
+    }
 
-        for from in sorted_templates {
-            let template = self.get_template_mut(&from)?;
-            let txid = template.compute_txid();
+    /// Updates the txids of each transaction in the DAG in topological order.
+    /// It will update the txid of the transaction and the txid of the connected inputs.
+    fn update_transaction_ids(&mut self) -> Result <(), ProtocolBuilderError> {
+        let sorted_transactions = self.graph.sort()?;
+
+        for from in sorted_transactions {
+            let transaction = self.get_transaction(&from)?;
+            let txid = transaction.compute_txid();
             
-            for input in template.get_next_inputs(){
-                let template = self.get_template_mut(input.get_to())?;
-                template.update_input(input.get_index(), txid);   
+            for (to, input_index) in self.get_dependencies(&from)? {
+                let mut dependency = self.get_transaction(&to)?.clone();
+                dependency.input[input_index as usize].previous_output.txid = txid;
+
+                self.graph.update_transaction(&to, dependency)?;
             }
         }
 
         Ok(())
     }
 
-    fn get_template_mut(&mut self, name: &str) -> Result<&mut Template, TemplateBuilderError> {
-        match self.graph.get_template_mut(name) {
-            Some(template) => Ok(template),
-            None => Err(TemplateBuilderError::MissingTemplate(name.to_string())),
+    fn compute_sighashes(&mut self) -> Result<(), ProtocolBuilderError> {
+        let sorted_transactions = self.graph.sort()?;
+
+        for transaction_name in sorted_transactions {
+            let input_spending_info = self.graph.get_transaction_spending_info(&transaction_name)?;
+
+            for (index, spending_info) in input_spending_info.iter().enumerate() {
+                match spending_info.sighash_type() {
+                    SighashType::Taproot(tap_sighash_type) => {
+                        match spending_info.spending_type()? {
+                            OutputSpendingType::TaprootKey { .. } => {
+                                self.taproot_key_spend_sighash(&transaction_name, index, tap_sighash_type)?;
+                            },
+                            OutputSpendingType::TaprootScript { ref spending_scripts, .. } => {
+                                self.taproot_script_spend_sighash(&transaction_name, index, tap_sighash_type, spending_scripts)?;
+                            },
+                            _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                        };
+                    },
+                    SighashType::Ecdsa(ecdsa_sighash_type) => {
+                        match spending_info.spending_type()? {
+                            OutputSpendingType::SegwitPublicKey { public_key, value } => {
+                                self.segwit_key_spend_sighash(&transaction_name, index, ecdsa_sighash_type, public_key, value)?;
+                            },
+                            OutputSpendingType::SegwitScript { ref script, value } => {
+                                self.segwit_script_spend_sighash(&transaction_name, index, ecdsa_sighash_type, script, value)?;
+                            }
+                            _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                        };
+                    },
+                };
+            }
+        };
+
+        Ok(())
+    }
+
+    fn get_witness_for_input(&self, input_index: usize, spending_condition: &InputSpendingInfo, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {
+        let witness = match spending_condition.sighash_type() {
+            SighashType::Taproot(..) => {
+                match spending_condition.spending_type()? {
+                    OutputSpendingType::TaprootKey { .. } => {
+                        self.taproot_key_spend_witness(spending_args)?
+                    },
+                    OutputSpendingType::TaprootScript { ref spend_info, .. } => {
+                        let taproot_leaf = spending_args.get_taproot_leaf().ok_or(ProtocolBuilderError::MissingTaprootLeaf(input_index))?;
+                        self.taproot_script_spend_witness(input_index, &taproot_leaf, spend_info, spending_args)?
+                    },
+                    _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                }
+            },
+            SighashType::Ecdsa(..) => {
+                match spending_condition.spending_type()? {
+                    OutputSpendingType::SegwitPublicKey { public_key, .. } => {
+                        self.segwit_key_spend_witness(public_key, spending_args)?
+                    },
+                    OutputSpendingType::SegwitScript { ref script, .. } => {
+                        self.segwit_script_spend_witness( script, spending_args)?
+                    }
+                    _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                }
+            },
+        };
+
+        Ok(witness)
+    }
+
+    fn create_unspendable_key() -> Result<PublicKey, ProtocolBuilderError> {
+        let mut rng = secp256k1::rand::thread_rng();
+        let key = unspendable_key(&mut rng)?;
+        Ok(key)
+    }
+
+    fn taproot_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
+        let transaction = self.get_transaction(transaction_name)?.clone();
+        let prevouts = self.graph.get_prevouts(transaction_name)?;
+        let mut sighasher = SighashCache::new(transaction);
+
+        let hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
+            input_index,
+            &sighash::Prevouts::All(&prevouts),
+            *sighash_type,
+        )?);
+
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+
+        Ok(())
+    }
+    
+    fn taproot_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &TapSighashType, spending_scripts: &Vec<ScriptBuf>) -> Result<(), ProtocolBuilderError> {
+        let transaction = self.get_transaction(transaction_name)?.clone();
+        let prevouts = self.graph.get_prevouts(transaction_name)?;
+        let mut sighasher = SighashCache::new(transaction);
+
+        let mut hashed_messages = vec![];
+        for spending_script in spending_scripts {
+            let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
+                input_index,
+                &sighash::Prevouts::All(&prevouts),
+                TapLeafHash::from_script(spending_script, LeafVersion::TapScript),
+                *sighash_type,
+            )?);
+
+            hashed_messages.push(hashed_message);
+        }
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, hashed_messages)?;
+        Ok(())
+    }
+    
+    fn segwit_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &EcdsaSighashType, public_key: &PublicKey, value: &Amount) -> Result<(), ProtocolBuilderError> {
+        let transaction = self.get_transaction(transaction_name)?.clone();
+        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+
+        let mut sighasher = SighashCache::new(transaction);
+
+        let hashed_message = Message::from(sighasher.p2wpkh_signature_hash(
+            input_index,
+            &script_pubkey,
+            *value,
+            *sighash_type,
+        )?);
+
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+        Ok(())
+    }
+    
+    fn segwit_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &EcdsaSighashType, script: &ScriptBuf, value: &Amount) -> Result<(), ProtocolBuilderError> {
+        let transaction = self.get_transaction(transaction_name)?.clone();
+        let script_hash = WScriptHash::from(script.clone());
+        let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
+
+        let mut sighasher = SighashCache::new(transaction);
+
+        let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
+            input_index,
+            &script_pubkey,
+            *value,
+            *sighash_type,
+        )?);
+
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+        Ok(())
+    }
+    
+    fn taproot_key_spend_witness(&self, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {
+        let mut witness = Witness::default();
+        for value in spending_args.iter() {
+            witness.push(value.clone());
+            //last element in script_args is the signature
+            //witness.push(signature.serialize());
+        }
+        
+        Ok(witness)
+    }
+    
+    fn taproot_script_spend_witness(&self, input_index: usize, taproot_leaf: &ScriptBuf, spend_info: &TaprootSpendInfo, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {
+        let secp = secp256k1::Secp256k1::new();
+
+        let control_block = match spend_info.control_block(&(taproot_leaf.clone(), LeafVersion::TapScript)) {
+            Some(cb) => cb,
+            None => return Err(ProtocolBuilderError::InvalidSpendingScript(input_index)),
+        };
+
+        if !control_block.verify_taproot_commitment(&secp, spend_info.output_key().to_inner(), taproot_leaf) {
+            return Err(ProtocolBuilderError::InvalidSpendingScript(input_index));
+        }
+
+        let mut witness = Witness::default();
+
+        for value in spending_args.iter() {
+            witness.push(value.clone());
+            //last element in script_args is the signature
+            //witness.push(signature.serialize());
+        }
+
+        witness.push(taproot_leaf.to_bytes());
+        witness.push(control_block.serialize());
+        Ok(witness)
+    }
+    
+    fn segwit_key_spend_witness(&self, public_key: &PublicKey, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {        
+        let mut witness = Witness::default();
+        for value in spending_args.iter() {
+            witness.push(value.clone());
+            //last element in script_args is the signature
+            //witness.push(signature.serialize());
+        }
+        
+        witness.push(public_key.to_bytes());
+        Ok(witness)
+    }
+    
+    fn segwit_script_spend_witness(&self, script: &ScriptBuf, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {        
+        let mut witness = Witness::default();
+        for value in spending_args.iter() {
+            witness.push(value.clone());
+            //last element in script_args is the signature
+            //witness.push(signature.serialize());
+        }
+
+        witness.push(script.to_bytes());
+        Ok(witness)
+    }
+
+    fn check_empty_scripts(spending_scripts: &[ScriptBuf]) -> Result<(), ProtocolBuilderError> {
+        if spending_scripts.is_empty() {
+            return Err(ProtocolBuilderError::EmptySpendingScripts);
+        }
+        
+        Ok(())
+    }
+    
+    fn check_empty_transaction_name(name: &str) -> Result<(), ProtocolBuilderError> {
+        if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
+            return Err(ProtocolBuilderError::MissingTransactionName);
+        }
+        
+        Ok(())
+    }
+
+    fn check_empty_connection_name(name: &str) -> Result<(), ProtocolBuilderError> {
+        if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
+            return Err(ProtocolBuilderError::MissingTransactionName);
+        }
+        
+        Ok(())
+    }
+    
+    fn check_zero_rounds(rounds: u32) -> Result<(), ProtocolBuilderError> {
+        if rounds == 0 {
+            return Err(ProtocolBuilderError::InvalidZeroRounds);
+        } 
+        
+        Ok(())
+    }
+}
+
+impl Builder {
+    pub fn new(protocol_name: &str) -> Self {
+        Builder {
+            protocol: Protocol::new(protocol_name),
         }
     }
-}
 
-fn check_empty_scripts(spending_scripts: &[ScriptWithParams]) -> Result<(), TemplateBuilderError> {
-    if spending_scripts.is_empty() {
-        return Err(TemplateBuilderError::EmptySpendingScripts);
+    pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {
+        self.protocol.build()
     }
-    
-    Ok(())
-}
 
-fn check_empty_template_name(name: &str) -> Result<(), TemplateBuilderError> {
-    if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
-        return Err(TemplateBuilderError::MissingTemplateName);
+    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, output_key: TweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_tweaked_key_spend_output(transaction_name, value, output_key)?;
+        Ok(self)
     }
-    
-    Ok(())
-}
 
-fn check_zero_rounds(rounds: u32) -> Result<(), TemplateBuilderError> {
-    if rounds == 0 {
-        return Err(TemplateBuilderError::InvalidZeroRounds);
-    } 
-    
-    Ok(())
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_script_spend_output(transaction_name, value, internal_key, spending_scripts)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wpkh_output(transaction_name, value, public_key)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script_pubkey: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wsh_output(transaction_name, value, script_pubkey)?;
+        Ok(self)
+    }
+
+    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
+        Ok(self)
+    }
+
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_speedup_output(transaction_name, value, speedup_public_key)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_key_spend_input(transaction_name, previous_output, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_script_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_script_spend_input(transaction_name, previous_output, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wpkh_input(transaction_name, previous_output, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wsh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wsh_input(transaction_name, previous_output, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_timelock_input(&mut self, transaction_name: &str, previous_output: u32, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_timelock_input(transaction_name, previous_output, blocks, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, output_key: TweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_tweaked_key_spend_connection(connection_name, from, value, output_key, to, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: UntweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_key_spend_connection(connection_name, from, value, internal_key, to, sighash_type)?;
+        Ok(self)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_script_spend_connection(connection_name, from, value, internal_key, spending_scripts, to, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wpkh_connection(connection_name, from, value, public_key, to, sighash_type)?;
+        Ok(self)
+    }   
+
+    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptBuf, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_p2wsh_connection(connection_name, from, value, script, to, sighash_type)?;
+        Ok(self)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_timelock_connection(from, value, internal_key, expired_script, renew_script, to, blocks, sighash_type)?;
+        Ok(self)
+    }
+
+    pub fn connect_with_external_transaction(&mut self, txid: Txid, output_index: u32, output_spending_type: OutputSpendingType, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.connect_with_external_transaction(txid, output_index, output_spending_type, to, sighash_type)?;
+        Ok(self)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptBuf], spending_scripts_to: &[ScriptBuf], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {
+        self.protocol.connect_rounds(connection_name, rounds, from, to, value, spending_scripts_from, spending_scripts_to, sighash_type)
+    }
+
+    pub fn add_speedup_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        for transaction_name in transaction_names {
+            self.add_speedup_output(transaction_name, value, speedup_public_key)?;
+        }
+        Ok(self)
+    }
+
+    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        for transaction_name in transaction_names {
+            self.add_timelock_output(transaction_name, value, internal_key, expired_script.clone(), renew_script.clone())?;
+        }
+        Ok(self)
+    }
+
+    pub fn add_taproot_key_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, output_keys: Vec<TweakedPublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
+        for (value, output_key) in values.iter().zip(output_keys.iter()) {
+            self.add_taproot_key_spend_output(transaction_name, *value, *output_key)?;
+        }
+        Ok(self)
+    }
+
+    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: PublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
+        for (value, scripts) in values.iter().zip(spending_scripts.iter()) {
+            self.add_taproot_script_spend_output(transaction_name, *value, internal_key, scripts)?;
+        }
+        Ok(self)
+    }
+
+    pub fn add_p2wpkh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, public_keys: Vec<PublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
+        for (value, public_key) in values.iter().zip(public_keys.iter()) {
+            self.add_p2wpkh_output(transaction_name, *value, *public_key)?;
+        }
+        Ok(self)
+    }
+
+    pub fn add_p2wsh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, scripts: Vec<&ScriptBuf>) -> Result<&mut Self, ProtocolBuilderError> {
+        for (value, script) in values.iter().zip(scripts.iter()) {
+            self.add_p2wsh_output(transaction_name, *value, script)?;
+        }
+        Ok(self)
+    }
 }

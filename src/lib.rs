@@ -3,10 +3,7 @@ pub mod cli;
 pub mod config;
 pub mod errors;
 pub mod graph;
-pub mod params;
 pub mod scripts;
 pub mod template;
 pub mod unspendable;
 pub mod tests;
-
-pub mod connections;

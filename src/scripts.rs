@@ -168,7 +168,7 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey) -> ScriptBuf {
     let message_size = public_key.message_size() as u32;
     let checksum_size = public_key.checksum_size() as u32;
     let base = public_key.get_base() as u32;
-    let bits_per_digit = public_key.get_bits_per_digit() as u32;
+    let bits_per_digit = public_key.get_bits_per_digit();
     let public_key_hashes = public_key.to_hashes();
 
     let verify = script! {

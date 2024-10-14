@@ -1,10 +1,8 @@
-use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, psbt::Input, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
+use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
 use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
 use config as settings;
-
-use crate::connections::InputType;
 
 #[derive(Error, Debug)]
 pub enum TemplateBuilderError {
@@ -114,6 +112,18 @@ pub enum UnspendableKeyError {
 pub enum GraphError {
     #[error("The graph should be a DAG, cycles are not allowed")]
     GraphCycleDetected,
+
+    #[error("Transaction with name {0} missing in graph")]
+    MissingTransaction(String),
+
+    #[error("Connection missing in graph")]
+    MissingConnection,
+
+    #[error("Spending type does not match with sighash type")]
+    InvalidSpendingTypeForSighashType,
+
+    #[error("Missing output spending information for ")]
+    MissingOutputSpendingTypeForInputSpendingInfo(String),
 }
 
 #[derive(Error, Debug)]
@@ -139,15 +149,67 @@ pub enum ConfigError {
 
 #[derive(Error, Debug)]
 pub enum ProtocolBuilderError {
-    #[error("Missing spend info for input of type {0}")]
-    MissingSpendInfoForInputType(String),
+    #[error("Transaction with name {0} missing in protocol {1}")]
+    MissingTransaction(String, String),
 
-    #[error("Spend info is not needed for input of type {0}")]
-    UnnecessarySpendInfoForInputType(String),
+    #[error("Transaction with name {0} does not contained ouput with index {1}")]
+    MissingOutput(String, u32),
+
+    #[error("Transaction with name {0} does not contained input with index {1}")]
+    MissingInput(String, u32),
+
+    #[error("Missing protocol")]
+    MissingProtocol,
+
+    #[error("Failed to hash transaction")]
+    TaprootSighashError(#[from] TaprootError),
+
+    #[error("Failed to hash transaction")]
+    P2WPKHSighashError(#[from] P2wpkhError),
+
+    #[error("Failed to hash transaction")]
+    P2WSHSighashError(#[from] transaction::InputsIndexError),
+
+    // #[error("Missing spend info for input of type {0}")]
+    // MissingSpendInfoForInputType(String),
+
+    // #[error("Spend info is not needed for input of type {0}")]
+    // UnnecessarySpendInfoForInputType(String),
+
+    #[error("Failed to build graph")]
+    GraphBuildingError(#[from] GraphError),
 
     #[error("Failed to build taptree for given spending conditions")]
     TapTreeError(#[from] TaprootBuilderError),
 
     #[error("Failed to finalize taptree for given spending conditions")]
     TapTreeFinalizeError,
+
+    #[error("Failed to build unspendable internal key")]
+    UnspendableInternalKeyError(#[from] UnspendableKeyError),
+
+    #[error("Invalid SighashType")]
+    InvalidSighashType,
+
+    #[error("Invalid spending type for sighash type")]
+    InvalidSpendingTypeForSighashType,
+
+    #[error("Invalid spending script for input {0}")]
+    InvalidSpendingScript(usize),
+
+    #[error("Missing taproot leaf for input {0}")]
+    MissingTaprootLeaf(usize),
+
+    #[error("Cannot create zero rounds")]
+    InvalidZeroRounds,
+
+    #[error("Transaction name is empty")]
+    MissingTransactionName,
+
+    #[error("Connection name is empty")]
+    MissingConnectionName,
+
+    #[error("Spending scripts cannot be empty")]
+    EmptySpendingScripts,
 }
+
