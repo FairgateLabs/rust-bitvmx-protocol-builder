@@ -8,7 +8,6 @@ pub struct Builder {
     protocol: Protocol,
 }
 
-#[derive(Clone, Debug)]
 pub struct Protocol {
     name: String,
     graph: TransactionGraph,
@@ -63,7 +62,7 @@ impl Protocol {
     pub fn new(name: &str) -> Self {
         Protocol {
             name: name.to_string(),
-            graph: TransactionGraph::new(),
+            graph: TransactionGraph::default(),
         }
     }
 
@@ -342,7 +341,7 @@ impl Protocol {
     }
 
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {
-        let mut transaction = self.get_or_create_transaction(transaction_name);
+        let mut transaction = self.get_or_create_transaction(transaction_name)?;
 
         transaction.output.push(transaction::TxOut {
             value,
@@ -355,7 +354,7 @@ impl Protocol {
     }
 
     fn add_transaction_input(&mut self, previous_txid: Txid, previous_output: u32, transaction_name: &str, sequence: Sequence, sighash_type: &SighashType) -> Result<(), ProtocolBuilderError>{
-        let mut transaction = self.get_or_create_transaction(transaction_name);
+        let mut transaction = self.get_or_create_transaction(transaction_name)?;
 
         transaction.input.push(transaction::TxIn {
             previous_output: OutPoint { txid: previous_txid, vout: previous_output},
@@ -369,13 +368,13 @@ impl Protocol {
         Ok(())
     }
 
-    fn get_or_create_transaction(&mut self, transaction_name: &str) -> Transaction {
+    fn get_or_create_transaction(&mut self, transaction_name: &str) -> Result<Transaction, ProtocolBuilderError> {
         if !self.graph.contains_transaction(transaction_name) {
             let transaction = Protocol::transaction_template();
-            self.graph.add_transaction(transaction_name, transaction);
+            self.graph.add_transaction(transaction_name, transaction)?;
         };
     
-        self.graph.get_transaction(transaction_name).unwrap().clone()
+        Ok(self.graph.get_transaction(transaction_name).unwrap().clone())
     }
 
     fn transaction_template() -> Transaction{
@@ -387,7 +386,7 @@ impl Protocol {
         }
     }
 
-    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.

@@ -1,9 +1,11 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{key::{TweakedPublicKey, UntweakedPublicKey}, secp256k1::Message, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, Transaction, TxOut};
+use bitcoin::{key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, secp256k1::Message, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
+use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use storage_backend::storage::Storage;
 
-use crate::errors::GraphError;
+use crate::{builder::Protocol, errors::GraphError};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
@@ -11,6 +13,99 @@ pub struct InputSpendingInfo {
     hashed_messages: Vec<Message>,
     spending_type: Option<OutputSpendingType>,
 }
+
+impl Serialize for InputSpendingInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut messages: Vec<&[u8; 32]> = vec![];
+        for message in &self.hashed_messages {
+            messages.push(message.as_ref());
+        }
+        let mut state = serializer.serialize_struct("InputSpendingInfo", 3)?;
+        state.serialize_field("sighash_type", &self.sighash_type)?;
+        state.serialize_field("hashed_messages", &messages)?;
+        state.serialize_field("spending_type", &self.spending_type)?;
+        state.end()
+    }
+    
+}
+
+impl<'de> Deserialize<'de> for InputSpendingInfo {
+    fn deserialize<D>(deserializer: D) -> Result<InputSpendingInfo, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            SighashType,
+            HashedMessages,
+            SpendingType,
+        }
+
+        struct InputSpendingInfoVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for InputSpendingInfoVisitor {
+            type Value = InputSpendingInfo;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct InputSpendingInfo")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<InputSpendingInfo, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut sighash_type: Option<SighashType> = None;
+                let mut hashed_messages: Option<Vec<[u8; 32]>> = None;
+                let mut spending_type: Option<OutputSpendingType> = None;
+
+                while let Some(key_field) = map.next_key()? {
+                    match key_field {
+                        Field::SighashType => {
+                            if sighash_type.is_some() {
+                                return Err(serde::de::Error::duplicate_field("sighash_type"));
+                            }
+                            sighash_type = Some(map.next_value()?);
+                        }
+                        Field::HashedMessages => {
+                            if hashed_messages.is_some() {
+                                return Err(serde::de::Error::duplicate_field("hashed_messages"));
+                            }
+                            hashed_messages = Some(map.next_value()?);
+                        }
+                        Field::SpendingType => {
+                            if spending_type.is_some() {
+                                return Err(serde::de::Error::duplicate_field("spending_type"));
+                            }
+                            spending_type = Some(map.next_value()?);
+                        }
+                    }
+                }
+                Ok(InputSpendingInfo {
+                    sighash_type: sighash_type.ok_or_else(|| serde::de::Error::missing_field("sighash_type"))?,
+                    hashed_messages: {
+                        let mut messages = vec![];
+                        for message in hashed_messages.ok_or_else(|| serde::de::Error::missing_field("hashed_messages"))? {
+                            messages.push(Message::from_digest_slice(&message).map_err(|e| serde::de::Error::custom(e.to_string()))?);
+                        }
+                        messages
+                    },
+                    spending_type,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "InputSpendingInfo",
+            &["sighash_type", "hashed_messages", "spending_type"],
+            InputSpendingInfoVisitor,
+        )
+    }
+}
+
 impl InputSpendingInfo {
     fn new(sighash_type: &SighashType) -> Self {
         Self { 
@@ -61,19 +156,19 @@ impl InputSpendingInfo {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SighashType {
     Taproot(TapSighashType),
     Ecdsa(EcdsaSighashType),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Key {
     Tweaked(TweakedPublicKey),
     Untweaked(UntweakedPublicKey),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum OutputSpendingType {
     TaprootKey{
         key: Key,
@@ -81,6 +176,7 @@ pub enum OutputSpendingType {
     TaprootScript{
         spending_scripts: Vec<ScriptBuf>,
         spend_info: TaprootSpendInfo,
+        internal_key: PublicKey,
     },
     SegwitPublicKey{
         public_key: PublicKey,
@@ -91,6 +187,158 @@ pub enum OutputSpendingType {
         value: Amount, 
     }
 }
+
+impl Serialize for OutputSpendingType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            OutputSpendingType::TaprootKey { key } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 1)?;
+                state.serialize_field("key", key)?;
+                state.end()
+            }
+            OutputSpendingType::TaprootScript { spending_scripts, spend_info: _, internal_key } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                state.serialize_field("spending_scripts", spending_scripts)?;
+                state.serialize_field("internal_key", internal_key)?;
+                state.end()
+            }
+            OutputSpendingType::SegwitPublicKey { public_key, value } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                state.serialize_field("public_key", public_key)?;
+                state.serialize_field("value", value)?;
+                state.end()
+            }
+            OutputSpendingType::SegwitScript { script, value } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                state.serialize_field("script", script)?;
+                state.serialize_field("value", value)?;
+                state.end()
+            }
+        }
+    }
+}
+
+
+impl<'de> Deserialize<'de> for OutputSpendingType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Key,
+            SpendingScripts,
+            InternalKey,
+            PublicKey,
+            Script,
+            Value,
+        }
+
+        struct OutputSpendingTypeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for OutputSpendingTypeVisitor {
+            type Value = OutputSpendingType;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct OutputSpendingType")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<OutputSpendingType, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut key: Option<Key> = None;
+                let mut spending_scripts: Option<Vec<ScriptBuf>> = None;
+                let mut internal_key: Option<PublicKey> = None;
+                let mut public_key: Option<PublicKey> = None;
+                let mut script: Option<ScriptBuf> = None;
+                let mut value: Option<Amount> = None;
+
+                while let Some(key_field) = map.next_key()? {
+                    match key_field {
+                        Field::Key => {
+                            if key.is_some() {
+                                return Err(serde::de::Error::duplicate_field("key"));
+                            }
+                            key = Some(map.next_value()?);
+                        }
+                        Field::SpendingScripts => {
+                            if spending_scripts.is_some() {
+                                return Err(serde::de::Error::duplicate_field("spending_scripts"));
+                            }
+                            spending_scripts = Some(map.next_value()?);
+                        }
+                        Field::InternalKey => {
+                            if internal_key.is_some() {
+                                return Err(serde::de::Error::duplicate_field("internal_key"));
+                            }
+                            internal_key = Some(map.next_value()?);
+                        }
+                        Field::PublicKey => {
+                            if public_key.is_some() {
+                                return Err(serde::de::Error::duplicate_field("public_key"));
+                            }
+                            public_key = Some(map.next_value()?);
+                        }
+                        Field::Script => {
+                            if script.is_some() {
+                                return Err(serde::de::Error::duplicate_field("script"));
+                            }
+                            script = Some(map.next_value()?);
+                        }
+                        Field::Value => {
+                            if value.is_some() {
+                                return Err(serde::de::Error::duplicate_field("value"));
+                            }
+                            value = Some(map.next_value()?);
+                        }
+                    }
+                }
+                if key.is_some() {
+                    let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
+                    Ok(OutputSpendingType::TaprootKey { key })
+                } else if spending_scripts.is_some() {
+                    Ok(OutputSpendingType::TaprootScript {
+                        spending_scripts: spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?,
+                        spend_info: {
+                            let secp = Secp256k1::new();
+                            let internal_key_ok = internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
+                            let spending_scripts = spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
+                            match Protocol::build_taproot_spend_info(&secp,internal_key_ok, &spending_scripts){
+                                Ok(taproot_spend_info) => taproot_spend_info,
+                                Err(e) => {
+                                    eprintln!("Error creating taproot spend info: {:?}", e);
+                                    return Err(serde::de::Error::custom("Error creating taproot spend info"))
+                                }
+                            }
+                        },
+                        internal_key: internal_key.ok_or_else(|| serde::de::Error::missing_field("internal_key"))?,
+                    })
+                } else if public_key.is_some() {
+                    let public_key = public_key.ok_or_else(|| serde::de::Error::missing_field("public_key"))?;
+                    let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                    Ok(OutputSpendingType::SegwitPublicKey { public_key, value })
+                } else if script.is_some() {
+                    let script = script.ok_or_else(|| serde::de::Error::missing_field("script"))?;
+                    let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                    Ok(OutputSpendingType::SegwitScript { script, value })
+                } else {
+                    Err(serde::de::Error::missing_field("key"))
+                }
+            }
+        }
+
+        deserializer.deserialize_struct(
+            "OutputSpendingType",
+            &["key", "spending_scripts", "internal_key", "public_key", "script", "value"],
+            OutputSpendingTypeVisitor,
+        )
+    }
+}     
 
 impl OutputSpendingType {
     pub fn new_taproot_tweaked_key_spend(tweaked_public_key: TweakedPublicKey) -> Self {
@@ -108,7 +356,11 @@ impl OutputSpendingType {
     pub fn new_taproot_script_spend(spending_scripts: &[ScriptBuf], spend_info: TaprootSpendInfo) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
-            spend_info,
+            spend_info: spend_info.clone(),
+            internal_key: {
+                let internal_key = spend_info.internal_key();
+                PublicKey::new(internal_key.public_key(spend_info.output_key_parity()))
+            },
         }
     }
     
@@ -127,7 +379,7 @@ impl OutputSpendingType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
     name: String,
     transaction: Transaction,
@@ -146,7 +398,7 @@ impl Node {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Connection {
     name: String,
     input_index: u32,
@@ -163,33 +415,41 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct TransactionGraph {
     graph: Graph<Node, Connection>,
     node_indexes: HashMap<String, petgraph::graph::NodeIndex>,
+    storage: Storage,
 }
 
 impl Default for TransactionGraph {
     fn default() -> Self {
-        Self::new()
+        TransactionGraph {
+            graph: Graph::new(),
+            node_indexes: HashMap::new(),
+            storage: Storage::new().unwrap(),
+        }
     }
 }
 
 impl TransactionGraph {
-    pub fn new() -> Self {
-        TransactionGraph {
+    pub fn new(path: &str) -> Result<Self, GraphError> {
+        let path = std::path::PathBuf::from(path);
+        let storage = Storage::new_with_path(&path).map_err(|e| GraphError::StorageError(e))?;
+
+        Ok(TransactionGraph {
             graph: Graph::new(),
             node_indexes: HashMap::new(),
-        }
+            storage,
+        })
     }
 
-    pub fn add_transaction(&mut self, name: &str, transaction: Transaction) {
-        let node_index = self.graph.add_node(Node::new(
-            name,
-            transaction
-        ));
+    pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+        let node = Node::new(name, transaction);
+        self.storage.write(name, &serde_json::to_string(&node)?)?;
+        let node_index = self.graph.add_node(node);
 
         self.node_indexes.insert(name.to_string(), node_index);
+        Ok(())
     }
 
     pub fn update_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
@@ -199,6 +459,8 @@ impl TransactionGraph {
         )?;
 
         node.transaction = transaction;
+
+        self.storage.write(name, &serde_json::to_string(node)?)?;
 
         Ok(())
     }
@@ -212,6 +474,8 @@ impl TransactionGraph {
         node.transaction = transaction;
         node.input_spending_infos.push(InputSpendingInfo::new(sighash_type));
 
+        self.storage.write(name, &serde_json::to_string(node)?)?;
+
         Ok(())
     }
 
@@ -221,8 +485,10 @@ impl TransactionGraph {
             name.to_string())
         )?;
 
-        node.transaction = transaction;
+        node.transaction = transaction;        
         node.output_spending_types.push(spending_type);
+
+        self.storage.write(name, &serde_json::to_string(node)?)?;
 
         Ok(())
     }
@@ -232,17 +498,25 @@ impl TransactionGraph {
         let to_node_index = self.get_node_index(to)?;
         let output_spending_type = self.get_output_spending_type(from, output_index)?;
 
-        self.graph.add_edge(from_node_index, to_node_index, Connection::new(
+
+        let connection = Connection::new(
             connection_name.to_string(),
             input_index,
             output_index,
-        ));
+        );
+
+        self.storage.write(connection_name, &serde_json::to_string(&connection).unwrap()).unwrap();
+        
+        self.graph.add_edge(from_node_index, to_node_index, connection);
 
         let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
             to.to_string())
         )?;
 
         to_node.input_spending_infos[input_index as usize].add_spending_type(output_spending_type)?;
+
+        self.storage.write(to, &serde_json::to_string(to_node)?)?;
+
         Ok(())
     }
 
@@ -254,6 +528,9 @@ impl TransactionGraph {
         )?;
 
         to_node.input_spending_infos[to_node.transaction.input.len() - 1].add_spending_type(output_spending_type)?;
+
+        self.storage.write(to, &serde_json::to_string(to_node)?)?;
+
         Ok(())
     }
 
@@ -264,6 +541,8 @@ impl TransactionGraph {
         )?;
 
         node.input_spending_infos[input_index as usize].add_hashed_messages(message_hashes);
+
+        self.storage.write(transaction_name, &serde_json::to_string(node)?)?;
 
         Ok(())
     }
