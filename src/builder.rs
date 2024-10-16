@@ -1,6 +1,7 @@
 use std::cmp;
 
 use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness};
+use key_manager::winternitz::WinternitzSignature;
 
 use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, unspendable::unspendable_key};
 
@@ -50,6 +51,24 @@ impl SpendingArgs {
         self
     }
 
+    pub fn push_winternitz_signature(&mut self, winternitz_signature: WinternitzSignature) -> &mut Self {
+        let hashes = winternitz_signature.to_hashes();
+        let digits = winternitz_signature.message_digits();
+
+        for (hash, digit) in hashes.iter().zip(digits.iter()) {  
+            let digit = if *digit == 0 {
+                [].to_vec()
+            } else {
+                [*digit].to_vec()
+            };
+
+            self.push_slice(hash);
+            self.push_slice(&digit);
+        }
+
+        self
+    }
+
     pub fn get_taproot_leaf(&self) -> Option<ScriptBuf> {
         self.taproot_leaf.clone()
     }
@@ -89,6 +108,8 @@ impl Protocol {
     }
 
     pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+        Self::check_empty_scripts(spending_scripts)?;
+
         let secp = secp256k1::Secp256k1::new();
         let value = Amount::from_sat(value);
         let spend_info = Protocol::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
@@ -221,11 +242,11 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
-        self.add_timelock_input(to, output_index, blocks, sighash_type)?;
+        self.add_timelock_input(to, output_index, renew_blocks, sighash_type)?;
         let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
 
         self.connect("timelock", from, output_index, to, input_index)
@@ -238,6 +259,10 @@ impl Protocol {
     }
 
     pub fn connect(&mut self, connection_name: &str, from: &str, output_index: u32, to: &str, input_index: u32) -> Result<&mut Self, ProtocolBuilderError> {
+        Self::check_empty_connection_name(connection_name)?;
+        Self::check_empty_transaction_name(from)?;
+        Self::check_empty_transaction_name(to)?;
+        
         let from_tx = self.get_transaction(from)?;
         let to_tx = self.get_transaction(to)?;
 
@@ -257,12 +282,7 @@ impl Protocol {
     /// Creates a connection between two transactions for a given number of rounds creating the intermediate transactions to complete the DAG.
     #[allow(clippy::too_many_arguments)]
     pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptBuf], spending_scripts_to: &[ScriptBuf], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {  
-        Self::check_empty_connection_name(connection_name)?;
         Self::check_zero_rounds(rounds)?;
-        Self::check_empty_transaction_name(from)?;
-        Self::check_empty_transaction_name(to)?;
-        Self::check_empty_scripts(spending_scripts_from)?;
-        Self::check_empty_scripts(spending_scripts_to)?;
         
         // To create the names for the intermediate transactions in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
@@ -297,10 +317,10 @@ impl Protocol {
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    pub fn build(&mut self) -> Result<&Self, ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
         self.compute_sighashes()?;
-        Ok(self)
+        Ok(self.clone())
     }
 
     pub fn get_transaction_to_send(&self, transaction_name: &str, spending_args: &[SpendingArgs]) -> Result<Transaction, ProtocolBuilderError> {
@@ -342,6 +362,8 @@ impl Protocol {
     }
 
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {
+        Self::check_empty_transaction_name(transaction_name)?;
+
         let mut transaction = self.get_or_create_transaction(transaction_name);
 
         transaction.output.push(transaction::TxOut {
@@ -355,6 +377,8 @@ impl Protocol {
     }
 
     fn add_transaction_input(&mut self, previous_txid: Txid, previous_output: u32, transaction_name: &str, sequence: Sequence, sighash_type: &SighashType) -> Result<(), ProtocolBuilderError>{
+        Self::check_empty_transaction_name(transaction_name)?;
+
         let mut transaction = self.get_or_create_transaction(transaction_name);
 
         transaction.input.push(transaction::TxIn {
@@ -682,7 +706,7 @@ impl Builder {
         }
     }
 
-    pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<Protocol, ProtocolBuilderError> {
         self.protocol.build()
     }
 

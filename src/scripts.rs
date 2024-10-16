@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::{PublicKey, ScriptBuf};
+use bitcoin::{PublicKey, ScriptBuf, XOnlyPublicKey};
 
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
@@ -88,13 +88,13 @@ pub fn speedup(public_key: &PublicKey) -> Result<ScriptBuf, ScriptError> {
     Ok(ScriptBuf::new_p2wpkh(&pubkey_hash))
 }
 
-pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithParams {
+pub fn timelock(blocks: u16, timelocked_public_key: &XOnlyPublicKey) -> ScriptWithParams {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
         { blocks.to_le_bytes().to_vec() }
         OP_CSV
         OP_DROP
-        { timelocked_public_key.to_bytes() }
+        { timelocked_public_key.serialize().to_vec() }
         OP_CHECKSIG
     );
 
@@ -104,21 +104,13 @@ pub fn timelock(blocks: u16, timelocked_public_key: &PublicKey) -> ScriptWithPar
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
-pub fn collaborative_spend(aggregated_key: &PublicKey) -> ScriptWithParams {
+pub fn timelock_renew(aggregated_key: &XOnlyPublicKey) -> ScriptWithParams {
     let script = script!(
-        { aggregated_key.to_bytes() }
+        { aggregated_key.serialize().to_vec() }
         OP_CHECKSIG
     );
 
-    let wrapped = script!{
-        OP_IF
-        OP_TRUE
-        OP_ELSE
-        {script}
-        OP_ENDIF
-    };
-
-    let mut script_with_params = ScriptWithParams::new(wrapped);
+    let mut script_with_params = ScriptWithParams::new(script);
     script_with_params.add_param("aggregated_signature", 0, KeyType::EcdsaPublicKey, 0);
     script_with_params
 }
