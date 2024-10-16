@@ -65,7 +65,7 @@ jobs:
       uses: actions-rs/tarpaulin@v0.1
       with:
         version: '0.15.0'
-        args: '--out Xml --output-dir resources --exclude-files src/tests/* config/* src/main.rs --no-fail-fast'
+        args: '--out Xml --output-dir resources --exclude-files src/tests/* config/* src/main.rs rust-bitcoin-script/* rust-bitcoin-scriptexec/* rust-bitvmx-key-manager/* --no-fail-fast'
 
     - name: Code Coverage Summary Report
       uses: irongut/CodeCoverageSummary@v1.3.0
