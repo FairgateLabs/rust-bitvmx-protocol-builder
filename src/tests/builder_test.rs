@@ -28,10 +28,10 @@ mod tests {
 
         let mut builder = Builder::new("single_connection"); 
         let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "start", value, internal_key, &scripts_from, "challenge", &sighash_type)?
-            .add_timelock_connection("start", value, internal_key, expired_from, renew_from, "challenge", blocks, &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "challenge", value, internal_key, &scripts_to, "response", &sighash_type)?
-            .add_timelock_connection("challenge", value, internal_key, expired_to, renew_to, "response", blocks, &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "start", value, &internal_key, &scripts_from, "challenge", &sighash_type)?
+            .add_timelock_connection("start", value, &internal_key, &expired_from, &renew_from, "challenge", blocks, &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "challenge", value, &internal_key, &scripts_to, "response", &sighash_type)?
+            .add_timelock_connection("challenge", value, &internal_key, &expired_to, &renew_to, "response", blocks, &sighash_type)?
             .build()?;
 
         let start = protocol.get_transaction_to_send("start", &[SpendingArgs::new_args()])?;
@@ -66,7 +66,7 @@ mod tests {
         let spending_scripts = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
 
         let mut builder = Builder::new("cycle");
-            builder.add_taproot_script_spend_connection("cycle", "A", value, internal_key, &spending_scripts, "A", &sighash_type)?;
+            builder.add_taproot_script_spend_connection("cycle", "A", value, &internal_key, &spending_scripts, "A", &sighash_type)?;
 
         let result = builder.build();
 
@@ -102,9 +102,9 @@ mod tests {
 
         let mut builder = Builder::new("cycle"); 
         let result = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &scripts_from, "B", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "B", value, internal_key, &scripts_to, "C", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "C", value, internal_key, &scripts_to, "A", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &scripts_from, "B", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "B", value, &internal_key, &scripts_to, "C", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "C", value, &internal_key, &scripts_to, "A", &sighash_type)?
             .build();
 
         match result {
@@ -165,7 +165,7 @@ mod tests {
 
         let protocol = builder
             .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &[script.clone()], &from_rounds, &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], &from_rounds, &sighash_type)?
             .build()?;
 
         let a = protocol.get_transaction_to_send("A", &[SpendingArgs::new_args()])?;
@@ -244,19 +244,19 @@ mod tests {
         let mut builder = Builder::new("rounds");
         builder
             .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &[script.clone()], "B", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &[script.clone()], "C", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "B", value, internal_key, &[script.clone()], "D", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "C", value, internal_key, &[script.clone()], "D", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "D", value, internal_key, &[script.clone()], "E", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &[script.clone()], "F", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "D", value, internal_key, &[script.clone()], "F", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "F", value, internal_key, &[script.clone()], "G", &sighash_type)?;
+            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "B", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "C", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "B", value, &internal_key, &[script.clone()], "D", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "C", value, &internal_key, &[script.clone()], "D", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "D", value, &internal_key, &[script.clone()], "E", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "F", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "D", value, &internal_key, &[script.clone()], "F", &sighash_type)?
+            .add_taproot_script_spend_connection("protocol", "F", value, &internal_key, &[script.clone()], "G", &sighash_type)?;
 
         let (from_rounds, to_rounds) = builder.connect_rounds("rounds", rounds, "H", "I", value, &[script.clone()], &[script.clone()], &sighash_type)?;
         
-        builder.add_taproot_script_spend_connection("protocol", "G", value, internal_key, &[script.clone()], &from_rounds, &sighash_type)?
-            .add_p2wpkh_output(&to_rounds, value, internal_key)?;
+        builder.add_taproot_script_spend_connection("protocol", "G", value, &internal_key, &[script.clone()], &from_rounds, &sighash_type)?
+            .add_p2wpkh_output(&to_rounds, value, &internal_key)?;
 
         let protocol = builder.build()?;
         let mut transaction_names = protocol.get_transaction_names();

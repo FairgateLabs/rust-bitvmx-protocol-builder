@@ -112,9 +112,9 @@ impl OutputSpendingType {
         }
     }
     
-    pub fn new_segwit_key_spend(public_key: PublicKey, value: Amount) -> OutputSpendingType {
+    pub fn new_segwit_key_spend(public_key: &PublicKey, value: Amount) -> OutputSpendingType {
         OutputSpendingType::SegwitPublicKey { 
-            public_key, 
+            public_key: public_key.clone(), 
             value,
         } 
     }

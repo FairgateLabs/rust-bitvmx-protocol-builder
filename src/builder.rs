@@ -107,7 +107,7 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
         Self::check_empty_scripts(spending_scripts)?;
 
         let secp = secp256k1::Secp256k1::new();
@@ -126,7 +126,7 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         let witness_public_key_hash = public_key.wpubkey_hash().expect("key is compressed");
         let value = Amount::from_sat(value);
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
@@ -146,13 +146,13 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_p2wpkh_output(transaction_name, value, speedup_public_key)?;
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script, renew_script])
+    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script.clone(), renew_script.clone()])
     }
 
     pub fn add_taproot_tweaked_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
@@ -211,7 +211,7 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_output(from, value, internal_key, spending_scripts)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -221,7 +221,7 @@ impl Protocol {
         self.connect(connection_name, from, output_index, to, input_index)
     }
 
-    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_p2wpkh_output(from, value, public_key)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -242,7 +242,7 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -296,14 +296,14 @@ impl Protocol {
             to_round = format!("{0}_{1}", to, round);
 
             // Connection between the from and to transactions using the spending_scripts_from.
-            self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
+            self.add_taproot_script_spend_connection(connection_name, &from_round, value, &Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
             // Create the new names for the intermediate transactions in the reverse connection (to -> from).
             from_round = format!("{0}_{1}", from, round + 1);
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the spending_scripts_to.
-            self.add_taproot_script_spend_connection(connection_name, &to_round, value, Self::create_unspendable_key()?, spending_scripts_to, &from_round, sighash_type)?;
+            self.add_taproot_script_spend_connection(connection_name, &to_round, value, &Self::create_unspendable_key()?, spending_scripts_to, &from_round, sighash_type)?;
         };
 
         // We don't need the last reverse connection, thus why we perform the last direct connection outside the loop.
@@ -312,7 +312,7 @@ impl Protocol {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using spending_scripts_from.
-        self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
+        self.add_taproot_script_spend_connection(connection_name, &from_round, value, &Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
@@ -411,7 +411,7 @@ impl Protocol {
         }
     }
 
-    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.
@@ -431,7 +431,7 @@ impl Protocol {
     
         let tr_spend_info = tr_builder.finalize(
             secp, 
-            internal_key.into()
+            internal_key.clone().into()
         ).map_err(|_| ProtocolBuilderError::TapTreeFinalizeError)?;
 
         Ok(tr_spend_info)
@@ -715,12 +715,12 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_output(transaction_name, value, internal_key, spending_scripts)?;
         Ok(self)
     }
 
-    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_output(transaction_name, value, public_key)?;
         Ok(self)
     }
@@ -730,12 +730,12 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
         Ok(self)
     }
 
-    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_speedup_output(transaction_name, value, speedup_public_key)?;
         Ok(self)
     }
@@ -776,12 +776,12 @@ impl Builder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_connection(connection_name, from, value, internal_key, spending_scripts, to, sighash_type)?;
         Ok(self)
     }
 
-    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_connection(connection_name, from, value, public_key, to, sighash_type)?;
         Ok(self)
     }   
@@ -792,7 +792,7 @@ impl Builder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_connection(from, value, internal_key, expired_script, renew_script, to, blocks, sighash_type)?;
         Ok(self)
     }
@@ -807,16 +807,16 @@ impl Builder {
         self.protocol.connect_rounds(connection_name, rounds, from, to, value, spending_scripts_from, spending_scripts_to, sighash_type)
     }
 
-    pub fn add_speedup_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_speedup_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         for transaction_name in transaction_names {
             self.add_speedup_output(transaction_name, value, speedup_public_key)?;
         }
         Ok(self)
     }
 
-    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
         for transaction_name in transaction_names {
-            self.add_timelock_output(transaction_name, value, internal_key, expired_script.clone(), renew_script.clone())?;
+            self.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
         }
         Ok(self)
     }
@@ -828,14 +828,14 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: PublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: &PublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
         for (value, scripts) in values.iter().zip(spending_scripts.iter()) {
             self.add_taproot_script_spend_output(transaction_name, *value, internal_key, scripts)?;
         }
         Ok(self)
     }
 
-    pub fn add_p2wpkh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, public_keys: Vec<PublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, public_keys: Vec<&PublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
         for (value, public_key) in values.iter().zip(public_keys.iter()) {
             self.add_p2wpkh_output(transaction_name, *value, *public_key)?;
         }
@@ -846,6 +846,22 @@ impl Builder {
         for (value, script) in values.iter().zip(scripts.iter()) {
             self.add_p2wsh_output(transaction_name, *value, script)?;
         }
+        Ok(self)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_linked_message_connection(&mut self, from: &str, to: &str, protocol_value: u64, protocol_scripts: &[ScriptBuf], timelock_value: u64, timelock_expired: &ScriptBuf, timelock_renew: &ScriptBuf, speedup_value: u64, speedup_key: &PublicKey, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_connection("linked_messages", from, protocol_value, &Protocol::create_unspendable_key()?, protocol_scripts, to, sighash_type)?;
+        self.add_timelock_connection(from, timelock_value, &Protocol::create_unspendable_key()?, timelock_expired, timelock_renew, to, 0, sighash_type)?;
+        self.add_speedup_output(from, speedup_value, speedup_key)?;
+
+        Ok(self)
+    }
+
+    pub fn add_outputs_for_external_transaction(&mut self, transaction_name: &str, output_value: u64, output_public_key: &PublicKey, speedup_value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_p2wpkh_output(transaction_name, output_value, output_public_key)?;
+        self.add_speedup_output(transaction_name, speedup_value, speedup_public_key)?;
+
         Ok(self)
     }
 }

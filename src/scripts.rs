@@ -11,6 +11,7 @@ use crate::errors::ScriptError;
 #[derive(Clone, Debug)]
 pub enum KeyType {
     EcdsaPublicKey,
+    XOnlyPublicKey,
     WinternitzPublicKey,
 }
 
@@ -71,7 +72,7 @@ impl ScriptWithParams {
         self.params.get(name).cloned()
     }
 
-    /// Returns the parameters in ascending order using their param_position.
+    // Returns the parameters in ascending order using their param_position.
     pub fn get_params(&self) -> Vec<ScriptParam> {
         self.params.values().cloned().sorted_by(|a, b| Ord::cmp(&a.get_param_position(), &b.get_param_position())).collect()
     }
@@ -83,18 +84,20 @@ impl ScriptWithParams {
 
 }
 
-pub fn speedup(public_key: &PublicKey) -> Result<ScriptBuf, ScriptError> {
-    let pubkey_hash = public_key.wpubkey_hash()?;
+
+
+pub fn speedup(speedup_key: &PublicKey) -> Result<ScriptBuf, ScriptError> {
+    let pubkey_hash = speedup_key.wpubkey_hash()?;
     Ok(ScriptBuf::new_p2wpkh(&pubkey_hash))
 }
 
-pub fn timelock(blocks: u16, timelocked_public_key: &XOnlyPublicKey) -> ScriptWithParams {
+pub fn timelock(blocks: u16, timelock_public_key: &XOnlyPublicKey) -> ScriptWithParams {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
         { blocks.to_le_bytes().to_vec() }
         OP_CSV
         OP_DROP
-        { timelocked_public_key.serialize().to_vec() }
+        { timelock_public_key.serialize().to_vec() }
         OP_CHECKSIG
     );
 
@@ -115,9 +118,9 @@ pub fn timelock_renew(aggregated_key: &XOnlyPublicKey) -> ScriptWithParams {
     script_with_params
 }
 
-pub fn signature(public_key: &PublicKey) -> ScriptWithParams {
+pub fn check_signature(public_key: &XOnlyPublicKey) -> ScriptWithParams {
     let script = script!(
-        { public_key.to_bytes() }
+        { public_key.serialize().to_vec() }
         OP_CHECKSIG
     );
 
@@ -127,26 +130,13 @@ pub fn signature(public_key: &PublicKey) -> ScriptWithParams {
     script_with_params
 }
 
-pub fn aggregated_signature(aggregated_key: &PublicKey) -> ScriptWithParams {
-    signature(aggregated_key)
+pub fn check_aggregated_signature(aggregated_key: &XOnlyPublicKey) -> ScriptWithParams {
+    check_signature(aggregated_key)
 }
 
-pub fn kickoff(f_key: &WinternitzPublicKey, input_key: &WinternitzPublicKey) -> ScriptWithParams {        
+pub fn check_winterniz_signature(value_name: &str, verifying_key: &WinternitzPublicKey, keep_message: bool) -> ScriptWithParams {
     let script = script!(
-        {ots_checksig(f_key)}
-        {ots_checksig(input_key)}
-    );
-
-    let mut script_with_params = ScriptWithParams::new(script);
-    script_with_params.add_param("f", 0, KeyType::WinternitzPublicKey, 0);
-    script_with_params.add_param("input", 1, KeyType::WinternitzPublicKey, 1);
-
-    script_with_params
-}
-
-pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey) -> ScriptWithParams {
-    let script = script!(
-        { ots_checksig(verifying_key) }
+        { ots_checksig(verifying_key, keep_message) }
     );
 
     let mut script_with_params = ScriptWithParams::new(script);
@@ -154,8 +144,40 @@ pub fn verify_single_value(value_name: &str, verifying_key: &WinternitzPublicKey
     script_with_params
 }
 
+pub fn linked_message_challenge(key_c: &XOnlyPublicKey, key_p: &XOnlyPublicKey, xc_key: &WinternitzPublicKey) -> ScriptWithParams {
+    let script = script!(
+        { two_out_of_two_multisig(key_c, key_p) }
+        { ots_checksig(xc_key, false) }
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param("signature_1", 0, KeyType::XOnlyPublicKey, 0);
+    script_with_params.add_param("signature_2", 1, KeyType::XOnlyPublicKey, 1);
+    script_with_params.add_param("signature_winternitz", 0, KeyType::WinternitzPublicKey, 2);    
+
+    script_with_params
+}
+
+pub fn linked_message_response(key_c: &XOnlyPublicKey, key_p: &XOnlyPublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, y_key: &WinternitzPublicKey) -> ScriptWithParams {
+    let script = script!(
+        { two_out_of_two_multisig(key_c, key_p) }
+        { ots_checksig(xc_key, false) }
+        { ots_checksig(xp_key, false) }
+        { ots_checksig(y_key, false) }
+    );
+
+    let mut script_with_params = ScriptWithParams::new(script);
+    script_with_params.add_param("signature_1", 0, KeyType::XOnlyPublicKey, 0);
+    script_with_params.add_param("signature_2", 0, KeyType::XOnlyPublicKey, 1);
+    script_with_params.add_param("signature_x_a", 0, KeyType::WinternitzPublicKey, 2);    
+    script_with_params.add_param("signature_x_b", 0, KeyType::WinternitzPublicKey, 3);  
+    script_with_params.add_param("signature_y", 0, KeyType::WinternitzPublicKey, 4);  
+
+    script_with_params
+}
+
 // Winternitz Signature verification. Note that the script inputs are malleable.
-pub fn ots_checksig(public_key: &WinternitzPublicKey) -> ScriptBuf {
+fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
     let total_size = public_key.total_len() as u32;
     let message_size = public_key.message_size() as u32;
     let checksum_size = public_key.checksum_size() as u32;
@@ -223,24 +245,48 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey) -> ScriptBuf {
         // 3. Ensure both checksums are equal
         OP_EQUAL
 
-        // Drop the message's digits from the stack keeping only the OP_EQUAL result 
-        OP_TOALTSTACK
-        if message_size == 1 {
-            OP_DROP
-        } else {
-            if message_size % 2 == 0 {
-                for _ in 0..(message_size / 2) {
-                    OP_2DROP
-                }
-            } else {
-                for _ in 0..(message_size / 2) {
-                    OP_2DROP
-                }
+        if !keep_message {
+            // Drop the message's digits from the stack keeping only the OP_EQUAL result 
+            OP_TOALTSTACK
+            if message_size == 1 {
                 OP_DROP
+            } else {
+                if message_size % 2 == 0 {
+                    for _ in 0..(message_size / 2) {
+                        OP_2DROP
+                    }
+                } else {
+                    for _ in 0..(message_size / 2) {
+                        OP_2DROP
+                    }
+                    OP_DROP
+                }
             }
+            OP_FROMALTSTACK
+        } else {
+            // Drop the checksum OP_EQUAL result to keep in the stack only the message digits
+            OP_DROP
         }
-        OP_FROMALTSTACK
     };
 
     verify
+}
+
+
+pub fn two_out_of_two_multisig(public_key_1: &XOnlyPublicKey, public_key_2: &XOnlyPublicKey) -> ScriptBuf {
+    let script = script!(
+        OP_IF
+            { public_key_1.serialize().to_vec() }
+            OP_CHECKSIGVERIFY
+            { public_key_2.serialize().to_vec() }
+            OP_CHECKSIG
+        OP_ELSE
+            { public_key_2.serialize().to_vec() }
+            OP_CHECKSIGVERIFY
+            { public_key_1.serialize().to_vec() }
+            OP_CHECKSIG
+        OP_ENDIF
+    );
+
+    script
 }
