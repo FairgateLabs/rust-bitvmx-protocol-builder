@@ -1,8 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, ScriptBuf, TapSighashType};
+    use std::{env, path::PathBuf};
+
+    use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1, Amount, EcdsaSighashType, ScriptBuf, TapSighashType};
 
     use crate::{builder::{Builder, SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, unspendable::unspendable_key};
+    fn temp_storage() -> PathBuf {
+        let dir = env::temp_dir();
+        let mut rng = secp256k1::rand::thread_rng();
+        let index = rng.next_u32();
+        dir.join(format!("storage_{}.db", index))
+    }
 
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
@@ -26,7 +34,7 @@ mod tests {
         let scripts_from = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
         let scripts_to = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
 
-        let mut builder = Builder::new("single_connection"); 
+        let mut builder = Builder::new("single_connection", temp_storage())?; 
         let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
             .add_taproot_script_spend_connection("protocol", "start", value, internal_key, &scripts_from, "challenge", &sighash_type)?
             .add_timelock_connection("start", value, internal_key, expired_from, renew_from, "challenge", blocks, &sighash_type)?
@@ -65,7 +73,7 @@ mod tests {
         let internal_key = unspendable_key(&mut rng)?;
         let spending_scripts = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
 
-        let mut builder = Builder::new("cycle");
+        let mut builder = Builder::new("cycle", temp_storage())?;
             builder.add_taproot_script_spend_connection("cycle", "A", value, internal_key, &spending_scripts, "A", &sighash_type)?;
 
         let result = builder.build();
@@ -100,7 +108,7 @@ mod tests {
         let scripts_from = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
         let scripts_to = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
 
-        let mut builder = Builder::new("cycle"); 
+        let mut builder = Builder::new("cycle", temp_storage())?; 
         let result = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
             .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &scripts_from, "B", &sighash_type)?
             .add_taproot_script_spend_connection("protocol", "B", value, internal_key, &scripts_to, "C", &sighash_type)?
@@ -130,7 +138,7 @@ mod tests {
         let script = ScriptBuf::from(vec![0x00]);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let mut builder = Builder::new("single_connection"); 
+        let mut builder = Builder::new("single_connection", temp_storage())?; 
         let protocol = builder
             .connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
             .build()?;
@@ -160,7 +168,7 @@ mod tests {
         let script = ScriptBuf::from(vec![0x00]);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let mut builder = Builder::new("rounds");
+        let mut builder = Builder::new("rounds", temp_storage())?;
         let (from_rounds, _) = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type)?;
 
         let protocol = builder
@@ -212,7 +220,7 @@ mod tests {
         let value = 1000;
         let script = ScriptBuf::from(vec![0x00]);
 
-        let mut builder = Builder::new("rounds");
+        let mut builder = Builder::new("rounds", temp_storage())?;
         let result = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type);
 
         match result {
@@ -241,7 +249,7 @@ mod tests {
         let script = ScriptBuf::from(vec![0x00]);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let mut builder = Builder::new("rounds");
+        let mut builder = Builder::new("rounds", temp_storage())?;
         builder
             .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
             .add_taproot_script_spend_connection("protocol", "A", value, internal_key, &[script.clone()], "B", &sighash_type)?

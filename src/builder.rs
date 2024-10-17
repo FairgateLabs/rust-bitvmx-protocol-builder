@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, path::PathBuf};
 
 use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness};
 
@@ -59,11 +59,12 @@ impl SpendingArgs {
 }
 
 impl Protocol {
-    pub fn new(name: &str) -> Self {
-        Protocol {
+    pub fn new(name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
+        let graph = TransactionGraph::new(graph_storage_path)?;
+        Ok(Protocol {
             name: name.to_string(),
-            graph: TransactionGraph::default(),
-        }
+            graph,
+        })
     }
 
     pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, output_key: TweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
@@ -675,10 +676,12 @@ impl Protocol {
 }
 
 impl Builder {
-    pub fn new(protocol_name: &str) -> Self {
-        Builder {
-            protocol: Protocol::new(protocol_name),
-        }
+    pub fn new(protocol_name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
+        let protocol = Protocol::new(protocol_name, graph_storage_path)?;
+
+    Ok(Builder {
+            protocol,
+        })
     }
 
     pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {

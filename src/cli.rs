@@ -36,7 +36,7 @@ impl Cli {
 
         match &menu.command {
             Commands::AddStartTemplate => {
-                self.add_start_template()?;
+                //self.add_start_template()?;
             }
         }
 
@@ -45,22 +45,6 @@ impl Cli {
 
     // 
     // Commands
-    //
-    fn add_start_template(&self) -> Result<()>{ 
-        // TODO test values, replace for real values from command line params.
-        let sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
-        let value = 1000;
-        let txid = Hash::all_zeros();
-        let output_index = 0;
-        let script = ScriptBuf::from(vec![0x00]);
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
-
-        let mut builder = Builder::new("single_connection"); 
-        let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &sighash_type)?
-            .build()?;
-
-        info!("New protocol {0} created.", protocol.get_name());
-
-        Ok(())
-    }
+    //TODO: Implement CLI commands
+    // }
 }
