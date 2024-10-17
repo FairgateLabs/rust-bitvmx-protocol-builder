@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, ScriptBuf, TapSighashType};
+    use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
     use crate::{builder::{Builder, SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, unspendable::unspendable_key};
 
@@ -10,7 +10,7 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = unspendable_key(&mut rng)?;
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
@@ -62,7 +62,7 @@ mod tests {
         let mut rng = secp256k1::rand::thread_rng();
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let internal_key = unspendable_key(&mut rng)?;
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let spending_scripts = vec![ScriptBuf::from(vec![0x00]), ScriptBuf::from(vec![0x00])];
 
         let mut builder = Builder::new("cycle");
@@ -90,7 +90,7 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = unspendable_key(&mut rng)?;
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ScriptBuf::from(vec![0x00]);
@@ -154,7 +154,7 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = unspendable_key(&mut rng)?;
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ScriptBuf::from(vec![0x00]);
@@ -235,7 +235,7 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = unspendable_key(&mut rng)?;
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ScriptBuf::from(vec![0x00]);
@@ -256,7 +256,7 @@ mod tests {
         let (from_rounds, to_rounds) = builder.connect_rounds("rounds", rounds, "H", "I", value, &[script.clone()], &[script.clone()], &sighash_type)?;
         
         builder.add_taproot_script_spend_connection("protocol", "G", value, &internal_key, &[script.clone()], &from_rounds, &sighash_type)?
-            .add_p2wpkh_output(&to_rounds, value, &internal_key)?;
+            .add_p2wsh_output(&to_rounds, value, &script)?;
 
         let protocol = builder.build()?;
         let mut transaction_names = protocol.get_transaction_names();

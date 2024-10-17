@@ -1,6 +1,6 @@
 use std::cmp;
 
-use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness};
+use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::winternitz::WinternitzSignature;
 
 use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, unspendable::unspendable_key};
@@ -107,7 +107,7 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
         Self::check_empty_scripts(spending_scripts)?;
 
         let secp = secp256k1::Secp256k1::new();
@@ -151,7 +151,7 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script.clone(), renew_script.clone()])
     }
 
@@ -211,7 +211,7 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_output(from, value, internal_key, spending_scripts)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -242,7 +242,7 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -411,7 +411,7 @@ impl Protocol {
         }
     }
 
-    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.
@@ -431,7 +431,7 @@ impl Protocol {
     
         let tr_spend_info = tr_builder.finalize(
             secp, 
-            internal_key.clone().into()
+            *internal_key
         ).map_err(|_| ProtocolBuilderError::TapTreeFinalizeError)?;
 
         Ok(tr_spend_info)
@@ -528,9 +528,9 @@ impl Protocol {
         Ok(witness)
     }
 
-    fn create_unspendable_key() -> Result<PublicKey, ProtocolBuilderError> {
+    fn create_unspendable_key() -> Result<UntweakedPublicKey, ProtocolBuilderError> {
         let mut rng = secp256k1::rand::thread_rng();
-        let key = unspendable_key(&mut rng)?;
+        let key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         Ok(key)
     }
 
@@ -715,7 +715,7 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_output(transaction_name, value, internal_key, spending_scripts)?;
         Ok(self)
     }
@@ -730,7 +730,7 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
         Ok(self)
     }
@@ -776,7 +776,7 @@ impl Builder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_connection(connection_name, from, value, internal_key, spending_scripts, to, sighash_type)?;
         Ok(self)
     }
@@ -792,7 +792,7 @@ impl Builder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_connection(from, value, internal_key, expired_script, renew_script, to, blocks, sighash_type)?;
         Ok(self)
     }
@@ -814,7 +814,7 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: &PublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptBuf, renew_script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
         for transaction_name in transaction_names {
             self.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
         }
@@ -828,7 +828,7 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: &PublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: &UntweakedPublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
         for (value, scripts) in values.iter().zip(spending_scripts.iter()) {
             self.add_taproot_script_spend_output(transaction_name, *value, internal_key, scripts)?;
         }
@@ -837,7 +837,7 @@ impl Builder {
 
     pub fn add_p2wpkh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, public_keys: Vec<&PublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
         for (value, public_key) in values.iter().zip(public_keys.iter()) {
-            self.add_p2wpkh_output(transaction_name, *value, *public_key)?;
+            self.add_p2wpkh_output(transaction_name, *value, public_key)?;
         }
         Ok(self)
     }
