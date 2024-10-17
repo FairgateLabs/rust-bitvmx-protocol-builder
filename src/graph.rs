@@ -403,18 +403,14 @@ struct Connection {
     name: String,
     input_index: u32,
     output_index: u32,
-    from_index: usize,
-    to_index: usize,
 }
 
 impl Connection {
-    fn new(name: String, input_index: u32, output_index: u32, from_index: NodeIndex , to_index: NodeIndex ) -> Self {
+    fn new(name: String, input_index: u32, output_index: u32) -> Self {
         Connection {
             name,
             input_index,
             output_index,
-            from_index: from_index.index(),
-            to_index: to_index.index(),
         }
     }
 }
@@ -448,12 +444,11 @@ impl TransactionGraph {
             }
 
             for (_, data) in storage.partial_compare("connection_")? {
-                let connection: Connection = serde_json::from_str(&data)?;
-                let from = NodeIndex::new(connection.from_index);
-                let to = NodeIndex::new(connection.to_index);
+                let (connection, from_index, to_index): (Connection, usize, usize)  = serde_json::from_str(&data)?;
+                let from = NodeIndex::new(from_index);
+                let to = NodeIndex::new(to_index);
                 graph.add_edge(from, to, connection);
             }
-
 
             Ok(TransactionGraph {
                 graph,
@@ -523,13 +518,11 @@ impl TransactionGraph {
             connection_name.to_string(),
             input_index,
             output_index,
-            from_node_index,
-            to_node_index
         );
         
         let connection_index = self.graph.add_edge(from_node_index, to_node_index, connection.clone());
 
-        self.storage.write(&format!("connection_{:04}_{}", connection_index.index(), connection_name), &serde_json::to_string(&connection)?)?;
+        self.storage.write(&format!("connection_{:04}_{}", connection_index.index(), connection_name), &serde_json::to_string(&(connection, from_node_index.index(), to_node_index.index()))?)?;
 
         let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
             to.to_string())
