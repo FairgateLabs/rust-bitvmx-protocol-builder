@@ -126,8 +126,9 @@ pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ScriptWithKeys 
 pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey) -> ScriptWithKeys {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
-        OP_CHECKSIG
+        OP_CHECKSIGVERIFY
         { ots_checksig(xc_key, false) }
+        OP_PUSHNUM_1
     );
 
     let mut script_with_keys = ScriptWithKeys::new(script, aggregated_key);
@@ -139,10 +140,11 @@ pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzP
 pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, yp_key: &WinternitzPublicKey) -> ScriptWithKeys {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
-        OP_CHECKSIG
+        OP_CHECKSIGVERIFY
         { ots_checksig(xc_key, false) }
         { ots_checksig(xp_key, false) }
         { ots_checksig(yp_key, false) }
+        OP_PUSHNUM_1
     );
 
     let mut script_with_keys = ScriptWithKeys::new(script, aggregated_key);
@@ -154,7 +156,7 @@ pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPu
 }
 
 // Winternitz Signature verification. Note that the script inputs are malleable.
-fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
+pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
     let total_size = public_key.total_len() as u32;
     let message_size = public_key.message_size() as u32;
     let checksum_size = public_key.checksum_size() as u32;
@@ -192,7 +194,6 @@ fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptB
                 OP_2DROP
             }
         }
-
         // Verify the Checksum
         // 1. Compute the checksum of the message's digits
         OP_FROMALTSTACK
@@ -220,11 +221,10 @@ fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptB
         }
 
         // 3. Ensure both checksums are equal
-        OP_EQUAL
+        OP_EQUALVERIFY
 
         if !keep_message {
-            // Drop the message's digits from the stack keeping only the OP_EQUAL result 
-            OP_TOALTSTACK
+            // Drop the message's digits from the stack
             if message_size == 1 {
                 OP_DROP
             } else {
@@ -239,31 +239,8 @@ fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptB
                     OP_DROP
                 }
             }
-            OP_FROMALTSTACK
-        } else {
-            // Drop the checksum OP_EQUAL result to keep in the stack only the message digits
-            OP_DROP
         }
     };
 
     verify
-}
-
-
-pub fn two_out_of_two_multisig(public_key_1: &PublicKey, public_key_2: &PublicKey) -> ScriptBuf {
-    let script = script!(
-        OP_IF
-            { XOnlyPublicKey::from(*public_key_1).serialize().to_vec() }
-            OP_CHECKSIGVERIFY
-            { XOnlyPublicKey::from(*public_key_2).serialize().to_vec() }
-            OP_CHECKSIG
-        OP_ELSE
-            { XOnlyPublicKey::from(*public_key_2).serialize().to_vec() }
-            OP_CHECKSIGVERIFY
-            { XOnlyPublicKey::from(*public_key_1).serialize().to_vec() }
-            OP_CHECKSIG
-        OP_ENDIF
-    );
-
-    script
 }

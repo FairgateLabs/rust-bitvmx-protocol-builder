@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, collections::HashMap};
 
 use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::winternitz::WinternitzSignature;
@@ -353,6 +353,10 @@ impl Protocol {
         Ok(self.graph.get_transaction_spending_info(transaction_name)?)
     }
 
+    pub fn get_transactions_spending_info(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, ProtocolBuilderError> {
+        Ok(self.graph.get_transactions_spending_info()?)
+    }
+
     pub fn get_name(&self) -> &str {
         &self.name
     }
@@ -636,8 +640,6 @@ impl Protocol {
         let control_block = match spend_info.control_block(&(taproot_leaf.clone(), LeafVersion::TapScript)) {
             Some(cb) => cb,
             None => {
-                println!("============ {:#?}", spend_info);
-                println!("============ {:#?}", taproot_leaf);
                 return Err(ProtocolBuilderError::InvalidSpendingScript(input_index))
             },
         };
@@ -656,6 +658,7 @@ impl Protocol {
 
         witness.push(taproot_leaf.to_bytes());
         witness.push(control_block.serialize());
+
         Ok(witness)
     }
     

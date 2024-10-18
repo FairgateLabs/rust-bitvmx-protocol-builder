@@ -9,7 +9,7 @@ use crate::{errors::GraphError, scripts::ScriptWithKeys};
 pub struct InputSpendingInfo {
     sighash_type: SighashType,
     hashed_messages: Vec<Message>,
-    keys: Vec<PublicKey>,
+    input_keys: Vec<PublicKey>,
     spending_type: Option<OutputSpendingType>,
 }
 impl InputSpendingInfo {
@@ -17,7 +17,7 @@ impl InputSpendingInfo {
         Self { 
             sighash_type: sighash_type.clone(), 
             hashed_messages: vec![],
-            keys: vec![],
+            input_keys: vec![],
             spending_type: None, 
         }
     }
@@ -26,8 +26,8 @@ impl InputSpendingInfo {
         self.hashed_messages = messages;
     }
 
-    fn set_keys(&mut self, keys: Vec<PublicKey>) {
-        self.keys = keys;
+    fn set_input_keys(&mut self, input_keys: Vec<PublicKey>) {
+        self.input_keys = input_keys;
     }
 
     fn set_spending_type(&mut self, spending_type: OutputSpendingType) -> Result<(), GraphError> {
@@ -59,6 +59,10 @@ impl InputSpendingInfo {
 
     pub fn hashed_messages(&self) -> &Vec<Message> {
         &self.hashed_messages
+    }
+
+    pub fn input_keys(&self) -> &Vec<PublicKey> {
+        &self.input_keys
     }
 
     pub fn spending_type(&self) -> Result<&OutputSpendingType, GraphError> {
@@ -270,7 +274,7 @@ impl TransactionGraph {
         )?;
 
         node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
-        node.input_spending_infos[input_index as usize].set_keys(keys);
+        node.input_spending_infos[input_index as usize].set_input_keys(keys);
 
         Ok(())
     }
@@ -334,6 +338,17 @@ impl TransactionGraph {
         )?;
 
         Ok(node.input_spending_infos.clone())
+    }
+
+    pub fn get_transactions_spending_info(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
+        self.node_indexes.keys().map(|name| {
+            let node_index = self.get_node_index(name)?;
+            let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
+                name.to_string())
+            )?;
+    
+            Ok((name.clone(), node.input_spending_infos.clone()))
+        }).collect()
     }
 
     pub fn contains_transaction(&self, name: &str) -> bool {
