@@ -1,8 +1,9 @@
-use std::{cmp, path::PathBuf};
+use std::{cmp, collections::HashMap};
 
-use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness};
+use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
+use key_manager::winternitz::WinternitzSignature;
 
-use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, unspendable::unspendable_key};
+use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, scripts::ScriptWithKeys, unspendable::unspendable_key};
 
 pub struct Builder {
     protocol: Protocol,
@@ -49,6 +50,24 @@ impl SpendingArgs {
         self
     }
 
+    pub fn push_winternitz_signature(&mut self, winternitz_signature: WinternitzSignature) -> &mut Self {
+        let hashes = winternitz_signature.to_hashes();
+        let digits = winternitz_signature.message_digits();
+
+        for (hash, digit) in hashes.iter().zip(digits.iter()) {  
+            let digit = if *digit == 0 {
+                [].to_vec()
+            } else {
+                [*digit].to_vec()
+            };
+
+            self.push_slice(hash);
+            self.push_slice(&digit);
+        }
+
+        self
+    }
+
     pub fn get_taproot_leaf(&self) -> Option<ScriptBuf> {
         self.taproot_leaf.clone()
     }
@@ -67,20 +86,29 @@ impl Protocol {
         })
     }
 
-    pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, output_key: TweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
-        let script_pubkey = ScriptBuf::new_p2tr_tweaked(output_key);
+    pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {
+        let secp = secp256k1::Secp256k1::new();
+        let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
+        let (output_key, tweaked_parity) = untweaked_key.add_tweak(&secp, tweak)?;
+        
+        if !output_key.tweak_add_check(&secp, &output_key, tweaked_parity, *tweak) {
+            return Err(ProtocolBuilderError::TweakError(bitcoin::secp256k1::Error::InvalidTweak));
+        }
+
+        let script_pubkey = ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(output_key));
         let value = Amount::from_sat(value);
 
-        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(output_key);
+        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(internal_key, tweak);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
         
         Ok(self)
     }
     
-    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: UntweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
+        let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
+        let script_pubkey = ScriptBuf::new_p2tr(&secp, untweaked_key, None);
         let value = Amount::from_sat(value);
-        let script_pubkey = ScriptBuf::new_p2tr(&secp, internal_key, None);
 
         let spending_type = OutputSpendingType::new_taproot_key_spend(internal_key);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
@@ -88,7 +116,9 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptWithKeys]) -> Result<&mut Self, ProtocolBuilderError> {
+        Self::check_empty_scripts(spending_scripts)?;
+
         let secp = secp256k1::Secp256k1::new();
         let value = Amount::from_sat(value);
         let spend_info = Protocol::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
@@ -99,13 +129,13 @@ impl Protocol {
             spend_info.merkle_root(),
         );
         
-        let spending_type = OutputSpendingType::new_taproot_script_spend(spending_scripts, spend_info);
+        let spending_type = OutputSpendingType::new_taproot_script_spend(spending_scripts, &spend_info);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
         Ok(self)
     }
 
-    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         let witness_public_key_hash = public_key.wpubkey_hash().expect("key is compressed");
         let value = Amount::from_sat(value);
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
@@ -116,22 +146,22 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script: &ScriptWithKeys) -> Result<&mut Self, ProtocolBuilderError> {
         let value = Amount::from_sat(value);
-        let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.clone()));
+        let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.get_script().clone()));
 
         let spending_type = OutputSpendingType::new_segwit_script_spend(script, value);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
         Ok(self)
     }
 
-    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_p2wpkh_output(transaction_name, value, speedup_public_key)?;
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script, renew_script])
+    pub fn add_timelock_output(&mut self, transaction: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptWithKeys, renew_script: &ScriptWithKeys) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_output(transaction, value, internal_key, &[expired_script.clone(), renew_script.clone()])
     }
 
     pub fn add_taproot_tweaked_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
@@ -169,8 +199,9 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, output_key: TweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_taproot_tweaked_key_spend_output(from, value, output_key)?;
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_tweaked_key_spend_output(from, value, internal_key, tweak)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
         self.add_taproot_tweaked_key_spend_input(to, output_index, sighash_type)?;
@@ -179,7 +210,7 @@ impl Protocol {
         self.connect(connection_name, from, output_index, to, input_index)
     }
 
-    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: UntweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_key_spend_output(from, value, internal_key)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -190,7 +221,7 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptWithKeys], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_output(from, value, internal_key, spending_scripts)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -200,7 +231,7 @@ impl Protocol {
         self.connect(connection_name, from, output_index, to, input_index)
     }
 
-    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_p2wpkh_output(from, value, public_key)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -210,7 +241,7 @@ impl Protocol {
         self.connect(connection_name, from, output_index, to, input_index)
     }
 
-    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptBuf, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptWithKeys, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_p2wsh_output(from, value, script)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
@@ -221,11 +252,11 @@ impl Protocol {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptWithKeys, renew_script: &ScriptWithKeys, to: &str, renew_blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.get_transaction(from)?.output.len() - 1) as u32;
         
-        self.add_timelock_input(to, output_index, blocks, sighash_type)?;
+        self.add_timelock_input(to, output_index, renew_blocks, sighash_type)?;
         let input_index = (self.get_transaction(to)?.input.len() - 1) as u32;
 
         self.connect("timelock", from, output_index, to, input_index)
@@ -238,6 +269,10 @@ impl Protocol {
     }
 
     pub fn connect(&mut self, connection_name: &str, from: &str, output_index: u32, to: &str, input_index: u32) -> Result<&mut Self, ProtocolBuilderError> {
+        Self::check_empty_connection_name(connection_name)?;
+        Self::check_empty_transaction_name(from)?;
+        Self::check_empty_transaction_name(to)?;
+        
         let from_tx = self.get_transaction(from)?;
         let to_tx = self.get_transaction(to)?;
 
@@ -256,13 +291,8 @@ impl Protocol {
 
     /// Creates a connection between two transactions for a given number of rounds creating the intermediate transactions to complete the DAG.
     #[allow(clippy::too_many_arguments)]
-    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptBuf], spending_scripts_to: &[ScriptBuf], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {  
-        Self::check_empty_connection_name(connection_name)?;
+    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptWithKeys], spending_scripts_to: &[ScriptWithKeys], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {  
         Self::check_zero_rounds(rounds)?;
-        Self::check_empty_transaction_name(from)?;
-        Self::check_empty_transaction_name(to)?;
-        Self::check_empty_scripts(spending_scripts_from)?;
-        Self::check_empty_scripts(spending_scripts_to)?;
         
         // To create the names for the intermediate transactions in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
@@ -276,14 +306,14 @@ impl Protocol {
             to_round = format!("{0}_{1}", to, round);
 
             // Connection between the from and to transactions using the spending_scripts_from.
-            self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
+            self.add_taproot_script_spend_connection(connection_name, &from_round, value, &Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
             // Create the new names for the intermediate transactions in the reverse connection (to -> from).
             from_round = format!("{0}_{1}", from, round + 1);
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the spending_scripts_to.
-            self.add_taproot_script_spend_connection(connection_name, &to_round, value, Self::create_unspendable_key()?, spending_scripts_to, &from_round, sighash_type)?;
+            self.add_taproot_script_spend_connection(connection_name, &to_round, value, &Self::create_unspendable_key()?, spending_scripts_to, &from_round, sighash_type)?;
         };
 
         // We don't need the last reverse connection, thus why we perform the last direct connection outside the loop.
@@ -292,15 +322,15 @@ impl Protocol {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using spending_scripts_from.
-        self.add_taproot_script_spend_connection(connection_name, &from_round, value, Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
+        self.add_taproot_script_spend_connection(connection_name, &from_round, value, &Self::create_unspendable_key()?, spending_scripts_from, &to_round, sighash_type)?;
 
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    pub fn build(&mut self) -> Result<&Self, ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
         self.compute_sighashes()?;
-        Ok(self)
+        Ok(self.clone())
     }
 
     pub fn get_transaction_to_send(&self, transaction_name: &str, spending_args: &[SpendingArgs]) -> Result<Transaction, ProtocolBuilderError> {
@@ -319,14 +349,12 @@ impl Protocol {
         Ok(next_transactions)
     }
 
-    pub fn get_sighashes(&self, transaction_name: &str) -> Result<Vec<Vec<Message>>, ProtocolBuilderError> {
-        let hashed_messages: Vec<Vec<Message>> = self.graph
-            .get_transaction_spending_info(transaction_name)?
-            .iter()
-            .map(|spending_info| spending_info.hashed_messages().clone())
-            .collect();
+    pub fn get_transaction_spending_info(&self, transaction_name: &str) -> Result<Vec<InputSpendingInfo>, ProtocolBuilderError> {
+        Ok(self.graph.get_transaction_spending_info(transaction_name)?)
+    }
 
-        Ok(hashed_messages)
+    pub fn get_transactions_spending_info(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, ProtocolBuilderError> {
+        Ok(self.graph.get_transactions_spending_info()?)
     }
 
     pub fn get_name(&self) -> &str {
@@ -342,7 +370,9 @@ impl Protocol {
     }
 
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {
-        let mut transaction = self.get_or_create_transaction(transaction_name)?;
+        Self::check_empty_transaction_name(transaction_name)?;
+
+        let mut transaction = self.get_or_create_transaction(transaction_name);
 
         transaction.output.push(transaction::TxOut {
             value,
@@ -355,7 +385,9 @@ impl Protocol {
     }
 
     fn add_transaction_input(&mut self, previous_txid: Txid, previous_output: u32, transaction_name: &str, sequence: Sequence, sighash_type: &SighashType) -> Result<(), ProtocolBuilderError>{
-        let mut transaction = self.get_or_create_transaction(transaction_name)?;
+        Self::check_empty_transaction_name(transaction_name)?;
+
+        let mut transaction = self.get_or_create_transaction(transaction_name);
 
         transaction.input.push(transaction::TxIn {
             previous_output: OutPoint { txid: previous_txid, vout: previous_output},
@@ -387,7 +419,7 @@ impl Protocol {
         }
     }
 
-    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: PublicKey, taproot_spending_scripts: &[ScriptBuf]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ScriptWithKeys]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.
@@ -397,17 +429,17 @@ impl Protocol {
 
         let mut tr_builder = TaprootBuilder::new();
         for script in taproot_spending_scripts.iter() {
-            tr_builder = tr_builder.add_leaf(depth, script.clone())?;
+            tr_builder = tr_builder.add_leaf(depth, script.get_script().clone())?;
         }
 
         // If the number of spend conditions is odd, add the last one again
         if scripts_count % 2 != 0 {
-            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].clone())?;
+            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].get_script().clone())?;
         }
     
         let tr_spend_info = tr_builder.finalize(
             secp, 
-            internal_key.into()
+            *internal_key
         ).map_err(|_| ProtocolBuilderError::TapTreeFinalizeError)?;
 
         Ok(tr_spend_info)
@@ -447,11 +479,14 @@ impl Protocol {
                 match spending_info.sighash_type() {
                     SighashType::Taproot(tap_sighash_type) => {
                         match spending_info.spending_type()? {
-                            OutputSpendingType::TaprootKey { .. } => {
-                                self.taproot_key_spend_sighash(&transaction_name, index, tap_sighash_type)?;
+                            OutputSpendingType::TaprootTweakedKey { key, .. } => {
+                                self.taproot_key_spend_sighash(&transaction_name, index, key, tap_sighash_type)?;
+                            },
+                            OutputSpendingType::TaprootUntweakedKey { key } => {
+                                self.taproot_key_spend_sighash(&transaction_name, index, key, tap_sighash_type)?;
                             },
                             OutputSpendingType::TaprootScript { ref spending_scripts, .. } => {
-                                self.taproot_script_spend_sighash(&transaction_name, index, tap_sighash_type, spending_scripts)?;
+                                self.taproot_script_spend_sighash(&transaction_name, index, spending_scripts, tap_sighash_type)?;
                             },
                             _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
                         };
@@ -459,10 +494,10 @@ impl Protocol {
                     SighashType::Ecdsa(ecdsa_sighash_type) => {
                         match spending_info.spending_type()? {
                             OutputSpendingType::SegwitPublicKey { public_key, value } => {
-                                self.segwit_key_spend_sighash(&transaction_name, index, ecdsa_sighash_type, public_key, value)?;
+                                self.segwit_key_spend_sighash(&transaction_name, index, public_key, value, ecdsa_sighash_type)?;
                             },
                             OutputSpendingType::SegwitScript { ref script, value } => {
-                                self.segwit_script_spend_sighash(&transaction_name, index, ecdsa_sighash_type, script, value)?;
+                                self.segwit_script_spend_sighash(&transaction_name, index, script, value, ecdsa_sighash_type)?;
                             }
                             _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
                         };
@@ -478,7 +513,10 @@ impl Protocol {
         let witness = match spending_condition.sighash_type() {
             SighashType::Taproot(..) => {
                 match spending_condition.spending_type()? {
-                    OutputSpendingType::TaprootKey { .. } => {
+                    OutputSpendingType::TaprootTweakedKey { .. } => {
+                        self.taproot_key_spend_witness(spending_args)?
+                    },
+                    OutputSpendingType::TaprootUntweakedKey { .. } => {
                         self.taproot_key_spend_witness(spending_args)?
                     },
                     OutputSpendingType::TaprootScript { ref spend_info, .. } => {
@@ -494,7 +532,7 @@ impl Protocol {
                         self.segwit_key_spend_witness(public_key, spending_args)?
                     },
                     OutputSpendingType::SegwitScript { ref script, .. } => {
-                        self.segwit_script_spend_witness( script, spending_args)?
+                        self.segwit_script_spend_witness(script, spending_args)?
                     }
                     _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
                 }
@@ -504,13 +542,13 @@ impl Protocol {
         Ok(witness)
     }
 
-    fn create_unspendable_key() -> Result<PublicKey, ProtocolBuilderError> {
+    fn create_unspendable_key() -> Result<UntweakedPublicKey, ProtocolBuilderError> {
         let mut rng = secp256k1::rand::thread_rng();
-        let key = unspendable_key(&mut rng)?;
+        let key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         Ok(key)
     }
 
-    fn taproot_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
+    fn taproot_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, internal_key: &PublicKey, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
         let transaction = self.get_transaction(transaction_name)?.clone();
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
@@ -521,32 +559,34 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![*internal_key])?;
 
         Ok(())
     }
     
-    fn taproot_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &TapSighashType, spending_scripts: &Vec<ScriptBuf>) -> Result<(), ProtocolBuilderError> {
+    fn taproot_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, spending_scripts: &Vec<ScriptWithKeys>, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
         let transaction = self.get_transaction(transaction_name)?.clone();
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
 
         let mut hashed_messages = vec![];
+        let mut verifying_keys = vec![];
         for spending_script in spending_scripts {
             let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
                 input_index,
                 &sighash::Prevouts::All(&prevouts),
-                TapLeafHash::from_script(spending_script, LeafVersion::TapScript),
+                TapLeafHash::from_script(spending_script.get_script(), LeafVersion::TapScript),
                 *sighash_type,
             )?);
 
             hashed_messages.push(hashed_message);
+            verifying_keys.push(spending_script.get_verifying_key());
         }
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, hashed_messages)?;
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, hashed_messages, verifying_keys)?;
         Ok(())
     }
     
-    fn segwit_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &EcdsaSighashType, public_key: &PublicKey, value: &Amount) -> Result<(), ProtocolBuilderError> {
+    fn segwit_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, public_key: &PublicKey, value: &Amount, sighash_type: &EcdsaSighashType) -> Result<(), ProtocolBuilderError> {
         let transaction = self.get_transaction(transaction_name)?.clone();
         let wpkh = public_key.wpubkey_hash().expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
@@ -560,13 +600,13 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![*public_key])?;
         Ok(())
     }
     
-    fn segwit_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &EcdsaSighashType, script: &ScriptBuf, value: &Amount) -> Result<(), ProtocolBuilderError> {
+    fn segwit_script_spend_sighash(&mut self, transaction_name: &str, input_index: usize, script: &ScriptWithKeys, value: &Amount, sighash_type: &EcdsaSighashType) -> Result<(), ProtocolBuilderError> {
         let transaction = self.get_transaction(transaction_name)?.clone();
-        let script_hash = WScriptHash::from(script.clone());
+        let script_hash = WScriptHash::from(script.get_script().clone());
         let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
 
         let mut sighasher = SighashCache::new(transaction);
@@ -578,7 +618,8 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message])?;
+        let verifying_key = script.get_verifying_key();
+        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![verifying_key])?;
         Ok(())
     }
     
@@ -598,7 +639,9 @@ impl Protocol {
 
         let control_block = match spend_info.control_block(&(taproot_leaf.clone(), LeafVersion::TapScript)) {
             Some(cb) => cb,
-            None => return Err(ProtocolBuilderError::InvalidSpendingScript(input_index)),
+            None => {
+                return Err(ProtocolBuilderError::InvalidSpendingScript(input_index))
+            },
         };
 
         if !control_block.verify_taproot_commitment(&secp, spend_info.output_key().to_inner(), taproot_leaf) {
@@ -615,6 +658,7 @@ impl Protocol {
 
         witness.push(taproot_leaf.to_bytes());
         witness.push(control_block.serialize());
+
         Ok(witness)
     }
     
@@ -630,7 +674,7 @@ impl Protocol {
         Ok(witness)
     }
     
-    fn segwit_script_spend_witness(&self, script: &ScriptBuf, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {        
+    fn segwit_script_spend_witness(&self, script: &ScriptWithKeys, spending_args: &SpendingArgs) -> Result<Witness, ProtocolBuilderError> {        
         let mut witness = Witness::default();
         for value in spending_args.iter() {
             witness.push(value.clone());
@@ -638,11 +682,11 @@ impl Protocol {
             //witness.push(signature.serialize());
         }
 
-        witness.push(script.to_bytes());
+        witness.push(script.get_script().to_bytes());
         Ok(witness)
     }
 
-    fn check_empty_scripts(spending_scripts: &[ScriptBuf]) -> Result<(), ProtocolBuilderError> {
+    fn check_empty_scripts(spending_scripts: &[ScriptWithKeys]) -> Result<(), ProtocolBuilderError> {
         if spending_scripts.is_empty() {
             return Err(ProtocolBuilderError::EmptySpendingScripts);
         }
@@ -684,36 +728,36 @@ impl Builder {
         })
     }
 
-    pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<Protocol, ProtocolBuilderError> {
         self.protocol.build()
     }
 
-    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, output_key: TweakedPublicKey) -> Result<&mut Self, ProtocolBuilderError> {
-        self.protocol.add_taproot_tweaked_key_spend_output(transaction_name, value, output_key)?;
+    pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_tweaked_key_spend_output(transaction_name, value, internal_key, tweak)?;
         Ok(self)
     }
 
-    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf]) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptWithKeys]) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_output(transaction_name, value, internal_key, spending_scripts)?;
         Ok(self)
     }
 
-    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_output(transaction_name, value, public_key)?;
         Ok(self)
     }
 
-    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script_pubkey: &ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script_pubkey: &ScriptWithKeys) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wsh_output(transaction_name, value, script_pubkey)?;
         Ok(self)
     }
 
-    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptWithKeys, renew_script: &ScriptWithKeys) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
         Ok(self)
     }
 
-    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_speedup_output(transaction_name, value, speedup_public_key)?;
         Ok(self)
     }
@@ -743,34 +787,35 @@ impl Builder {
         Ok(self)
     }
 
-    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, output_key: TweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
-        self.protocol.add_taproot_tweaked_key_spend_connection(connection_name, from, value, output_key, to, sighash_type)?;
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_tweaked_key_spend_connection(connection_name, from, value, internal_key, tweak, to, sighash_type)?;
         Ok(self)
     }
 
-    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: UntweakedPublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_key_spend_connection(connection_name, from, value, internal_key, to, sighash_type)?;
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: PublicKey, spending_scripts: &[ScriptBuf], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ScriptWithKeys], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_connection(connection_name, from, value, internal_key, spending_scripts, to, sighash_type)?;
         Ok(self)
     }
 
-    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_connection(connection_name, from, value, public_key, to, sighash_type)?;
         Ok(self)
     }   
 
-    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptBuf, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ScriptWithKeys, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wsh_connection(connection_name, from, value, script, to, sighash_type)?;
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+    pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ScriptWithKeys, renew_script: &ScriptWithKeys, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_connection(from, value, internal_key, expired_script, renew_script, to, blocks, sighash_type)?;
         Ok(self)
     }
@@ -781,49 +826,23 @@ impl Builder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptBuf], spending_scripts_to: &[ScriptBuf], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {
+    pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ScriptWithKeys], spending_scripts_to: &[ScriptWithKeys], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {
         self.protocol.connect_rounds(connection_name, rounds, from, to, value, spending_scripts_from, spending_scripts_to, sighash_type)
     }
 
-    pub fn add_speedup_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, speedup_public_key: PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
-        for transaction_name in transaction_names {
-            self.add_speedup_output(transaction_name, value, speedup_public_key)?;
-        }
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_linked_message_connection(&mut self, from: &str, to: &str, protocol_value: u64, protocol_scripts: &[ScriptWithKeys], timelock_value: u64, timelock_expired: &ScriptWithKeys, timelock_renew: &ScriptWithKeys, speedup_value: u64, speedup_key: &PublicKey, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_taproot_script_spend_connection("linked_messages", from, protocol_value, &Protocol::create_unspendable_key()?, protocol_scripts, to, sighash_type)?;
+        self.add_timelock_connection(from, timelock_value, &Protocol::create_unspendable_key()?, timelock_expired, timelock_renew, to, 0, sighash_type)?;
+        self.add_speedup_output(from, speedup_value, speedup_key)?;
+
         Ok(self)
     }
 
-    pub fn add_timelock_output_to_transactions(&mut self, transaction_names: Vec<&str>, value: u64, internal_key: PublicKey, expired_script: ScriptBuf, renew_script: ScriptBuf) -> Result<&mut Self, ProtocolBuilderError> {
-        for transaction_name in transaction_names {
-            self.add_timelock_output(transaction_name, value, internal_key, expired_script.clone(), renew_script.clone())?;
-        }
-        Ok(self)
-    }
+    pub fn add_outputs_for_external_transaction(&mut self, transaction_name: &str, output_value: u64, output_public_key: &PublicKey, speedup_value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_p2wpkh_output(transaction_name, output_value, output_public_key)?;
+        self.add_speedup_output(transaction_name, speedup_value, speedup_public_key)?;
 
-    pub fn add_taproot_key_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, output_keys: Vec<TweakedPublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
-        for (value, output_key) in values.iter().zip(output_keys.iter()) {
-            self.add_taproot_key_spend_output(transaction_name, *value, *output_key)?;
-        }
-        Ok(self)
-    }
-
-    pub fn add_taproot_script_spend_outputs(&mut self, transaction_name: &str, values: Vec<u64>, internal_key: PublicKey, spending_scripts: &[&[ScriptBuf]]) -> Result<&mut Self, ProtocolBuilderError> {
-        for (value, scripts) in values.iter().zip(spending_scripts.iter()) {
-            self.add_taproot_script_spend_output(transaction_name, *value, internal_key, scripts)?;
-        }
-        Ok(self)
-    }
-
-    pub fn add_p2wpkh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, public_keys: Vec<PublicKey>) -> Result<&mut Self, ProtocolBuilderError> {
-        for (value, public_key) in values.iter().zip(public_keys.iter()) {
-            self.add_p2wpkh_output(transaction_name, *value, *public_key)?;
-        }
-        Ok(self)
-    }
-
-    pub fn add_p2wsh_outputs(&mut self, transaction_name: &str, values: Vec<u64>, scripts: Vec<&ScriptBuf>) -> Result<&mut Self, ProtocolBuilderError> {
-        for (value, script) in values.iter().zip(scripts.iter()) {
-            self.add_p2wsh_output(transaction_name, *value, script)?;
-        }
         Ok(self)
     }
 }

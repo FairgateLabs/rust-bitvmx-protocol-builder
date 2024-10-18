@@ -10,7 +10,7 @@ static DEFAULT_ENV: &str = "development";
 static CONFIG_PATH: &str = "config";
 
 #[derive(Debug, Deserialize)]
-pub struct TemplateBuilderConfig {
+pub struct ProtocolBuilderConfig {
     pub protocol_amount: u64,
     pub speedup_from_key: String,
     pub speedup_to_key: String,
@@ -37,7 +37,7 @@ pub struct RpcConfig {
 #[serde(deny_unknown_fields)] // enforce strict field compliance
 pub struct Config {
     pub rpc: RpcConfig,
-    pub template_builder: TemplateBuilderConfig,
+    pub builder: ProtocolBuilderConfig,
     pub key_manager: KeyManagerConfig,
     pub storage: StorageConfig,
 }
