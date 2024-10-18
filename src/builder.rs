@@ -5,6 +5,12 @@ use key_manager::winternitz::WinternitzSignature;
 
 use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, scripts::ScriptWithKeys, unspendable::unspendable_key};
 
+#[derive(Debug, Clone)]
+pub enum Signature {
+    Ecdsa(bitcoin::ecdsa::Signature),
+    Taproot(bitcoin::taproot::Signature),
+}
+
 pub struct Builder {
     protocol: Protocol,
 }
@@ -333,6 +339,11 @@ impl Protocol {
         Ok(self.clone())
     }
 
+    pub fn update_input_signatures(&mut self, transaction_name: &str, input_index: u32, signatures: Vec<Signature>) -> Result<(), ProtocolBuilderError> {
+        self.graph.update_input_signatures(transaction_name, input_index, signatures)?;
+        Ok(())
+    }
+
     pub fn get_transaction_to_send(&self, transaction_name: &str, spending_args: &[SpendingArgs]) -> Result<Transaction, ProtocolBuilderError> {
         let mut transaction = self.graph.get_transaction(transaction_name)?.clone();
 
@@ -353,7 +364,7 @@ impl Protocol {
         Ok(self.graph.get_transaction_spending_info(transaction_name)?)
     }
 
-    pub fn get_transactions_spending_info(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, ProtocolBuilderError> {
+    pub fn get_transaction_spending_infos(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, ProtocolBuilderError> {
         Ok(self.graph.get_transactions_spending_info()?)
     }
 
@@ -479,11 +490,11 @@ impl Protocol {
                 match spending_info.sighash_type() {
                     SighashType::Taproot(tap_sighash_type) => {
                         match spending_info.spending_type()? {
-                            OutputSpendingType::TaprootTweakedKey { key, .. } => {
-                                self.taproot_key_spend_sighash(&transaction_name, index, key, tap_sighash_type)?;
+                            OutputSpendingType::TaprootTweakedKey { .. } => {
+                                self.taproot_key_spend_sighash(&transaction_name, index, tap_sighash_type)?;
                             },
-                            OutputSpendingType::TaprootUntweakedKey { key } => {
-                                self.taproot_key_spend_sighash(&transaction_name, index, key, tap_sighash_type)?;
+                            OutputSpendingType::TaprootUntweakedKey { .. } => {
+                                self.taproot_key_spend_sighash(&transaction_name, index, tap_sighash_type)?;
                             },
                             OutputSpendingType::TaprootScript { ref spending_scripts, .. } => {
                                 self.taproot_script_spend_sighash(&transaction_name, index, spending_scripts, tap_sighash_type)?;
@@ -548,7 +559,7 @@ impl Protocol {
         Ok(key)
     }
 
-    fn taproot_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, internal_key: &PublicKey, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
+    fn taproot_key_spend_sighash(&mut self, transaction_name: &str, input_index: usize, sighash_type: &TapSighashType) -> Result<(), ProtocolBuilderError> {
         let transaction = self.get_transaction(transaction_name)?.clone();
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
@@ -559,7 +570,7 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![*internal_key])?;
+        self.graph.update_hashed_messages(transaction_name, input_index as u32, vec![hashed_message])?;
 
         Ok(())
     }
@@ -570,7 +581,6 @@ impl Protocol {
         let mut sighasher = SighashCache::new(transaction);
 
         let mut hashed_messages = vec![];
-        let mut verifying_keys = vec![];
         for spending_script in spending_scripts {
             let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
                 input_index,
@@ -580,9 +590,8 @@ impl Protocol {
             )?);
 
             hashed_messages.push(hashed_message);
-            verifying_keys.push(spending_script.get_verifying_key());
         }
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, hashed_messages, verifying_keys)?;
+        self.graph.update_hashed_messages(transaction_name, input_index as u32, hashed_messages)?;
         Ok(())
     }
     
@@ -600,7 +609,7 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![*public_key])?;
+        self.graph.update_hashed_messages(transaction_name, input_index as u32, vec![hashed_message])?;
         Ok(())
     }
     
@@ -618,8 +627,7 @@ impl Protocol {
             *sighash_type,
         )?);
 
-        let verifying_key = script.get_verifying_key();
-        self.graph.update_input_spending_info(transaction_name, input_index as u32, vec![hashed_message], vec![verifying_key])?;
+        self.graph.update_hashed_messages(transaction_name, input_index as u32, vec![hashed_message])?;
         Ok(())
     }
     
