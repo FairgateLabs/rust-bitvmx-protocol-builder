@@ -111,5 +111,11 @@ pub enum ProtocolBuilderError {
 
     #[error("Spending scripts cannot be empty")]
     EmptySpendingScripts,
+
+    #[error("Missing verifiying key for input {0}")]
+    MissingVerifyingKey(usize),
+
+    #[error("Failed to tweak public key")]
+    TweakError(#[from] bitcoin::secp256k1::Error),
 }
 

@@ -1,14 +1,15 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{key::{TweakedPublicKey, UntweakedPublicKey}, secp256k1::Message, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, Transaction, TxOut};
+use bitcoin::{secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 
-use crate::errors::GraphError;
+use crate::{errors::GraphError, scripts::ScriptWithKeys};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
     sighash_type: SighashType,
     hashed_messages: Vec<Message>,
+    keys: Vec<PublicKey>,
     spending_type: Option<OutputSpendingType>,
 }
 impl InputSpendingInfo {
@@ -16,19 +17,25 @@ impl InputSpendingInfo {
         Self { 
             sighash_type: sighash_type.clone(), 
             hashed_messages: vec![],
+            keys: vec![],
             spending_type: None, 
         }
     }
 
-    fn add_hashed_messages(&mut self, messages: Vec<Message>) {
+    fn set_hashed_messages(&mut self, messages: Vec<Message>) {
         self.hashed_messages = messages;
     }
 
-    fn add_spending_type(&mut self, spending_type: OutputSpendingType) -> Result<(), GraphError> {
+    fn set_keys(&mut self, keys: Vec<PublicKey>) {
+        self.keys = keys;
+    }
+
+    fn set_spending_type(&mut self, spending_type: OutputSpendingType) -> Result<(), GraphError> {
         match self.sighash_type {
             SighashType::Taproot(_) => {
                 match spending_type {
-                    OutputSpendingType::TaprootKey { .. } => {},
+                    OutputSpendingType::TaprootTweakedKey { .. } => {},
+                    OutputSpendingType::TaprootUntweakedKey { .. } => {},
                     OutputSpendingType::TaprootScript { .. } => {},
                     _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
                 }
@@ -68,18 +75,16 @@ pub enum SighashType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Key {
-    Tweaked(TweakedPublicKey),
-    Untweaked(UntweakedPublicKey),
-}
-
-#[derive(Debug, Clone)]
 pub enum OutputSpendingType {
-    TaprootKey{
-        key: Key,
+    TaprootUntweakedKey{
+        key: PublicKey,
+    },
+    TaprootTweakedKey{
+        key: PublicKey,
+        tweak: Scalar,
     },
     TaprootScript{
-        spending_scripts: Vec<ScriptBuf>,
+        spending_scripts: Vec<ScriptWithKeys>,
         spend_info: TaprootSpendInfo,
     },
     SegwitPublicKey{
@@ -87,28 +92,29 @@ pub enum OutputSpendingType {
         value: Amount, 
     },
     SegwitScript{
-        script: ScriptBuf,
+        script: ScriptWithKeys,
         value: Amount, 
     }
 }
 
 impl OutputSpendingType {
-    pub fn new_taproot_tweaked_key_spend(tweaked_public_key: TweakedPublicKey) -> Self {
-        OutputSpendingType::TaprootKey {
-            key: Key::Tweaked(tweaked_public_key),
+    pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar) -> Self {
+        OutputSpendingType::TaprootTweakedKey {
+            key: *public_key,
+            tweak: *tweak,
         }
     }
 
-    pub fn new_taproot_key_spend(untweaked_public_key: UntweakedPublicKey) -> Self {
-        OutputSpendingType::TaprootKey {
-            key: Key::Untweaked(untweaked_public_key),
+    pub fn new_taproot_key_spend(public_key: &PublicKey) -> Self {
+        OutputSpendingType::TaprootUntweakedKey {
+            key: *public_key,
         }
     }
     
-    pub fn new_taproot_script_spend(spending_scripts: &[ScriptBuf], spend_info: TaprootSpendInfo) -> OutputSpendingType {
+    pub fn new_taproot_script_spend(spending_scripts: &[ScriptWithKeys], spend_info: &TaprootSpendInfo) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
-            spend_info,
+            spend_info: spend_info.clone(),
         }
     }
     
@@ -119,7 +125,7 @@ impl OutputSpendingType {
         } 
     }
     
-    pub fn new_segwit_script_spend(script: &ScriptBuf, value: Amount) -> OutputSpendingType {
+    pub fn new_segwit_script_spend(script: &ScriptWithKeys, value: Amount) -> OutputSpendingType {
         OutputSpendingType::SegwitScript { 
             script: script.clone(),
             value,
@@ -242,7 +248,7 @@ impl TransactionGraph {
             to.to_string())
         )?;
 
-        to_node.input_spending_infos[input_index as usize].add_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[input_index as usize].set_spending_type(output_spending_type)?;
         Ok(())
     }
 
@@ -253,17 +259,18 @@ impl TransactionGraph {
             to.to_string())
         )?;
 
-        to_node.input_spending_infos[to_node.transaction.input.len() - 1].add_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[to_node.transaction.input.len() - 1].set_spending_type(output_spending_type)?;
         Ok(())
     }
 
-    pub fn update_input_spending_info(&mut self, transaction_name: &str, input_index: u32, message_hashes: Vec<Message>) -> Result<(), GraphError> {
+    pub fn update_input_spending_info(&mut self, transaction_name: &str, input_index: u32, message_hashes: Vec<Message>, keys: Vec<PublicKey>) -> Result<(), GraphError> {
         let node_index = self.get_node_index(transaction_name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             transaction_name.to_string())
         )?;
 
-        node.input_spending_infos[input_index as usize].add_hashed_messages(message_hashes);
+        node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
+        node.input_spending_infos[input_index as usize].set_keys(keys);
 
         Ok(())
     }

@@ -1,10 +1,10 @@
 use anyhow::{Ok, Result};
 
-use bitcoin::{hashes::Hash, Amount, EcdsaSighashType, ScriptBuf};
+use bitcoin::{hashes::Hash, Amount, EcdsaSighashType, PublicKey, ScriptBuf};
 use clap::{Parser, Subcommand};
 use tracing::info;
 
-use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}};
+use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys};
 
 pub struct Cli {
     pub config: Config,
@@ -52,7 +52,9 @@ impl Cli {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ScriptBuf::from(vec![0x00]);
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let mut builder = Builder::new("single_connection"); 
