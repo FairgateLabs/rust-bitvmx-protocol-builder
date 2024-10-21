@@ -49,13 +49,13 @@ impl ScriptKey {
 }
 
 #[derive(Clone, Debug)]
-pub struct ScriptWithKeys {
+pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: PublicKey,
 }
 
-impl ScriptWithKeys {
+impl ProtocolScript {
     pub fn new(script: ScriptBuf, verifying_key: &PublicKey) -> Self {
         Self {
             script,
@@ -87,7 +87,7 @@ impl ScriptWithKeys {
     }
 }
 
-pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ScriptWithKeys {
+pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
         { blocks.to_le_bytes().to_vec() }
@@ -97,33 +97,33 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ScriptWithKeys {
         OP_CHECKSIG
     );
 
-    ScriptWithKeys::new(script, timelock_key)
+    ProtocolScript::new(script, timelock_key)
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
-pub fn timelock_renew(aggregated_key: &PublicKey) -> ScriptWithKeys {
+pub fn timelock_renew(aggregated_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIG
     );
 
-    ScriptWithKeys::new(script, aggregated_key)
+    ProtocolScript::new(script, aggregated_key)
 }
 
-pub fn check_signature(public_key: &PublicKey) -> ScriptWithKeys {
+pub fn check_signature(public_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*public_key).serialize().to_vec() }
         OP_CHECKSIG
     );
 
-    ScriptWithKeys::new(script, public_key)
+    ProtocolScript::new(script, public_key)
 }
 
-pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ScriptWithKeys {
+pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ProtocolScript {
     check_signature(aggregated_key)
 }
 
-pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey) -> ScriptWithKeys {
+pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
@@ -131,13 +131,13 @@ pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzP
         OP_PUSHNUM_1
     );
 
-    let mut script_with_keys = ScriptWithKeys::new(script, aggregated_key);
+    let mut script_with_keys = ProtocolScript::new(script, aggregated_key);
     script_with_keys.add_key("xc", xc_key.derivation_index(), KeyType::WinternitzKey(xc_key.key_type()), 0);     
 
     script_with_keys
 }
 
-pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, yp_key: &WinternitzPublicKey) -> ScriptWithKeys {
+pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, yp_key: &WinternitzPublicKey) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
@@ -147,7 +147,7 @@ pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPu
         OP_PUSHNUM_1
     );
 
-    let mut script_with_keys = ScriptWithKeys::new(script, aggregated_key);
+    let mut script_with_keys = ProtocolScript::new(script, aggregated_key);
     script_with_keys.add_key("xc", xc_key.derivation_index(), KeyType::WinternitzKey(xc_key.key_type()), 0);    
     script_with_keys.add_key("xp", xp_key.derivation_index(),KeyType::WinternitzKey(xp_key.key_type()), 1);  
     script_with_keys.add_key("yp", yp_key.derivation_index(), KeyType::WinternitzKey(yp_key.key_type()), 2);  

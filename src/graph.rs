@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use bitcoin::{secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 
-use crate::{builder::{InputSignatures, Signature}, errors::GraphError, scripts::ScriptWithKeys};
+use crate::{builder::{InputSignatures, Signature}, errors::GraphError, scripts::ProtocolScript};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
@@ -99,7 +99,7 @@ pub enum OutputSpendingType {
         tweak: Scalar,
     },
     TaprootScript{
-        spending_scripts: Vec<ScriptWithKeys>,
+        spending_scripts: Vec<ProtocolScript>,
         spend_info: TaprootSpendInfo,
     },
     SegwitPublicKey{
@@ -107,7 +107,7 @@ pub enum OutputSpendingType {
         value: Amount, 
     },
     SegwitScript{
-        script: ScriptWithKeys,
+        script: ProtocolScript,
         value: Amount, 
     }
 }
@@ -126,7 +126,7 @@ impl OutputSpendingType {
         }
     }
     
-    pub fn new_taproot_script_spend(spending_scripts: &[ScriptWithKeys], spend_info: &TaprootSpendInfo) -> OutputSpendingType {
+    pub fn new_taproot_script_spend(spending_scripts: &[ProtocolScript], spend_info: &TaprootSpendInfo) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
@@ -140,7 +140,7 @@ impl OutputSpendingType {
         } 
     }
     
-    pub fn new_segwit_script_spend(script: &ScriptWithKeys, value: Amount) -> OutputSpendingType {
+    pub fn new_segwit_script_spend(script: &ProtocolScript, value: Amount) -> OutputSpendingType {
         OutputSpendingType::SegwitScript { 
             script: script.clone(),
             value,
