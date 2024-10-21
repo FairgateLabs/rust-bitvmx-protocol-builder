@@ -5,7 +5,7 @@ use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Gr
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use storage_backend::storage::Storage;
 
-use crate::{builder::{InputSignatures, Signature}, errors::GraphError, scripts::ProtocolScript};
+use crate::{builder::{InputSignatures, Protocol, Signature}, errors::GraphError, scripts::ProtocolScript};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
@@ -25,10 +25,10 @@ impl Serialize for InputSpendingInfo {
             messages.push(message.as_ref());
         }
         let mut state = serializer.serialize_struct("InputSpendingInfo", 4)?;
+        state.serialize_field("spending_type", &self.spending_type)?;
         state.serialize_field("sighash_type", &self.sighash_type)?;
         state.serialize_field("hashed_messages", &messages)?;
-        state.serialize_field("spending_type", &self.spending_type)?;
-        state.serialize_field("input_keys", &self.input_keys)?;
+        state.serialize_field("signatures", &self.signatures)?;
         state.end()
     }
     
@@ -42,10 +42,10 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
+            SpendingType,
             SighashType,
             HashedMessages,
-            SpendingType,
-            InputKeys
+            Signatures,
         }
 
         struct InputSpendingInfoVisitor;
@@ -61,10 +61,10 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
             where
                 V: serde::de::MapAccess<'de>,
             {
+                let mut spending_type: Option<OutputSpendingType> = None;
                 let mut sighash_type: Option<SighashType> = None;
                 let mut hashed_messages: Option<Vec<[u8; 32]>> = None;
-                let mut spending_type: Option<OutputSpendingType> = None;
-                let mut input_keys: Option<Vec<PublicKey>> = None;
+                let mut signatures: Option<Vec<Signature>> = None;
 
                 while let Some(key_field) = map.next_key()? {
                     match key_field {
@@ -86,11 +86,11 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                             }
                             spending_type = Some(map.next_value()?);
                         }
-                        Field::InputKeys => {
-                            if input_keys.is_some() {
+                        Field::Signatures => {
+                            if signatures.is_some() {
                                 return Err(serde::de::Error::duplicate_field("input_keys"));
                             }
-                            input_keys = Some(map.next_value()?);
+                            signatures = Some(map.next_value()?);
                         }
                     }
                 }
@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                         messages
                     },
                     spending_type,
-                    input_keys: input_keys.ok_or_else(|| serde::de::Error::missing_field("input_keys"))?,
+                    signatures: signatures.ok_or_else(|| serde::de::Error::missing_field("signatures"))?,
                 })
             }
         }
@@ -290,10 +290,10 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
             {
                 let mut key: Option<PublicKey> = None;
                 let mut tweak: Option<[u8; 32]> = None;
-                let mut spending_scripts: Option<Vec<ScriptWithKeys>> = None;
+                let mut spending_scripts: Option<Vec<ProtocolScript>> = None;
                 let mut internal_key: Option<XOnlyPublicKey> = None;
                 let mut public_key: Option<PublicKey> = None;
-                let mut script: Option<ScriptWithKeys> = None;
+                let mut script: Option<ProtocolScript> = None;
                 let mut value: Option<Amount> = None;
 
                 while let Some(key_field) = map.next_key()? {

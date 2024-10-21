@@ -2,10 +2,11 @@ use std::{cmp, collections::HashMap, path::PathBuf};
 
 use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature};
+use serde::{Deserialize, Serialize};
 
 use crate::{errors::ProtocolBuilderError, graph::{InputSpendingInfo, OutputSpendingType, SighashType, TransactionGraph}, scripts::ProtocolScript, unspendable::unspendable_key};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Signature {
     Ecdsa(bitcoin::ecdsa::Signature),
     Taproot(bitcoin::taproot::Signature),
@@ -457,7 +458,7 @@ impl Protocol {
         }
     }
 
-    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ScriptWithKeys]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ProtocolScript]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.
@@ -892,11 +893,11 @@ impl Protocol {
     }
 }
 
-impl Builder {
+impl ProtocolBuilder {
     pub fn new(protocol_name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
         let protocol = Protocol::new(protocol_name, graph_storage_path)?;
 
-    Ok(Builder {
+    Ok(ProtocolBuilder {
             protocol,
         })
     }
