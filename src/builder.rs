@@ -1,4 +1,4 @@
-use std::{cmp, collections::HashMap};
+use std::{cmp, collections::HashMap, path::PathBuf};
 
 use bitcoin::{hashes::Hash, key::{Secp256k1, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, All, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::winternitz::WinternitzSignature;
@@ -327,10 +327,10 @@ impl Protocol {
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    pub fn build(&mut self) -> Result<Self, ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<(), ProtocolBuilderError> {
         self.update_transaction_ids()?;
         self.compute_sighashes()?;
-        Ok(self.clone())
+        Ok(())
     }
 
     pub fn get_transaction_to_send(&self, transaction_name: &str, spending_args: &[SpendingArgs]) -> Result<Transaction, ProtocolBuilderError> {
@@ -372,7 +372,7 @@ impl Protocol {
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {
         Self::check_empty_transaction_name(transaction_name)?;
 
-        let mut transaction = self.get_or_create_transaction(transaction_name);
+        let mut transaction = self.get_or_create_transaction(transaction_name)?;
 
         transaction.output.push(transaction::TxOut {
             value,
@@ -387,7 +387,7 @@ impl Protocol {
     fn add_transaction_input(&mut self, previous_txid: Txid, previous_output: u32, transaction_name: &str, sequence: Sequence, sighash_type: &SighashType) -> Result<(), ProtocolBuilderError>{
         Self::check_empty_transaction_name(transaction_name)?;
 
-        let mut transaction = self.get_or_create_transaction(transaction_name);
+        let mut transaction = self.get_or_create_transaction(transaction_name)?;
 
         transaction.input.push(transaction::TxIn {
             previous_output: OutPoint { txid: previous_txid, vout: previous_output},
@@ -419,7 +419,7 @@ impl Protocol {
         }
     }
 
-    fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ScriptWithKeys]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
+    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ScriptWithKeys]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         
         // To build a taproot tree, we need to calculate the depth of the tree.
@@ -728,8 +728,9 @@ impl Builder {
         })
     }
 
-    pub fn build(&mut self) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.build()
+    pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {
+        self.protocol.build()?;
+        Ok(&self.protocol)
     }
 
     pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {

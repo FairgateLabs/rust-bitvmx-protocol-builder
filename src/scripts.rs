@@ -5,15 +5,16 @@ use bitcoin::{PublicKey, ScriptBuf, XOnlyPublicKey};
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KeyType {
     EcdsaKey,
     XOnlyKey,
     WinternitzKey(WinternitzType),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScriptKey {
     name: String,
     key_type: KeyType,
@@ -48,7 +49,7 @@ impl ScriptKey {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScriptWithKeys {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,

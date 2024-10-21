@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
 
-use bitcoin::{hashes::Hash, Amount, EcdsaSighashType, PublicKey, ScriptBuf};
+use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
 
-use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys};
+use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys, unspendable::unspendable_key};
 
 pub struct Cli {
     config: Config,
@@ -153,41 +153,47 @@ impl Cli {
     fn add_p2wpkh_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
         let mut builder = Builder::new(protocol_name, graph_storage_path)?;
         let pk = PublicKey::from_slice(&[0x00; 33]).unwrap();
-        builder.add_p2wpkh_output(transaction_name, value, pk)?;
+        builder.add_p2wpkh_output(transaction_name, value, &pk)?;
         Ok(())
     }
 
     fn add_speedup_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
         let mut builder = Builder::new(protocol_name, graph_storage_path)?;
         let pk = PublicKey::from_slice(&[0x00; 33]).unwrap();
-        builder.add_speedup_output(transaction_name, value,pk)?;
+        builder.add_speedup_output(transaction_name, value,&pk)?;
         Ok(())
     }
 
     fn add_taproot_script_spend_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str) -> Result<()> {
         let mut builder = Builder::new(protocol_name, graph_storage_path)?;
         let mut rng = secp256k1::rand::thread_rng();
-        let internal_key = unspendable_key(&mut rng)?;
-        let script = ScriptBuf::from(vec![0x00]);
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
-        builder.add_taproot_script_spend_connection("protocol", from, value, internal_key, &[script.clone()], to, &sighash_type)?;
+        builder.add_taproot_script_spend_connection("protocol", from, value, &internal_key, &[script.clone()], to, &sighash_type)?;
         Ok(())
     }
 
     fn add_timelock_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str, blocks: u16) -> Result<()> {
         let mut builder = Builder::new(protocol_name, graph_storage_path)?;
         let mut rng = secp256k1::rand::thread_rng();
-        let internal_key = unspendable_key(&mut rng)?;
-        let expired_from = ScriptBuf::from(vec![0x00]);
-        let renew_from = ScriptBuf::from(vec![0x01]);
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let expired_from = ScriptWithKeys::new(ScriptBuf::from(vec![0x00]), &public_key);
+        let renew_from = ScriptWithKeys::new(ScriptBuf::from(vec![0x01]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
-        builder.add_timelock_connection( from, value, internal_key, expired_from, renew_from, to, blocks, &sighash_type)?;
+        builder.add_timelock_connection( from, value, &internal_key, &expired_from, &renew_from, to, blocks, &sighash_type)?;
         Ok(())
     }
 
     fn connect_rounds(&self, protocol_name: &str, graph_storage_path: PathBuf, rounds: u32, from: &str, to: &str, value: u64) -> Result<()> {
         let mut builder = Builder::new(protocol_name, graph_storage_path)?;
-        let script = ScriptBuf::from(vec![0x00]);
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         builder.connect_rounds("rounds", rounds, from, to, value, &[script.clone()], &[script.clone()], &sighash_type)?;
         Ok(())

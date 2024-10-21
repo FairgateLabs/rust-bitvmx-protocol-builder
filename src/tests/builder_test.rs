@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
     use std::{env, path::PathBuf};
-    use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
+    use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
     use crate::{builder::{Builder, SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys, unspendable::unspendable_key};
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
         let mut rng = secp256k1::rand::thread_rng();
-        dir.join(format!("storage_{}.db", index))
         let index = rng.next_u32();
+        dir.join(format!("storage_{}.db", index))
     }
 
     #[test]
@@ -84,7 +84,7 @@ mod tests {
         let spending_scripts = vec![script.clone(), script.clone()];
 
         let mut builder = Builder::new("cycle", temp_storage())?;
-            builder.add_taproot_script_spend_connection("cycle", "A", value, internal_key, &spending_scripts, "A", &sighash_type)?;
+            builder.add_taproot_script_spend_connection("cycle", "A", value, &internal_key, &spending_scripts, "A", &sighash_type)?;
 
         let result = builder.build();
 

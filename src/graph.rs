@@ -1,11 +1,11 @@
 use std::{collections::HashMap, path::PathBuf, vec};
 
-use bitcoin::{secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut};
+use bitcoin::{key::Secp256k1, secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut, XOnlyPublicKey};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use storage_backend::storage::Storage;
 
-use crate::{errors::GraphError, scripts::ScriptWithKeys};
+use crate::{builder::Protocol, errors::GraphError, scripts::ScriptWithKeys};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
@@ -24,10 +24,11 @@ impl Serialize for InputSpendingInfo {
         for message in &self.hashed_messages {
             messages.push(message.as_ref());
         }
-        let mut state = serializer.serialize_struct("InputSpendingInfo", 3)?;
+        let mut state = serializer.serialize_struct("InputSpendingInfo", 4)?;
         state.serialize_field("sighash_type", &self.sighash_type)?;
         state.serialize_field("hashed_messages", &messages)?;
         state.serialize_field("spending_type", &self.spending_type)?;
+        state.serialize_field("input_keys", &self.input_keys)?;
         state.end()
     }
     
@@ -44,6 +45,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
             SighashType,
             HashedMessages,
             SpendingType,
+            InputKeys
         }
 
         struct InputSpendingInfoVisitor;
@@ -62,6 +64,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                 let mut sighash_type: Option<SighashType> = None;
                 let mut hashed_messages: Option<Vec<[u8; 32]>> = None;
                 let mut spending_type: Option<OutputSpendingType> = None;
+                let mut input_keys: Option<Vec<PublicKey>> = None;
 
                 while let Some(key_field) = map.next_key()? {
                     match key_field {
@@ -83,6 +86,12 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                             }
                             spending_type = Some(map.next_value()?);
                         }
+                        Field::InputKeys => {
+                            if input_keys.is_some() {
+                                return Err(serde::de::Error::duplicate_field("input_keys"));
+                            }
+                            input_keys = Some(map.next_value()?);
+                        }
                     }
                 }
                 Ok(InputSpendingInfo {
@@ -95,6 +104,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                         messages
                     },
                     spending_type,
+                    input_keys: input_keys.ok_or_else(|| serde::de::Error::missing_field("input_keys"))?,
                 })
             }
         }
@@ -185,7 +195,7 @@ pub enum OutputSpendingType {
     TaprootScript{
         spending_scripts: Vec<ScriptWithKeys>,
         spend_info: TaprootSpendInfo,
-        internal_key: PublicKey,
+        internal_key: XOnlyPublicKey,
     },
     SegwitPublicKey{
         public_key: PublicKey,
@@ -203,9 +213,15 @@ impl Serialize for OutputSpendingType {
         S: serde::Serializer,
     {
         match self {
-            OutputSpendingType::TaprootKey { key } => {
+            OutputSpendingType::TaprootUntweakedKey { key } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 1)?;
                 state.serialize_field("key", key)?;
+                state.end()
+            }
+            OutputSpendingType::TaprootTweakedKey { key, tweak } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                state.serialize_field("key", key)?;
+                state.serialize_field("tweak", &tweak.to_be_bytes())?;
                 state.end()
             }
             OutputSpendingType::TaprootScript { spending_scripts, spend_info: _, internal_key } => {
@@ -240,6 +256,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
             Key,
+            Tweak,
             SpendingScripts,
             InternalKey,
             PublicKey,
@@ -260,11 +277,12 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut key: Option<Key> = None;
-                let mut spending_scripts: Option<Vec<ScriptBuf>> = None;
-                let mut internal_key: Option<PublicKey> = None;
+                let mut key: Option<PublicKey> = None;
+                let mut tweak: Option<[u8; 32]> = None;
+                let mut spending_scripts: Option<Vec<ScriptWithKeys>> = None;
+                let mut internal_key: Option<XOnlyPublicKey> = None;
                 let mut public_key: Option<PublicKey> = None;
-                let mut script: Option<ScriptBuf> = None;
+                let mut script: Option<ScriptWithKeys> = None;
                 let mut value: Option<Amount> = None;
 
                 while let Some(key_field) = map.next_key()? {
@@ -274,6 +292,12 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                                 return Err(serde::de::Error::duplicate_field("key"));
                             }
                             key = Some(map.next_value()?);
+                        }
+                        Field::Tweak => {
+                            if tweak.is_some() {
+                                return Err(serde::de::Error::duplicate_field("tweak"));
+                            }
+                            tweak = Some(map.next_value()?);
                         }
                         Field::SpendingScripts => {
                             if spending_scripts.is_some() {
@@ -308,8 +332,14 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                     }
                 }
                 if key.is_some() {
-                    let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
-                    Ok(OutputSpendingType::TaprootKey { key })
+                    if tweak.is_none(){
+                        let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
+                        Ok(OutputSpendingType::TaprootUntweakedKey { key })
+                    } else {
+                        let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
+                        let tweak = tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
+                        Ok(OutputSpendingType::TaprootTweakedKey { key, tweak: Scalar::from_be_bytes(tweak).map_err(|e| serde::de::Error::custom(e.to_string()))? })
+                    }
                 } else if spending_scripts.is_some() {
                     Ok(OutputSpendingType::TaprootScript {
                         spending_scripts: spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?,
@@ -317,7 +347,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             let secp = Secp256k1::new();
                             let internal_key_ok = internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
                             let spending_scripts = spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
-                            match Protocol::build_taproot_spend_info(&secp,internal_key_ok, &spending_scripts){
+                            match Protocol::build_taproot_spend_info(&secp, &internal_key_ok, &spending_scripts){
                                 Ok(taproot_spend_info) => taproot_spend_info,
                                 Err(e) => {
                                     eprintln!("Error creating taproot spend info: {:?}", e);
@@ -343,7 +373,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
 
         deserializer.deserialize_struct(
             "OutputSpendingType",
-            &["key", "spending_scripts", "internal_key", "public_key", "script", "value"],
+            &["key", "tweak", "spending_scripts", "internal_key", "public_key", "script", "value"],
             OutputSpendingTypeVisitor,
         )
     }
@@ -367,10 +397,7 @@ impl OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
-            internal_key: {
-                let internal_key = spend_info.internal_key();
-                PublicKey::new(internal_key.public_key(spend_info.output_key_parity()))
-            },
+            internal_key: spend_info.internal_key(),
         }
     }
     
@@ -538,7 +565,7 @@ impl TransactionGraph {
             to.to_string())
         )?;
 
-        to_node.input_spending_infos[input_index as usize].add_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[input_index as usize].set_spending_type(output_spending_type)?;
 
         self.storage.write(&format!("node_{:04}_{}", to_node_index.index() ,to), &serde_json::to_string(&to_node)?)?;
 
@@ -552,7 +579,7 @@ impl TransactionGraph {
             to.to_string())
         )?;
 
-        to_node.input_spending_infos[to_node.transaction.input.len() - 1].add_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[to_node.transaction.input.len() - 1].set_spending_type(output_spending_type)?;
 
         self.storage.write(&format!("node_{:04}_{}", to_node_index.index() ,to), &serde_json::to_string(&to_node)?)?;
 
