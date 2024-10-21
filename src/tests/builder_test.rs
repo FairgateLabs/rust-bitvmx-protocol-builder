@@ -3,7 +3,7 @@ mod tests {
     use std::{env, path::PathBuf};
     use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
-    use crate::{builder::{Builder, SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys, unspendable::unspendable_key};
+    use crate::{builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys, unspendable::unspendable_key};
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
         let mut rng = secp256k1::rand::thread_rng();
@@ -25,13 +25,13 @@ mod tests {
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let expired_from = ScriptWithKeys::new(ScriptBuf::from(vec![0x00]), &public_key);
-        let renew_from = ScriptWithKeys::new(ScriptBuf::from(vec![0x01]), &public_key);
-        let expired_to = ScriptWithKeys::new(ScriptBuf::from(vec![0x02]), &public_key);
-        let renew_to = ScriptWithKeys::new(ScriptBuf::from(vec![0x03]), &public_key);
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let script_a = ScriptWithKeys::new(ScriptBuf::from(vec![0x05]), &public_key);
-        let script_b = ScriptWithKeys::new(ScriptBuf::from(vec![0x06]), &public_key);
+        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
+        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
+        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key);
+        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key);
+        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
 
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
@@ -80,7 +80,7 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let spending_scripts = vec![script.clone(), script.clone()];
 
         let mut builder = Builder::new("cycle", temp_storage())?;
@@ -113,7 +113,7 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
@@ -149,7 +149,7 @@ mod tests {
         let output_index = 0;
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let mut builder = Builder::new("single_connection", temp_storage())?; 
@@ -181,7 +181,7 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let mut builder = Builder::new("rounds", temp_storage())?;
@@ -238,7 +238,7 @@ mod tests {
         let value = 1000;
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
         let mut builder = Builder::new("rounds", temp_storage())?;
         let result = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type);
@@ -268,7 +268,7 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let mut builder = Builder::new("rounds", temp_storage())?;

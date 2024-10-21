@@ -1,4 +1,5 @@
 use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
+use key_manager::errors::KeyManagerError;
 use thiserror::Error;
 
 use config as settings;
@@ -126,5 +127,8 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to tweak public key")]
     TweakError(#[from] bitcoin::secp256k1::Error),
+
+    #[error("Failed to sign transaction")]
+    SignatureError(#[from] KeyManagerError),
 }
 

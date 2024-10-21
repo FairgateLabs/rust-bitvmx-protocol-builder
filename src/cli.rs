@@ -5,7 +5,7 @@ use anyhow::{Ok, Result};
 use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
 
-use crate::{builder::Builder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ScriptWithKeys, unspendable::unspendable_key};
+use crate::{builder::ProtocolBuilder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript};
 
 pub struct Cli {
     config: Config,
@@ -143,7 +143,7 @@ impl Cli {
         let output_index = 0;
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ScriptWithKeys::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         builder.connect_with_external_transaction(txid,output_index, output_spending_type, to, &ecdsa_sighash_type)?;
