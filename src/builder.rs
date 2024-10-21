@@ -11,6 +11,23 @@ pub enum Signature {
     Taproot(bitcoin::taproot::Signature),
 }
 
+#[derive(Clone, Debug)]
+pub struct InputSignatures {
+    signatures: Vec<Signature>,
+}
+
+impl InputSignatures {
+    pub fn new(signatures: Vec<Signature>) -> Self {
+        InputSignatures {
+            signatures,
+        }
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Signature> {
+        self.signatures.iter()
+    }
+}
+
 pub struct Builder {
     protocol: Protocol,
 }
@@ -365,7 +382,7 @@ impl Protocol {
     }
 
     pub fn get_transaction_spending_infos(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, ProtocolBuilderError> {
-        Ok(self.graph.get_transactions_spending_info()?)
+        Ok(self.graph.get_transaction_spending_infos()?)
     }
 
     pub fn get_name(&self) -> &str {
@@ -378,6 +395,10 @@ impl Protocol {
 
     fn get_transaction(&self, transaction_name: &str) -> Result<&Transaction, ProtocolBuilderError> {
         self.graph.get_transaction(transaction_name).map_err(ProtocolBuilderError::from)
+    }
+
+    pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, ProtocolBuilderError> {
+        Ok(self.graph.get_all_signatures()?)
     }
 
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {

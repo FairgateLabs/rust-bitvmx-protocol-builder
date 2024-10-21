@@ -3,7 +3,7 @@ use std::{collections::HashMap, vec};
 use bitcoin::{secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 
-use crate::{builder::Signature, errors::GraphError, scripts::ScriptWithKeys};
+use crate::{builder::{InputSignatures, Signature}, errors::GraphError, scripts::ScriptWithKeys};
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
@@ -76,6 +76,10 @@ impl InputSpendingInfo {
         self.spending_type.as_ref().ok_or(GraphError::MissingOutputSpendingTypeForInputSpendingInfo(
             format!("{:?}", self.sighash_type)
         ))
+    }
+
+    pub fn signatures(&self) -> &Vec<Signature> {
+        &self.signatures
     }
 }
 
@@ -355,7 +359,7 @@ impl TransactionGraph {
         Ok(node.input_spending_infos.clone())
     }
 
-    pub fn get_transactions_spending_info(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
+    pub fn get_transaction_spending_infos(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
         self.node_indexes.keys().map(|name| {
             let node_index = self.get_node_index(name)?;
             let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
@@ -364,20 +368,6 @@ impl TransactionGraph {
     
             Ok((name.clone(), node.input_spending_infos.clone()))
         }).collect()
-    }
-
-    pub fn contains_transaction(&self, name: &str) -> bool {
-        self.node_indexes.contains_key(name)
-    }
-
-    pub fn sort(&self) -> Result<Vec<String>, GraphError> {
-        let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
-        let result = sorted.iter().map(|node_index| {
-            let node = self.graph.node_weight(*node_index).unwrap();
-            node.name.clone()
-        }).collect();
-
-        Ok(result)
     }
 
     fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
@@ -414,5 +404,30 @@ impl TransactionGraph {
     
     pub fn get_transaction_names(&self) -> Vec<String> {
         self.graph.node_weights().map(|node| node.name.clone()).collect()
+    }
+
+    pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, GraphError> {
+        let mut all_signatures = HashMap::new();
+
+        for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
+            let signatures = input_spending_infos.iter().map(|info| InputSignatures::new(info.signatures().clone())).collect();
+            all_signatures.insert(name, signatures);
+        }
+
+        Ok(all_signatures)
+    }
+
+    pub fn contains_transaction(&self, name: &str) -> bool {
+        self.node_indexes.contains_key(name)
+    }
+
+    pub fn sort(&self) -> Result<Vec<String>, GraphError> {
+        let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
+        let result = sorted.iter().map(|node_index| {
+            let node = self.graph.node_weight(*node_index).unwrap();
+            node.name.clone()
+        }).collect();
+
+        Ok(result)
     }
 }
