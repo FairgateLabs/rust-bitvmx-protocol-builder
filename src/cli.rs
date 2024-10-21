@@ -152,15 +152,17 @@ impl Cli {
 
     fn add_p2wpkh_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
-        let pk = PublicKey::from_slice(&[0x00; 33]).unwrap();
-        builder.add_p2wpkh_output(transaction_name, value, &pk)?;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        builder.add_p2wpkh_output(transaction_name, value, &public_key)?;
         Ok(())
     }
 
     fn add_speedup_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
-        let pk = PublicKey::from_slice(&[0x00; 33]).unwrap();
-        builder.add_speedup_output(transaction_name, value,&pk)?;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        builder.add_speedup_output(transaction_name, value,&public_key)?;
         Ok(())
     }
 
