@@ -5,10 +5,10 @@ use anyhow::{Ok, Result};
 use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
 
-use crate::{builder::ProtocolBuilder, config::Config, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
+use crate::{builder::ProtocolBuilder, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
 
 pub struct Cli {
-    config: Config,
+    //config: Config,
 }
 
 #[derive(Parser)]
@@ -33,6 +33,12 @@ enum Commands {
     ConnectWithExternalTransaction{
         #[arg(short, long, help = "Node to connect to")]
         to: String,
+
+        #[arg(short, long, help = "Value of the output in satoshis")]
+        value: u64,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     },
 
     AddP2WpkhOutput{
@@ -41,6 +47,9 @@ enum Commands {
         
         #[arg(short, long, help = "Value of the output in satoshis")]
         value: u64,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     },
 
     AddSpeedupOutput{
@@ -49,6 +58,9 @@ enum Commands {
         
         #[arg(short, long, help = "Value of the output in satoshis")]
         value: u64,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     },
 
     AddTaprootScriptSpendConnection{
@@ -60,6 +72,9 @@ enum Commands {
 
         #[arg(short, long, help = "Node to connect to")]
         to: String,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     },
 
     AddTimelockConnection{
@@ -74,6 +89,9 @@ enum Commands {
 
         #[arg(short, long, help = "Number of blocks to wait before spending the output")]
         blocks: u16,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     },
 
     ConnectRounds{
@@ -88,14 +106,17 @@ enum Commands {
 
         #[arg(short, long, help = "Value of the output in satoshis")]
         value: u64,
+
+        #[arg(short, long, help = "Key to be used in the script")]
+        public_key: String,
     }
 }
 
 impl Cli {
     pub fn new() -> Result<Self> {
-        let config = Config::new()?;
+        //let config = Config::new()?;
         Ok(Self {
-            config,
+            //config,
         })
     }
 
@@ -106,23 +127,23 @@ impl Cli {
             Commands::Build => {
                 self.build(&menu.protocol_name, menu.graph_storage_path)?;
             }
-            Commands::ConnectWithExternalTransaction{to} => {
-                self.connect_with_external_transaction(&menu.protocol_name, menu.graph_storage_path, to)?;
+            Commands::ConnectWithExternalTransaction{to, value, public_key} => {
+                self.connect_with_external_transaction(&menu.protocol_name, menu.graph_storage_path, to, *value, public_key)?;
             }
-            Commands::AddP2WpkhOutput{transaction_name,value} => {
-                self.add_p2wpkh_output(&menu.protocol_name, menu.graph_storage_path, transaction_name, *value)?;
+            Commands::AddP2WpkhOutput{transaction_name,value, public_key} => {
+                self.add_p2wpkh_output(&menu.protocol_name, menu.graph_storage_path, transaction_name, *value, public_key)?;
             }
-            Commands::AddSpeedupOutput{transaction_name,value} => {
-                self.add_speedup_output(&menu.protocol_name, menu.graph_storage_path, transaction_name, *value)?;
+            Commands::AddSpeedupOutput{transaction_name,value, public_key} => {
+                self.add_speedup_output(&menu.protocol_name, menu.graph_storage_path, transaction_name, *value, public_key)?;
             }
-            Commands::AddTaprootScriptSpendConnection{from, value, to} => {
-                self.add_taproot_script_spend_connection(&menu.protocol_name, menu.graph_storage_path, from, *value, to)?;
+            Commands::AddTaprootScriptSpendConnection{from, value, to, public_key} => {
+                self.add_taproot_script_spend_connection(&menu.protocol_name, menu.graph_storage_path, from, *value, to, public_key)?;
             }
-            Commands::AddTimelockConnection{from, value, to, blocks} => {
-                self.add_timelock_connection(&menu.protocol_name, menu.graph_storage_path, from, *value, to, *blocks)?;
+            Commands::AddTimelockConnection{from, value, to, blocks, public_key} => {
+                self.add_timelock_connection(&menu.protocol_name, menu.graph_storage_path, from, *value, to, *blocks, public_key)?;
             }
-            Commands::ConnectRounds{rounds, from, to, value} => {
-                self.connect_rounds(&menu.protocol_name, menu.graph_storage_path, *rounds, from, to, *value)?;
+            Commands::ConnectRounds{rounds, from, to, value, public_key} => {
+                self.connect_rounds(&menu.protocol_name, menu.graph_storage_path, *rounds, from, to, *value, public_key)?;
             }
         }
 
@@ -135,13 +156,12 @@ impl Cli {
         Ok(())
     }
 
-    fn connect_with_external_transaction(&self, protocol_name: &str, graph_storage_path: PathBuf, to: &str) -> Result<()> {
+    fn connect_with_external_transaction(&self, protocol_name: &str, graph_storage_path: PathBuf, to: &str, value: u64, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         let txid = Hash::all_zeros();
-        let value = 1000;
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let output_index = 0;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
@@ -150,27 +170,27 @@ impl Cli {
         Ok(())
     }
 
-    fn add_p2wpkh_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
+    fn add_p2wpkh_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_p2wpkh_output(transaction_name, value, &public_key)?;
         Ok(())
     }
 
-    fn add_speedup_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64) -> Result<()> {
+    fn add_speedup_output(&self, protocol_name: &str, graph_storage_path: PathBuf, transaction_name: &str, value: u64, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_speedup_output(transaction_name, value,&public_key)?;
         Ok(())
     }
 
-    fn add_taproot_script_spend_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str) -> Result<()> {
+    fn add_taproot_script_spend_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
@@ -178,11 +198,11 @@ impl Cli {
         Ok(())
     }
 
-    fn add_timelock_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str, blocks: u16) -> Result<()> {
+    fn add_timelock_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str, blocks: u16, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
@@ -191,9 +211,9 @@ impl Cli {
         Ok(())
     }
 
-    fn connect_rounds(&self, protocol_name: &str, graph_storage_path: PathBuf, rounds: u32, from: &str, to: &str, value: u64) -> Result<()> {
+    fn connect_rounds(&self, protocol_name: &str, graph_storage_path: PathBuf, rounds: u32, from: &str, to: &str, value: u64, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
