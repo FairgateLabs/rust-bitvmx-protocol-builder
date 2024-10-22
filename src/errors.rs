@@ -58,7 +58,7 @@ pub enum ConfigError {
 
     #[error("Public key in config is invalid")]
     InvalidPublicKey(#[from] ParsePublicKeyError),
-
+  
     #[error("SighashType in config is invalid")]
     InvalidSighashType(#[from] SighashTypeParseError),
 }

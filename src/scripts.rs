@@ -174,6 +174,7 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
 
             // Push two copies of the digit onto the altstack
             OP_DUP OP_TOALTSTACK OP_TOALTSTACK
+            OP_DUP OP_TOALTSTACK OP_TOALTSTACK
 
             // Hash the input hash d times and put every result on the stack
             for _ in 0..base {
@@ -182,13 +183,22 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
 
             // Compute the offset of the hash table entry for this digit 
             { base }
+
+            // Compute the offset of the hash table entry for this digit 
+            { base }
             OP_FROMALTSTACK
+            OP_SUB
+
+            // Verify the signature for this digit   
             OP_SUB
 
             // Verify the signature for this digit   
             OP_PICK
             { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
+            { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
             OP_EQUALVERIFY
+
+            // Drop the hash table entries from the stack
 
             // Drop the hash table entries from the stack
             for _ in 0..(base + 1) / 2 {
@@ -200,19 +210,26 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
         OP_FROMALTSTACK
         OP_DUP
         OP_NEGATE
-
+      
+        OP_FROMALTSTACK
+        OP_DUP
+        OP_NEGATE
         for _ in 1..message_size {
             OP_FROMALTSTACK OP_TUCK OP_SUB
         }
 
+      
         { base * message_size }
         OP_ADD
 
         // 2. Sum up the signed checksum's digits
         OP_FROMALTSTACK
 
+
         for _ in 0..checksum_size - 1 {
             for _ in 0..bits_per_digit {
+                OP_DUP
+                OP_ADD
                 OP_DUP
                 OP_ADD
             }
@@ -239,9 +256,75 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
                     }
                     OP_DROP
                 }
+                OP_DROP
             }
         }
+        OP_FROMALTSTACK
     };
 
     verify
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use bitcoin::PublicKey;
+    use super::*;
+
+    const AGGREGATED_SIGNATURE: &str = "aggregated_signature";
+    const PUB_KEY: &str = "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2";
+
+    fn get_script_buff() -> ScriptBuf {
+        
+        let aggregated_key = PublicKey::from_str(PUB_KEY);
+        let script = script!(
+            { aggregated_key.unwrap().to_bytes() }
+            OP_CHECKSIG
+        );
+    
+        script!{
+            OP_IF
+            OP_TRUE
+            OP_ELSE
+            {script}
+            OP_ENDIF
+        }
+    }
+
+    #[test]
+    fn test_get_key_index() {
+        let test_script: ScriptKey = ScriptKey::new("test_script", 10, KeyType::EcdsaKey, 20);
+        
+        assert_eq!(test_script.derivation_index(), 10);
+        assert_eq!(test_script.key_position(), 20);
+        assert_eq!(test_script.key_type(), KeyType::EcdsaKey);
+    }
+
+    #[test]
+    fn test_script_with_keys() {
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 0);
+        
+        assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().name, AGGREGATED_SIGNATURE);
+        assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().key_position(), 0);
+        assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().derivation_index(), 1);
+        assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().key_type(), KeyType::EcdsaKey);        
+    }
+
+    #[test]
+    fn test_script_with_multiple_keys() {
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        script.add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0);
+        script.add_key(AGGREGATED_SIGNATURE, 2, KeyType::EcdsaKey, 2);
+        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 1);
+        let keys = script.get_keys();
+
+        assert!(keys.windows(2).all(|w| w[0].key_position() <= w[1].key_position()))        
+    }
 }

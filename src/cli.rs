@@ -4,17 +4,16 @@ use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
-use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
 use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
 
 pub struct Cli {
-    config: Config,
+    pub config: Config,
 }
 
 #[derive(Parser)]
-#[command(about = "Template Builder CLI", long_about = None)]
+#[command(about = "Protocol Builder CLI", long_about = None)]
 #[command(arg_required_else_help = true)]
 pub struct Menu {
     #[command(subcommand)]

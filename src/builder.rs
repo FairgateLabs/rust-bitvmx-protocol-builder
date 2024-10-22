@@ -33,6 +33,7 @@ pub struct ProtocolBuilder {
     protocol: Protocol,
 }
 
+#[derive(Clone, Debug)]
 pub struct Protocol {
     name: String,
     graph: TransactionGraph,
@@ -51,7 +52,7 @@ impl SpendingArgs {
             taproot_leaf: Some(taproot_leaf.clone())
         }
     }
-
+  
     pub fn new_args() -> Self {
         SpendingArgs {
             args: vec![],
@@ -102,12 +103,11 @@ impl SpendingArgs {
 }
 
 impl Protocol {
-    pub fn new(name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
-        let graph = TransactionGraph::new(graph_storage_path)?;
-        Ok(Protocol {
+    pub fn new(name: &str) -> Self {
+        Protocol {
             name: name.to_string(),
-            graph,
-        })
+            graph: TransactionGraph::new(),
+        }
     }
 
     pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {
@@ -133,7 +133,6 @@ impl Protocol {
         let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
         let script_pubkey = ScriptBuf::new_p2tr(&secp, untweaked_key, None);
         let value = Amount::from_sat(value);
-
         let spending_type = OutputSpendingType::new_taproot_key_spend(internal_key);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
@@ -317,7 +316,6 @@ impl Protocol {
     #[allow(clippy::too_many_arguments)]
     pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ProtocolScript], spending_scripts_to: &[ProtocolScript], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {  
         Self::check_zero_rounds(rounds)?;
-        
         // To create the names for the intermediate transactions in the rounds. We will use the following format: {name}_{round}.
         let mut from_round;
         let mut to_round;
@@ -457,7 +455,6 @@ impl Protocol {
             output: vec![],
         }
     }
-
     pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ProtocolScript]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let scripts_count = taproot_spending_scripts.len();
         

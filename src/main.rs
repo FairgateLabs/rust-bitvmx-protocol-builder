@@ -1,5 +1,5 @@
 use anyhow::Result;
-use template_builder::cli::Cli;
+use protocol_builder::cli::Cli;
 use tracing::error;
 
 fn main() -> Result<()> {

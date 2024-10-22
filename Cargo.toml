@@ -1,13 +1,13 @@
 [package]
-name = "bitvmx-template-builder"
+name = "bitvmx-protocol-builder"
 description = "Library designed to construct and manage Directed Acyclic Graphs (DAGs) of BitVMX pre-signed transactions"
 version = "0.0.1"
 edition = "2021"
 authors = ["Diego Masini <diego.masini@gmail.com>"]
-repository = "https://github.com/FairgateLabs/rust-bitvmx-template-builder"
+repository = "https://github.com/FairgateLabs/rust-bitvmx-protocol-builder"
 
 [lib]
-name = "template_builder"
+name = "protocol_builder"
 
 [dependencies]
 anyhow = "1.0.86"
@@ -35,5 +35,5 @@ bitvmx-key-manager = { path = "../rust-bitvmx-key-manager" }
 rust-bitvmx-storage-backend = {path = "../rust-bitvmx-storage-backend"}
 
 [[bin]]
-name = "template_builder"
+name = "protocol_builder"
 path = "src/main.rs"

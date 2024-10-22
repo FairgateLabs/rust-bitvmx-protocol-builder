@@ -1,4 +1,4 @@
-# Template Builder - Local 
+# Protocol Builder - Local 
 
 ## Run complete test suite
   ```bash

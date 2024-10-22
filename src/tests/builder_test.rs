@@ -37,7 +37,7 @@ mod tests {
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
-
+      
         let mut builder = ProtocolBuilder::new("single_connection", temp_storage())?; 
         let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
             .add_taproot_script_spend_connection("protocol", "start", value, &internal_key, &scripts_from, "challenge", &sighash_type)?
@@ -183,7 +183,7 @@ mod tests {
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
-
+      
         let mut builder = ProtocolBuilder::new("rounds", temp_storage())?;
         let (from_rounds, _) = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type)?;
 
