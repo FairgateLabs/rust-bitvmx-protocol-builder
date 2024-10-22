@@ -3,7 +3,7 @@ mod tests {
     use std::{env, path::PathBuf};
     use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
-    use crate::{builder::{ProtocolBuilder ,SpendingArgs}, errors::ProtocolBuilderError, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
+    use crate::{builder::{ProtocolBuilder ,SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
         let mut rng = secp256k1::rand::thread_rng();

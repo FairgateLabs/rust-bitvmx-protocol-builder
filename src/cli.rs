@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
-use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
+use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
 
 pub struct Cli {
     pub config: Config,
