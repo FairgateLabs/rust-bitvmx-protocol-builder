@@ -132,3 +132,18 @@ pub enum ProtocolBuilderError {
     SignatureError(#[from] KeyManagerError),
 }
 
+#[derive(Error, Debug)]
+pub enum CliError {
+    #[error("Bad argument: {msg}")]
+    BadArgument { msg: String },
+
+    #[error("Unexpected error: {0}")]
+    UnexpectedError(String),
+
+    #[error("Invalid network: {0}")]
+    InvalidNetwork(String),
+
+    #[error("Invalid Hex String: {0}")]
+    InvalidHexString(String),
+}
+

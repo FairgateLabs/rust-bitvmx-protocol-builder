@@ -1,14 +1,16 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
 
 use anyhow::{Ok, Result};
 
-use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
+use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
+use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
+use tracing::info;
 
-use crate::{builder::ProtocolBuilder, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
+use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};
 
 pub struct Cli {
-    //config: Config,
+    config: Config,
 }
 
 #[derive(Parser)]
@@ -29,6 +31,8 @@ pub struct Menu {
 #[derive(Subcommand)]
 enum Commands {
     Build,
+
+    BuildAndSign,
 
     ConnectWithExternalTransaction{
         #[arg(short, long, help = "Node to connect to")]
@@ -114,9 +118,9 @@ enum Commands {
 
 impl Cli {
     pub fn new() -> Result<Self> {
-        //let config = Config::new()?;
+        let config = Config::new()?;
         Ok(Self {
-            //config,
+            config,
         })
     }
 
@@ -126,6 +130,9 @@ impl Cli {
         match &menu.command {
             Commands::Build => {
                 self.build(&menu.protocol_name, menu.graph_storage_path)?;
+            }
+            Commands::BuildAndSign => {
+                self.build_and_sign(&menu.protocol_name, menu.graph_storage_path)?;
             }
             Commands::ConnectWithExternalTransaction{to, value, public_key} => {
                 self.connect_with_external_transaction(&menu.protocol_name, menu.graph_storage_path, to, *value, public_key)?;
@@ -153,6 +160,18 @@ impl Cli {
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         builder.build()?;
+
+        info!("Protocol {} built", protocol_name);
+        Ok(())
+    }
+
+    fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
+        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let key_manager = self.key_manager()?;
+        builder.build_and_sign(&key_manager)?;
+
+        info!("Protocol {} built and signed", protocol_name);
+
         Ok(())
     }
 
@@ -167,6 +186,8 @@ impl Cli {
         let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         builder.connect_with_external_transaction(txid,output_index, output_spending_type, to, &ecdsa_sighash_type)?;
+
+        info!("Connected Protocol {} with external transaction '{}'", protocol_name, to);
         Ok(())
     }
 
@@ -175,6 +196,8 @@ impl Cli {
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_p2wpkh_output(transaction_name, value, &public_key)?;
+
+        info!("Added P2WPKH output to Protocol {}", protocol_name);
         Ok(())
     }
 
@@ -183,6 +206,8 @@ impl Cli {
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_speedup_output(transaction_name, value,&public_key)?;
+
+        info!("Added Speedup output to Protocol {}", protocol_name);
         Ok(())
     }
 
@@ -195,6 +220,8 @@ impl Cli {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         builder.add_taproot_script_spend_connection("protocol", from, value, &internal_key, &[script.clone()], to, &sighash_type)?;
+
+        info!("Added Taproot script spend connection to Protocol {}", protocol_name);
         Ok(())
     }
 
@@ -208,6 +235,8 @@ impl Cli {
         let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         builder.add_timelock_connection( from, value, &internal_key, &expired_from, &renew_from, to, blocks, &sighash_type)?;
+
+        info!("Added Timelock connection to Protocol {}", protocol_name);
         Ok(())
     }
 
@@ -218,6 +247,53 @@ impl Cli {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         builder.connect_rounds("rounds", rounds, from, to, value, &[script.clone()], &[script.clone()], &sighash_type)?;
+
+        info!("Connected rounds from '{}' to '{}' in Protocol {}", from , to, protocol_name);
         Ok(())
+    }
+
+    fn key_manager(&self) -> Result<KeyManager<DatabaseKeyStore>> {
+        let key_derivation_seed = self.get_key_derivation_seed()?;
+        let key_derivation_path = &self.config.key_manager.key_derivation_path;
+        let winternitz_seed = self.get_winternitz_seed()?;
+        let network = Network::from_str(self.config.key_manager.network.as_str()).map_err(|e| CliError::InvalidNetwork(e.to_string()))?;
+        let path = self.get_storage_path()?;
+        let password: Vec<u8> = self.config.storage.password.as_bytes().to_vec();
+
+        let keystore = DatabaseKeyStore::new(path, password, network)?;
+
+        let key_manager = KeyManager::new(
+            network, 
+            key_derivation_path, 
+            key_derivation_seed, 
+            winternitz_seed,
+            keystore,
+        )?;
+
+        Ok(key_manager)
+    }
+
+    fn get_storage_path(&self) -> Result<PathBuf> {
+        Ok(PathBuf::from(&self.config.storage.path))
+    }
+
+    fn get_winternitz_seed(&self) -> Result<[u8; 32]> {
+        let winternitz_seed = hex::decode(self.config.key_manager.winternitz_seed.clone())?;
+
+        if winternitz_seed.len() > 32 {
+            return Err(CliError::BadArgument { msg: "Winternitz secret length must be 32 bytes".to_string() }.into());
+        }
+
+        Ok(winternitz_seed.as_slice().try_into()?)
+    }
+
+    fn get_key_derivation_seed(&self) -> Result<[u8; 32]> {
+        let key_derivation_seed = hex::decode(self.config.key_manager.key_derivation_seed.clone())?;
+
+        if key_derivation_seed.len() > 32 {
+            return Err(CliError::BadArgument { msg: "Key derivation seed length must be 32 bytes".to_string() }.into());
+        }
+
+        Ok(key_derivation_seed.as_slice().try_into()?)
     }
 }
