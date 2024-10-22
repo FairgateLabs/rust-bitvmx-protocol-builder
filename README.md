@@ -3,15 +3,15 @@ Protocol Builder is a Rust library designed to construct and manage Directed Acy
 
 ## Features
 
-🛠 Create transactions: Automatically create transactions when adding inputs or outputs.
-🔗 Connect transactions: Link transactions with specified parameters to form logical transaction flows.
-🔄 Multi-round connections: Set up connections across multiple transaction rounds for complex interactions.
-🏁 Connect with existing transactions: Integrate Bitcoin blockchain outputs into your transaction flow.
-✅ Build the protocol: Complete the DAG structure and update transaction IDs, ensuring data integrity.
-🧮 Generate signature hashes: Build transactions with calculated signature hashes for transaction spending.
-🔏 Generate signatures: Sign all transactions and their variants.
-🧾 Complete witness data: Populate transaction inputs with witness data for validation.
-🚀 Assemble complete transactions: Construct fully ready-to-broadcast transactions for the Bitcoin network. 
+🛠 Create transactions: Automatically create transactions when adding inputs or outputs.  
+🔗 Connect transactions: Link transactions with specified parameters to form logical transaction flows.  
+🔄 Multi-round connections: Set up connections across multiple transaction rounds for complex interactions.  
+🏁 Connect with existing transactions: Integrate Bitcoin blockchain outputs into your transaction flow.  
+✅ Build the protocol: Complete the DAG structure and update transaction IDs, ensuring data integrity.  
+🧮 Generate signature hashes: Build transactions with calculated signature hashes for transaction spending.  
+🔏 Generate signatures: Sign all transactions and their variants.  
+🧾 Complete witness data: Populate transaction inputs with witness data for validation.  
+🚀 Assemble complete transactions: Construct fully ready-to-broadcast transactions for the Bitcoin network.    
 
 ## Usage
 
