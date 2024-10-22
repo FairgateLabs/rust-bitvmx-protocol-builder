@@ -318,6 +318,9 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
+        let tx = protocol.get_transaction("A")?;
+        assert_eq!(tx.input.len(), 1);
+
         let transaction_names = protocol.get_transaction_names();
         assert_eq!(&transaction_names, &["A"]);
 

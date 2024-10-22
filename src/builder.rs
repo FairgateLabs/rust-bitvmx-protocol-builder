@@ -1,6 +1,6 @@
-use std::{cmp, collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
-use bitcoin::{hashes::Hash, key::{TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootBuilder, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
+use bitcoin::{hashes::Hash, key::{TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature};
 
 use crate::{errors::ProtocolBuilderError, graph::{graph::TransactionGraph, input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType}, scripts::{self, ProtocolScript}, unspendable::unspendable_key};
@@ -376,7 +376,7 @@ impl Protocol {
         self.graph.get_transaction_names()
     }
 
-    fn get_transaction(&self, transaction_name: &str) -> Result<&Transaction, ProtocolBuilderError> {
+    pub (crate) fn get_transaction(&self, transaction_name: &str) -> Result<&Transaction, ProtocolBuilderError> {
         self.graph.get_transaction(transaction_name).map_err(ProtocolBuilderError::from)
     }
 

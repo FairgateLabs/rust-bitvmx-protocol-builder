@@ -9,6 +9,7 @@ use crate::errors::GraphError;
 
 use super::{input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType};
 
+const NODE_KEY_SIZE : usize = NODE_PARTIAL_KEY.len() + 5;
 const NODE_PARTIAL_KEY: &str = "node_";
 const CONNECTION_PARTIAL_KEY: &str = "connection_";
 
@@ -71,7 +72,7 @@ impl TransactionGraph {
             for (mut name, data) in storage.partial_compare(NODE_PARTIAL_KEY)? {
                 let node: Node = serde_json::from_str(&data)?;
                 let node_index = graph.add_node(node.clone());
-                let name = name.split_off(10);
+                let name = name.split_off(NODE_KEY_SIZE);
                 node_indexes.insert(name, node_index);
             }
 
@@ -226,7 +227,7 @@ impl TransactionGraph {
                 (node.name.clone(), connection.input_index)
             }
         ).collect();
-        
+
         Ok(dependencies)
     }
 
