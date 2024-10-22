@@ -6,7 +6,7 @@
         "password": "rpcpassword",
         "wallet": "test_wallet"
     },
-    "template_builder": {
+    "builder": {
         "protocol_amount": 200,
         "speedup_from_key": "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2",
         "speedup_to_key": "023e328db822002ca45731f4a364e932c3fceea33d99e0544a50c3b1e752002947",
