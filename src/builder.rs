@@ -33,7 +33,7 @@ pub struct ProtocolBuilder {
     protocol: Protocol,
 }
 
-#[derive(Clone, Debug)]
+
 pub struct Protocol {
     name: String,
     graph: TransactionGraph,
@@ -103,11 +103,13 @@ impl SpendingArgs {
 }
 
 impl Protocol {
-    pub fn new(name: &str) -> Self {
-        Protocol {
+    pub fn new(name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
+        let graph = TransactionGraph::new(graph_storage_path)?;
+
+        Ok(Protocol {
             name: name.to_string(),
-            graph: TransactionGraph::new(),
-        }
+            graph,
+        })
     }
 
     pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {

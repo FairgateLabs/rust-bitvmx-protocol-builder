@@ -4,6 +4,7 @@ use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 use clap::{Parser, Subcommand};
+use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
 use tracing::info;
 
 use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{OutputSpendingType, SighashType}, scripts::ProtocolScript, unspendable::unspendable_key};

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
     EcdsaKey,
     XOnlyKey,
