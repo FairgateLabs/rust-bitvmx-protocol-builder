@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use std::{env, path::PathBuf};
-    use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
+    use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1::{self, Scalar}, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
     use crate::{builder::{ProtocolBuilder ,SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
     fn temp_storage() -> PathBuf {
@@ -323,6 +323,169 @@ mod tests {
 
         let transaction_names = protocol.get_transaction_names();
         assert_eq!(&transaction_names, &["A"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_2() -> Result<(), ProtocolBuilderError> {
+        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let value = 1000;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let graph_storage_path = temp_storage();
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_p2wsh_connection("connection", "A", value, &script, "B", &ecdsa_sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_3() -> Result<(), ProtocolBuilderError> {
+        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let value = 1000;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let graph_storage_path = temp_storage();
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_p2wpkh_connection("connection", "A", value, &public_key, "B", &ecdsa_sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_4() -> Result<(), ProtocolBuilderError> {
+        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let value = 1000;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let graph_storage_path = temp_storage();
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_taproot_key_spend_connection("connection", "A", value, &public_key, "B", &ecdsa_sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_5() -> Result<(), ProtocolBuilderError> {
+        let sighash_type = SighashType::Taproot(TapSighashType::All);
+        let value = 1000;
+        let mut rng = secp256k1::rand::thread_rng();
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let graph_storage_path = temp_storage();
+        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_taproot_script_spend_connection("connection", "A", value, &internal_key, &[script.clone()], "B", &sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_6() -> Result<(), ProtocolBuilderError> {
+        let sighash_type = SighashType::Taproot(TapSighashType::All);
+        let value = 1000;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let graph_storage_path = temp_storage();
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script_expired = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
+        let script_renew = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_linked_message_connection("A", "B", value, &[script.clone()], 100, &script_expired,&script_renew, 100, &public_key, &sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 3);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 2);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_persistence_7() -> Result<(), ProtocolBuilderError> {
+        let sighash_type = SighashType::Taproot(TapSighashType::All);
+        let value = 1000;
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let graph_storage_path = temp_storage();
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
+        builder
+            .add_taproot_tweaked_key_spend_connection("connection", "A", value, &public_key, &Scalar::ZERO , "B", &sighash_type)?;
+        
+        drop(builder);
+
+        let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
+        let protocol = builder.build()?;
+
+        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+
+        let transaction_names = protocol.get_transaction_names();
+        assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
     }
