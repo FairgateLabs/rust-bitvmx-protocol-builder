@@ -3,6 +3,14 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::scripts::{self, ProtocolScript};
 
+const ALL_OUTPUT_TYPES: &[&str] = &[
+    "taproot_untweaked_key",
+    "taproot_tweaked_key",
+    "taproot_script",
+    "segwit_public_key",
+    "segwit_script",
+];
+
 #[derive(Debug, Clone)]
 pub enum OutputSpendingType {
     TaprootUntweakedKey{
@@ -34,30 +42,35 @@ impl Serialize for OutputSpendingType {
     {
         match self {
             OutputSpendingType::TaprootUntweakedKey { key } => {
-                let mut state = serializer.serialize_struct("OutputSpendingType", 1)?;
+                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                state.serialize_field("type", "taproot_untweaked_key")?;
                 state.serialize_field("key", key)?;
                 state.end()
             }
             OutputSpendingType::TaprootTweakedKey { key, tweak } => {
-                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
+                state.serialize_field("type", "taproot_tweaked_key")?;
                 state.serialize_field("key", key)?;
                 state.serialize_field("tweak", &tweak.to_be_bytes())?;
                 state.end()
             }
             OutputSpendingType::TaprootScript { spending_scripts, spend_info: _, internal_key } => {
-                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
+                state.serialize_field("type", "taproot_script")?;
                 state.serialize_field("spending_scripts", spending_scripts)?;
                 state.serialize_field("internal_key", internal_key)?;
                 state.end()
             }
             OutputSpendingType::SegwitPublicKey { public_key, value } => {
-                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
+                state.serialize_field("type", "segwit_public_key")?;
                 state.serialize_field("public_key", public_key)?;
                 state.serialize_field("value", value)?;
                 state.end()
             }
             OutputSpendingType::SegwitScript { script, value } => {
-                let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
+                let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
+                state.serialize_field("type", "segwit_script")?;
                 state.serialize_field("script", script)?;
                 state.serialize_field("value", value)?;
                 state.end()
@@ -75,6 +88,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
+            Type,
             Key,
             Tweak,
             SpendingScripts,
@@ -96,7 +110,8 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
             fn visit_map<V>(self, mut map: V) -> Result<OutputSpendingType, V::Error>
             where
                 V: serde::de::MapAccess<'de>,
-            {
+            {   
+                let mut type_field: Option<String> = None;
                 let mut key: Option<PublicKey> = None;
                 let mut tweak: Option<[u8; 32]> = None;
                 let mut spending_scripts: Option<Vec<ProtocolScript>> = None;
@@ -107,6 +122,12 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
 
                 while let Some(key_field) = map.next_key()? {
                     match key_field {
+                        Field::Type => {
+                            if type_field.is_some() {
+                                return Err(serde::de::Error::duplicate_field("type"));
+                            }
+                            type_field = Some(map.next_value()?);
+                        }
                         Field::Key => {
                             if key.is_some() {
                                 return Err(serde::de::Error::duplicate_field("key"));
@@ -151,49 +172,56 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                         }
                     }
                 }
-                if key.is_some() {
-                    if tweak.is_none(){
+
+
+                let output_type = type_field.ok_or_else(|| serde::de::Error::missing_field("type"))?;
+
+                match output_type.as_str() {
+                    "taproot_untweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
                         Ok(OutputSpendingType::TaprootUntweakedKey { key })
-                    } else {
+                    }
+                    "taproot_tweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
                         let tweak = tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
-                        Ok(OutputSpendingType::TaprootTweakedKey { key, tweak: Scalar::from_be_bytes(tweak).map_err(|e| serde::de::Error::custom(e.to_string()))? })
+                        Ok(OutputSpendingType::TaprootTweakedKey {
+                            key,
+                            tweak: Scalar::from_be_bytes(tweak).map_err(|e| serde::de::Error::custom(e.to_string()))?,
+                        })
                     }
-                } else if spending_scripts.is_some() {
-                    Ok(OutputSpendingType::TaprootScript {
-                        spending_scripts: spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?,
-                        spend_info: {
-                            let secp = Secp256k1::new();
-                            let internal_key_ok = internal_key.ok_or_else(|| serde::de::Error::missing_field("taproot_internal_key"))?;
-                            let spending_scripts = spending_scripts.clone().ok_or_else(|| serde::de::Error::missing_field("spending_paths"))?;
-                            match scripts::build_taproot_spend_info(&secp, &internal_key_ok, &spending_scripts){
-                                Ok(taproot_spend_info) => taproot_spend_info,
-                                Err(e) => {
-                                    eprintln!("Error creating taproot spend info: {:?}", e);
-                                    return Err(serde::de::Error::custom("Error creating taproot spend info"))
-                                }
-                            }
-                        },
-                        internal_key: internal_key.ok_or_else(|| serde::de::Error::missing_field("internal_key"))?,
-                    })
-                } else if public_key.is_some() {
-                    let public_key = public_key.ok_or_else(|| serde::de::Error::missing_field("public_key"))?;
-                    let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
-                    Ok(OutputSpendingType::SegwitPublicKey { public_key, value })
-                } else if script.is_some() {
-                    let script = script.ok_or_else(|| serde::de::Error::missing_field("script"))?;
-                    let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
-                    Ok(OutputSpendingType::SegwitScript { script, value })
-                } else {
-                    Err(serde::de::Error::missing_field("key"))
+                    "taproot_script" => {
+                        let spending_scripts = spending_scripts.ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
+                        let internal_key = internal_key.ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
+                        let secp = Secp256k1::new();
+                        let spend_info = scripts::build_taproot_spend_info(&secp, &internal_key, &spending_scripts)
+                            .map_err(|e| {
+                                eprintln!("Error creating taproot spend info: {:?}", e);
+                                serde::de::Error::custom("Error creating taproot spend info")
+                            })?;
+                        Ok(OutputSpendingType::TaprootScript {
+                            spending_scripts,
+                            spend_info,
+                            internal_key,
+                        })
+                    }
+                    "segwit_public_key" => {
+                        let public_key = public_key.ok_or_else(|| serde::de::Error::missing_field("public_key"))?;
+                        let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                        Ok(OutputSpendingType::SegwitPublicKey { public_key, value })
+                    }
+                    "segwit_script" => {
+                        let script = script.ok_or_else(|| serde::de::Error::missing_field("script"))?;
+                        let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                        Ok(OutputSpendingType::SegwitScript { script, value })
+                    }
+                    _ => Err(serde::de::Error::unknown_variant(&output_type, ALL_OUTPUT_TYPES)),
                 }
             }
         }
 
         deserializer.deserialize_struct(
             "OutputSpendingType",
-            &["key", "tweak", "spending_scripts", "internal_key", "public_key", "script", "value"],
+            &["type","key", "tweak", "spending_scripts", "internal_key", "public_key", "script", "value"],
             OutputSpendingTypeVisitor,
         )
     }
