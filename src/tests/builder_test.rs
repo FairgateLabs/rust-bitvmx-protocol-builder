@@ -382,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_persistence_4() -> Result<(), ProtocolBuilderError> {
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
@@ -390,7 +390,7 @@ mod tests {
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
         builder
-            .add_taproot_key_spend_connection("connection", "A", value, &public_key, "B", &ecdsa_sighash_type)?;
+            .add_taproot_key_spend_connection("connection", "A", value, &public_key, "B", &sighash_type)?;
         
         drop(builder);
 

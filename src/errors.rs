@@ -31,15 +31,6 @@ pub enum GraphError {
 
     #[error("Missing output spending information for ")]
     MissingOutputSpendingTypeForInputSpendingInfo(String),
-
-    #[error("Error while trying to deserialize data")]
-    DeserializationError(#[from] serde_json::Error),
-
-    #[error("Error while trying acessing the data")]
-    DataError(#[from] storage_backend::error::StorageError),
-
-    #[error("Error while trying to open storage")]
-    StorageError(storage_backend::error::StorageError),
 }
 
 #[derive(Error, Debug)]
@@ -133,6 +124,15 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to build protocol scripts")]
     ScriptError(#[from] ScriptError),
+
+    #[error("Error while trying to deserialize data")]
+    DeserializationError(#[from] serde_json::Error),
+
+    #[error("Error while trying acessing the data")]
+    DataError(#[from] storage_backend::error::StorageError),
+
+    #[error("Error while trying to open storage")]
+    StorageError(storage_backend::error::StorageError),
 }
 
 #[derive(Error, Debug)]

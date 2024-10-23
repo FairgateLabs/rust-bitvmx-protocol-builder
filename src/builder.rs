@@ -2,14 +2,17 @@ use std::{collections::HashMap, path::PathBuf};
 
 use bitcoin::{hashes::Hash, key::{TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature};
+use serde::{Deserialize, Serialize};
+use storage_backend::storage::Storage;
 
 use crate::{errors::ProtocolBuilderError, graph::{graph::TransactionGraph, input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType}, scripts::{self, ProtocolScript}, unspendable::unspendable_key};
 
 pub struct ProtocolBuilder {
     protocol: Protocol,
+    storage: Storage
 }
 
-
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Protocol {
     name: String,
     graph: TransactionGraph,
@@ -79,13 +82,11 @@ impl SpendingArgs {
 }
 
 impl Protocol {
-    pub fn new(name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
-        let graph = TransactionGraph::new(graph_storage_path)?;
-
-        Ok(Protocol {
+    pub fn new(name: &str) -> Self {
+        Protocol{
             name: name.to_string(),
-            graph,
-        })
+            graph: TransactionGraph::new(),
+        }
     }
 
     pub fn add_taproot_tweaked_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {
@@ -327,16 +328,16 @@ impl Protocol {
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    pub fn build(&mut self) -> Result<(), ProtocolBuilderError> {
+    pub fn build(&mut self) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
         self.compute_sighashes()?;
-        Ok(())
+        Ok(self.clone())
     }
 
-    pub fn build_and_sign<K: KeyStore>(&mut self, key_manager: &KeyManager<K>) -> Result<(), ProtocolBuilderError> {
+    pub fn build_and_sign<K: KeyStore>(&mut self, key_manager: &KeyManager<K>) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
         self.compute_signatures(key_manager)?;
-        Ok(())
+        Ok(self.clone())
     }
 
     pub fn update_input_signatures(&mut self, transaction_name: &str, input_index: u32, signatures: Vec<Signature>) -> Result<(), ProtocolBuilderError> {
@@ -845,119 +846,167 @@ impl Protocol {
 
 impl ProtocolBuilder {
     pub fn new(protocol_name: &str, graph_storage_path: PathBuf) -> Result<Self, ProtocolBuilderError> {
-        let protocol = Protocol::new(protocol_name, graph_storage_path)?;
+        let storage = Storage::new_with_path(&graph_storage_path)?;
 
-    Ok(ProtocolBuilder {
-            protocol,
-        })
+        match storage.read(protocol_name)?{
+            Some(protocol) => {
+                Ok(ProtocolBuilder {
+                    protocol: serde_json::from_str(&protocol)?,
+                    storage,
+                })
+            },
+            None => Ok(ProtocolBuilder {
+                protocol: Protocol::new(protocol_name),
+                storage,
+            }),
+        }
+
+        
     }
 
-    pub fn build(&mut self) -> Result<&Protocol, ProtocolBuilderError> {
-        self.protocol.build()?;
-        Ok(&self.protocol)
+    pub fn build(&mut self) -> Result<Protocol, ProtocolBuilderError> {
+        self.protocol.build()
     }
 
-    pub fn build_and_sign<K: KeyStore>(&mut self, key_manager: &KeyManager<K>) -> Result<&Protocol, ProtocolBuilderError> {
-        self.protocol.build_and_sign(key_manager)?;
-        Ok(&self.protocol)
+    pub fn build_and_sign<K: KeyStore>(&mut self, key_manager: &KeyManager<K>) -> Result<Protocol, ProtocolBuilderError> {
+        self.protocol.build_and_sign(key_manager)
     }
 
     pub fn add_taproot_key_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_tweaked_key_spend_output(transaction_name, value, internal_key, tweak)?;
+        self.save_protocol()?;
+
         Ok(self)
     }
 
     pub fn add_taproot_script_spend_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ProtocolScript]) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_output(transaction_name, value, internal_key, spending_scripts)?;
+        self.save_protocol()?;
+
         Ok(self)
     }
 
     pub fn add_p2wpkh_output(&mut self, transaction_name: &str, value: u64, public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_output(transaction_name, value, public_key)?;
+        self.save_protocol()?;
+
         Ok(self)
     }
 
     pub fn add_p2wsh_output(&mut self, transaction_name: &str, value: u64, script_pubkey: &ProtocolScript) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wsh_output(transaction_name, value, script_pubkey)?;
+        self.save_protocol()?;
+
         Ok(self)
     }
 
     pub fn add_timelock_output(&mut self, transaction_name: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ProtocolScript, renew_script: &ProtocolScript) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_output(transaction_name, value, internal_key, expired_script, renew_script)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_speedup_output(&mut self, transaction_name: &str, value: u64, speedup_public_key: &PublicKey) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_speedup_output(transaction_name, value, speedup_public_key)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_taproot_key_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_key_spend_input(transaction_name, previous_output, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_taproot_script_spend_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_input(transaction_name, previous_output, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_p2wpkh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_input(transaction_name, previous_output, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_p2wsh_input(&mut self, transaction_name: &str, previous_output: u32, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wsh_input(transaction_name, previous_output, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_timelock_input(&mut self, transaction_name: &str, previous_output: u32, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_input(transaction_name, previous_output, blocks, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn add_taproot_tweaked_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, tweak: &Scalar, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_tweaked_key_spend_connection(connection_name, from, value, internal_key, tweak, to, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_taproot_key_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_key_spend_connection(connection_name, from, value, internal_key, to, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn add_taproot_script_spend_connection(&mut self, connection_name: &str, from: &str, value: u64, internal_key: &UntweakedPublicKey, spending_scripts: &[ProtocolScript], to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_connection(connection_name, from, value, internal_key, spending_scripts, to, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn add_p2wpkh_connection(&mut self, connection_name: &str, from: &str, value: u64, public_key: &PublicKey, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wpkh_connection(connection_name, from, value, public_key, to, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }   
 
     pub fn add_p2wsh_connection(&mut self, connection_name: &str, from: &str, value: u64, script: &ProtocolScript, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_p2wsh_connection(connection_name, from, value, script, to, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn add_timelock_connection(&mut self, from: &str, value: u64, internal_key: &UntweakedPublicKey, expired_script: &ProtocolScript, renew_script: &ProtocolScript, to: &str, blocks: u16, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_timelock_connection(from, value, internal_key, expired_script, renew_script, to, blocks, sighash_type)?;
+        self.save_protocol()?;
+        
         Ok(self)
     }
 
     pub fn connect_with_external_transaction(&mut self, txid: Txid, output_index: u32, output_spending_type: OutputSpendingType, to: &str, sighash_type: &SighashType) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.connect_with_external_transaction(txid, output_index, output_spending_type, to, sighash_type)?;
+        self.save_protocol()?;
+
         Ok(self)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn connect_rounds(&mut self, connection_name: &str, rounds: u32, from: &str, to: &str, value: u64, spending_scripts_from: &[ProtocolScript], spending_scripts_to: &[ProtocolScript], sighash_type: &SighashType) -> Result<(String, String), ProtocolBuilderError> {
-        self.protocol.connect_rounds(connection_name, rounds, from, to, value, spending_scripts_from, spending_scripts_to, sighash_type)
+        let result = self.protocol.connect_rounds(connection_name, rounds, from, to, value, spending_scripts_from, spending_scripts_to, sighash_type)?;
+        self.save_protocol()?;
+
+        Ok(result)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -974,5 +1023,10 @@ impl ProtocolBuilder {
         self.add_speedup_output(transaction_name, speedup_value, speedup_public_key)?;
 
         Ok(self)
+    }
+
+    fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {
+        self.storage.write(&self.protocol.name, &serde_json::to_string(&self.protocol)?)?;
+        Ok(())
     }
 }

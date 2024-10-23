@@ -1,17 +1,12 @@
-use std::{collections::HashMap, path::PathBuf, vec};
+use std::{collections::HashMap, vec};
 
 use bitcoin::{secp256k1::Message, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 use serde::{Deserialize, Serialize};
-use storage_backend::storage::Storage;
 
 use crate::errors::GraphError;
 
 use super::{input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType};
-
-const NODE_KEY_SIZE : usize = NODE_PARTIAL_KEY.len() + 5;
-const NODE_PARTIAL_KEY: &str = "node_";
-const CONNECTION_PARTIAL_KEY: &str = "connection_";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
@@ -49,52 +44,26 @@ impl Connection {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransactionGraph {
     graph: Graph<Node, Connection>,
     node_indexes: HashMap<String, petgraph::graph::NodeIndex>,
-    storage: Storage,
 }
 
 impl TransactionGraph {
-    pub fn new(path: PathBuf) -> Result<Self, GraphError> {
-        let storage = Storage::new_with_path(&path).map_err(|e| GraphError::StorageError(e))?;
+    pub fn new() -> Self{
+        let graph = Graph::new();
+        let node_indexes = HashMap::new();
 
-        if storage.is_empty() {
-            return Ok(TransactionGraph {
-                graph: Graph::new(),
-                node_indexes: HashMap::new(),
-                storage,
-            });
-        } else {
-            let mut graph = Graph::new();
-            let mut node_indexes = HashMap::new();
-
-            for (mut name, data) in storage.partial_compare(NODE_PARTIAL_KEY)? {
-                let node: Node = serde_json::from_str(&data)?;
-                let node_index = graph.add_node(node.clone());
-                let name = name.split_off(NODE_KEY_SIZE);
-                node_indexes.insert(name, node_index);
-            }
-
-            for (_, data) in storage.partial_compare(CONNECTION_PARTIAL_KEY)? {
-                let (connection, from_index, to_index): (Connection, usize, usize)  = serde_json::from_str(&data)?;
-                let from = NodeIndex::new(from_index);
-                let to = NodeIndex::new(to_index);
-                graph.add_edge(from, to, connection);
-            }
-
-            Ok(TransactionGraph {
-                graph,
-                node_indexes,
-                storage,
-            })
+        TransactionGraph {
+            graph,
+            node_indexes,
         }
     }
 
     pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
         let node = Node::new(name, transaction);
         let node_index = self.graph.add_node(node.clone());
-        self.storage.write(&node_key(node_index, name), &serde_json::to_string(&node)?)?;
 
         self.node_indexes.insert(name.to_string(), node_index);
         Ok(())
@@ -107,8 +76,6 @@ impl TransactionGraph {
         )?;
 
         node.transaction = transaction;
-
-        self.storage.write(&node_key(node_index, name), &serde_json::to_string(&node)?)?;
         Ok(())
     }
 
@@ -120,8 +87,6 @@ impl TransactionGraph {
 
         node.transaction = transaction;
         node.input_spending_infos.push(InputSpendingInfo::new(sighash_type));
-
-        self.storage.write(&node_key(node_index, name), &serde_json::to_string(&node)?)?;
         Ok(())
     }
 
@@ -133,8 +98,6 @@ impl TransactionGraph {
 
         node.transaction = transaction;        
         node.output_spending_types.push(spending_type);
-
-        self.storage.write(&node_key(node_index, name), &serde_json::to_string(&node)?)?;
         Ok(())
     }
 
@@ -149,9 +112,7 @@ impl TransactionGraph {
             output_index,
         );
         
-        let connection_index = self.graph.add_edge(from_node_index, to_node_index, connection.clone());
-        
-        self.storage.write(&connection_key(connection_index, connection_name), &serde_json::to_string(&(connection, from_node_index.index(), to_node_index.index()))?)?;
+        self.graph.add_edge(from_node_index, to_node_index, connection.clone());
 
         let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
             to.to_string())
@@ -159,7 +120,6 @@ impl TransactionGraph {
 
         to_node.input_spending_infos[input_index as usize].set_spending_type(output_spending_type)?;
 
-        self.storage.write(&node_key(to_node_index, to), &serde_json::to_string(&to_node)?)?;
         Ok(())
     }
 
@@ -172,7 +132,6 @@ impl TransactionGraph {
 
         to_node.input_spending_infos[to_node.transaction.input.len() - 1].set_spending_type(output_spending_type)?;
 
-        self.storage.write(&node_key(to_node_index, to), &serde_json::to_string(&to_node)?)?;
         Ok(())
     }
 
@@ -194,7 +153,6 @@ impl TransactionGraph {
 
         node.input_spending_infos[input_index as usize].set_signatures(signatures);
 
-        self.storage.write(&node_key(node_index, transaction_name), &serde_json::to_string(node)?)?;
         Ok(())
     }
 
@@ -330,12 +288,4 @@ impl TransactionGraph {
 
         Ok(result)
     }
-}
-
-fn node_key(node_index: NodeIndex, name: &str) -> String {
-    format!("{}{:04}_{}", NODE_PARTIAL_KEY, node_index.index(), name)
-}
-
-fn connection_key(connection_index: EdgeIndex, name: &str) -> String {
-    format!("{}{:04}_{}", CONNECTION_PARTIAL_KEY, connection_index.index(), name)
 }
