@@ -25,6 +25,10 @@ impl Node {
             input_spending_infos: vec![],
         }
     }
+
+    fn get_input_spending_info(&self, input_index: usize) -> Result<&InputSpendingInfo, GraphError> {
+        self.input_spending_infos.get(input_index).ok_or(GraphError::MissingInputSpendingInfo(self.name.clone(), input_index))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,6 +277,36 @@ impl TransactionGraph {
         }
 
         Ok(all_signatures)
+    }
+
+    pub fn get_input_ecdsa_signature(&self, name: &str, input_index: usize) -> Result<bitcoin::ecdsa::Signature, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
+            name.to_string())
+        )?;
+
+        let spending_info = node.get_input_spending_info(input_index)?;
+        let signature = match spending_info.get_signature(0)? {
+            Signature::Ecdsa(signature) => signature,
+            _ => return Err(GraphError::InvalidSignatureType),
+        };
+
+        Ok(*signature)
+    }
+
+    pub fn get_input_taproot_signature(&self, name: &str, input_index: usize, leaf_index: usize) -> Result<bitcoin::taproot::Signature, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
+            name.to_string())
+        )?;
+
+        let spending_info = node.get_input_spending_info(input_index)?;
+        let signature = match spending_info.get_signature(leaf_index)? {
+            Signature::Taproot(signature) => signature,
+            _ => return Err(GraphError::InvalidSignatureType),
+        };
+
+        Ok(*signature)
     }
 
     pub fn contains_transaction(&self, name: &str) -> bool {

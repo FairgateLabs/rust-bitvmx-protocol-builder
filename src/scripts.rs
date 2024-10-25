@@ -93,7 +93,7 @@ impl ProtocolScript {
 pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
-        { blocks.to_le_bytes().to_vec() }
+        { blocks as u32 }
         OP_CSV
         OP_DROP
         { XOnlyPublicKey::from(*timelock_key).serialize().to_vec() }
@@ -176,7 +176,6 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
 
             // Push two copies of the digit onto the altstack
             OP_DUP OP_TOALTSTACK OP_TOALTSTACK
-            OP_DUP OP_TOALTSTACK OP_TOALTSTACK
 
             // Hash the input hash d times and put every result on the stack
             for _ in 0..base {
@@ -185,22 +184,13 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
 
             // Compute the offset of the hash table entry for this digit 
             { base }
-
-            // Compute the offset of the hash table entry for this digit 
-            { base }
             OP_FROMALTSTACK
-            OP_SUB
-
-            // Verify the signature for this digit   
             OP_SUB
 
             // Verify the signature for this digit   
             OP_PICK
             { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
-            { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
             OP_EQUALVERIFY
-
-            // Drop the hash table entries from the stack
 
             // Drop the hash table entries from the stack
             for _ in 0..(base + 1) / 2 {
@@ -212,26 +202,19 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
         OP_FROMALTSTACK
         OP_DUP
         OP_NEGATE
-      
-        OP_FROMALTSTACK
-        OP_DUP
-        OP_NEGATE
+
         for _ in 1..message_size {
             OP_FROMALTSTACK OP_TUCK OP_SUB
         }
 
-      
         { base * message_size }
         OP_ADD
 
         // 2. Sum up the signed checksum's digits
         OP_FROMALTSTACK
 
-
         for _ in 0..checksum_size - 1 {
             for _ in 0..bits_per_digit {
-                OP_DUP
-                OP_ADD
                 OP_DUP
                 OP_ADD
             }
@@ -258,10 +241,8 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
                     }
                     OP_DROP
                 }
-                OP_DROP
             }
         }
-        OP_FROMALTSTACK
     };
 
     verify

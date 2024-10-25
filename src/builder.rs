@@ -7,6 +7,45 @@ use storage_backend::storage::Storage;
 
 use crate::{errors::ProtocolBuilderError, graph::{graph::TransactionGraph, input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType}, scripts::{self, ProtocolScript}, unspendable::unspendable_key};
 
+#[derive(Debug, Clone)]
+pub enum Signature {
+    Ecdsa(bitcoin::ecdsa::Signature),
+    Taproot(bitcoin::taproot::Signature),
+}
+
+#[derive(Clone, Debug)]
+pub struct InputSignatures {
+    signatures: Vec<Signature>,
+}
+
+impl InputSignatures {
+    pub fn new(signatures: Vec<Signature>) -> Self {
+        InputSignatures {
+            signatures,
+        }
+    }
+
+    pub fn get_taproot_signature(&self, index: usize) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+        match self.signatures.get(index) {
+            Some(Signature::Ecdsa(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
+            Some(Signature::Taproot(signature)) => Ok(*signature),
+            None => Err(ProtocolBuilderError::MissingSignature),
+        }
+    }
+
+    pub fn get_ecdsa_signature(&self, index: usize) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+        match self.signatures.get(index) {
+            Some(Signature::Ecdsa(signature)) => Ok(*signature),
+            Some(Signature::Taproot(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
+            None => Err(ProtocolBuilderError::MissingSignature),
+        }
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Signature> {
+        self.signatures.iter()
+    }
+}
+
 pub struct ProtocolBuilder {
     protocol: Protocol,
     storage: Storage
@@ -383,6 +422,16 @@ impl Protocol {
 
     pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, ProtocolBuilderError> {
         Ok(self.graph.get_all_signatures()?)
+    }
+
+    pub fn get_input_ecdsa_signature(&self, transaction_name: &str, input_index: usize) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+        let input_signature = self.graph.get_input_ecdsa_signature(transaction_name, input_index)?;
+        Ok(input_signature)
+    }
+
+    pub fn get_input_taproot_signature(&self, transaction_name: &str, input_index: usize, leaf_index: usize) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+        let input_signature = self.graph.get_input_taproot_signature(transaction_name, input_index, leaf_index)?;
+        Ok(input_signature)
     }
 
     fn add_transaction_output(&mut self, transaction_name: &str, value: Amount, script_pubkey: ScriptBuf, spending_type: OutputSpendingType) -> Result<(), ProtocolBuilderError> {

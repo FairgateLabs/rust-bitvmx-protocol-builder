@@ -26,11 +26,20 @@ pub enum GraphError {
     #[error("Connection missing in graph")]
     MissingConnection,
 
+    #[error("Signature missing in graph")]
+    MissingSignature,
+
     #[error("Spending type does not match with sighash type")]
     InvalidSpendingTypeForSighashType,
 
-    #[error("Missing output spending information for ")]
+    #[error("Missing output spending information for {0}")]
     MissingOutputSpendingTypeForInputSpendingInfo(String),
+
+    #[error("Missing input spending information in transaction {0} for input {1}")]
+    MissingInputSpendingInfo(String, usize),
+
+    #[error("Invalid signature type")]
+    InvalidSignatureType,
 }
 
 #[derive(Error, Debug)]
@@ -133,6 +142,12 @@ pub enum ProtocolBuilderError {
 
     #[error("Error while trying to open storage")]
     StorageError(storage_backend::error::StorageError),
+
+    #[error("Invalid signature type")]
+    InvalidSignatureType,
+
+    #[error("Signature not found")]
+    MissingSignature,
 }
 
 #[derive(Error, Debug)]
