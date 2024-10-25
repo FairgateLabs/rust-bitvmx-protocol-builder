@@ -1,7 +1,7 @@
 use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, TapSighashType};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::{errors::GraphError, graph::output::OutputSpendingType};
+use crate::{errors::{GraphError, ProtocolBuilderError}, graph::output::OutputSpendingType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Signature {
@@ -18,6 +18,22 @@ impl InputSignatures {
     pub fn new(signatures: Vec<Signature>) -> Self {
         InputSignatures {
             signatures,
+        }
+    }
+
+    pub fn get_taproot_signature(&self, index: usize) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+        match self.signatures.get(index) {
+            Some(Signature::Ecdsa(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
+            Some(Signature::Taproot(signature)) => Ok(*signature),
+            None => Err(ProtocolBuilderError::MissingSignature),
+        }
+    }
+
+    pub fn get_ecdsa_signature(&self, index: usize) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+        match self.signatures.get(index) {
+            Some(Signature::Ecdsa(signature)) => Ok(*signature),
+            Some(Signature::Taproot(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
+            None => Err(ProtocolBuilderError::MissingSignature),
         }
     }
 
