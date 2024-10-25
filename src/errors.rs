@@ -46,6 +46,12 @@ pub enum GraphError {
 pub enum ScriptError {
     #[error("Segwit public keys must always be compressed")]
     InvalidPublicKeyForSegwit(#[from] UncompressedPublicKeyError),
+    
+    #[error("Failed to finalize taptree for given spending conditions")]
+    TapTreeFinalizeError,
+
+    #[error("Failed to build taptree for given spending conditions")]
+    TapTreeError(#[from] TaprootBuilderError),
 }
 
 #[derive(Error, Debug)]
@@ -142,12 +148,6 @@ pub enum ProtocolBuilderError {
 
     #[error("Signature not found")]
     MissingSignature,
-
-    #[error("Failed to finalize taptree for given spending conditions")]
-    TapTreeFinalizeError,
-
-    #[error("Failed to build taptree for given spending conditions")]
-    TapTreeError(#[from] TaprootBuilderError),
 }
 
 #[derive(Error, Debug)]

@@ -1,7 +1,7 @@
 use bitcoin::{key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, XOnlyPublicKey};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::{builder::Protocol, scripts::ProtocolScript};
+use crate::{builder::Protocol, scripts::{self, ProtocolScript}};
 
 const ALL_OUTPUT_TYPES: &[&str] = &[
     "taproot_untweaked_key",
@@ -193,7 +193,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                         let spending_scripts = spending_scripts.ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
                         let internal_key = internal_key.ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
                         let secp = Secp256k1::new();
-                        let spend_info = Protocol::build_taproot_spend_info(&secp, &internal_key, &spending_scripts)
+                        let spend_info = scripts::build_taproot_spend_info(&secp, &internal_key, &spending_scripts)
                             .map_err(|e| {
                                 eprintln!("Error creating taproot spend info: {:?}", e);
                                 serde::de::Error::custom("Error creating taproot spend info")

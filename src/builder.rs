@@ -5,7 +5,7 @@ use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore, winte
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::Storage;
 
-use crate::{errors::ProtocolBuilderError, graph::{graph::TransactionGraph, input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
+use crate::{errors::ProtocolBuilderError, graph::{graph::TransactionGraph, input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType}, scripts::{self, ProtocolScript}, unspendable::unspendable_key};
 
 
 pub struct ProtocolBuilder {
@@ -124,7 +124,7 @@ impl Protocol {
 
         let secp = secp256k1::Secp256k1::new();
         let value = Amount::from_sat(value);
-        let spend_info = Self::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
+        let spend_info = scripts::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
 
         let script_pubkey = ScriptBuf::new_p2tr(
             &secp,
@@ -444,32 +444,6 @@ impl Protocol {
             input: vec![],
             output: vec![],
         }
-    }
-
-    pub(crate) fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ProtocolScript]) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
-        let scripts_count = taproot_spending_scripts.len();
-        
-        // To build a taproot tree, we need to calculate the depth of the tree.
-        // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth 
-        // as the log2 of the number of scripts rounded up to the nearest integer.
-        let depth = cmp::max(1, (scripts_count as f32).log2().ceil() as u8);
-
-        let mut tr_builder = TaprootBuilder::new();
-        for script in taproot_spending_scripts.iter() {
-            tr_builder = tr_builder.add_leaf(depth, script.get_script().clone())?;
-        }
-
-        // If the number of spend conditions is odd, add the last one again
-        if scripts_count % 2 != 0 {
-            tr_builder = tr_builder.add_leaf(depth, taproot_spending_scripts[scripts_count - 1].get_script().clone())?;
-        }
-    
-        let tr_spend_info = tr_builder.finalize(
-            secp, 
-            *internal_key
-        ).map_err(|_| ProtocolBuilderError::TapTreeFinalizeError)?;
-
-        Ok(tr_spend_info)
     }
 
     fn get_dependencies(&self, transaction_name: &str) -> Result<Vec<(String, u32)>, ProtocolBuilderError> {
