@@ -90,7 +90,7 @@ impl ProtocolScript {
 pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
-        { blocks.to_le_bytes().to_vec() }
+        { blocks as u32 }
         OP_CSV
         OP_DROP
         { XOnlyPublicKey::from(*timelock_key).serialize().to_vec() }
