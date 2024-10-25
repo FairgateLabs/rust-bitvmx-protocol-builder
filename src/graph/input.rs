@@ -210,4 +210,8 @@ impl InputSpendingInfo {
     pub fn signatures(&self) -> &Vec<Signature> {
         &self.signatures
     }
+
+    pub fn get_signature(&self, index: usize) -> Result<&Signature, GraphError> {
+        self.signatures.get(index).ok_or(GraphError::MissingSignature)
+    }
 }
