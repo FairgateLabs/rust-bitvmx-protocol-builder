@@ -20,18 +20,19 @@ hex = "0.4.3"
 itertools = "0.13.0"
 lazy_static = "1.5.0"
 musig2 = { version = "0.0.11", features = ["secp256k1"] }
-serde = "1.0.204"
+serde = { version = "1.0.213", features = ["derive"] }
 serde_json = "1.0.96"
 thiserror = "1.0.63"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-petgraph = "0.6.5"
+petgraph = {version = "0.6.5", features = ["serde-1"]}
 
 bitcoincore-rpc = { version = "0.19.0"}
 bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "bitvmx"}
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx"}
 
 bitvmx-key-manager = { path = "../rust-bitvmx-key-manager" }
+rust-bitvmx-storage-backend = {path = "../rust-bitvmx-storage-backend"}
 
 [[bin]]
 name = "protocol_builder"

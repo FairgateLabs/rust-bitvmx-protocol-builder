@@ -46,6 +46,12 @@ pub enum GraphError {
 pub enum ScriptError {
     #[error("Segwit public keys must always be compressed")]
     InvalidPublicKeyForSegwit(#[from] UncompressedPublicKeyError),
+    
+    #[error("Failed to finalize taptree for given spending conditions")]
+    TapTreeFinalizeError,
+
+    #[error("Failed to build taptree for given spending conditions")]
+    TapTreeError(#[from] TaprootBuilderError),
 }
 
 #[derive(Error, Debug)]
@@ -58,7 +64,7 @@ pub enum ConfigError {
 
     #[error("Public key in config is invalid")]
     InvalidPublicKey(#[from] ParsePublicKeyError),
-
+  
     #[error("SighashType in config is invalid")]
     InvalidSighashType(#[from] SighashTypeParseError),
 }
@@ -88,12 +94,6 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to build graph")]
     GraphBuildingError(#[from] GraphError),
-
-    #[error("Failed to build taptree for given spending conditions")]
-    TapTreeError(#[from] TaprootBuilderError),
-
-    #[error("Failed to finalize taptree for given spending conditions")]
-    TapTreeFinalizeError,
 
     #[error("Failed to build unspendable internal key")]
     UnspendableInternalKeyError(#[from] UnspendableKeyError),
@@ -131,10 +131,37 @@ pub enum ProtocolBuilderError {
     #[error("Failed to sign transaction")]
     SignatureError(#[from] KeyManagerError),
 
+    #[error("Failed to build protocol scripts")]
+    ScriptError(#[from] ScriptError),
+
+    #[error("Error while trying to deserialize data")]
+    DeserializationError(#[from] serde_json::Error),
+
+    #[error("Error while trying acessing the data")]
+    DataError(#[from] storage_backend::error::StorageError),
+
+    #[error("Error while trying to open storage")]
+    StorageError(storage_backend::error::StorageError),
+
     #[error("Invalid signature type")]
     InvalidSignatureType,
 
     #[error("Signature not found")]
     MissingSignature,
+}
+
+#[derive(Error, Debug)]
+pub enum CliError {
+    #[error("Bad argument: {msg}")]
+    BadArgument { msg: String },
+
+    #[error("Unexpected error: {0}")]
+    UnexpectedError(String),
+
+    #[error("Invalid network: {0}")]
+    InvalidNetwork(String),
+
+    #[error("Invalid Hex String: {0}")]
+    InvalidHexString(String),
 }
 

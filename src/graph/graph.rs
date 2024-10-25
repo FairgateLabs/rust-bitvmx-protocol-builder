@@ -1,158 +1,14 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{secp256k1::{Message, Scalar}, taproot::TaprootSpendInfo, Amount, EcdsaSighashType, PublicKey, TapSighashType, Transaction, TxOut};
+use bitcoin::{secp256k1::Message, Transaction, TxOut};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
+use serde::{Deserialize, Serialize};
 
-use crate::{builder::{InputSignatures, Signature}, errors::GraphError, scripts::ProtocolScript};
+use crate::errors::GraphError;
 
-#[derive(Debug, Clone)]
-pub struct InputSpendingInfo {
-    spending_type: Option<OutputSpendingType>,
-    sighash_type: SighashType,
-    hashed_messages: Vec<Message>,
-    signatures: Vec<Signature>,
-}
-impl InputSpendingInfo {
-    fn new(sighash_type: &SighashType) -> Self {
-        Self { 
-            spending_type: None, 
-            sighash_type: sighash_type.clone(), 
-            hashed_messages: vec![],
-            signatures: vec![],
-        }
-    }
+use super::{input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType};
 
-    fn set_hashed_messages(&mut self, messages: Vec<Message>) {
-        self.hashed_messages = messages;
-    }
-
-    fn set_spending_type(&mut self, spending_type: OutputSpendingType) -> Result<(), GraphError> {
-        match self.sighash_type {
-            SighashType::Taproot(_) => {
-                match spending_type {
-                    OutputSpendingType::TaprootTweakedKey { .. } => {},
-                    OutputSpendingType::TaprootUntweakedKey { .. } => {},
-                    OutputSpendingType::TaprootScript { .. } => {},
-                    _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
-                }
-            },
-            SighashType::Ecdsa(_) => {
-                match spending_type {
-                    OutputSpendingType::SegwitPublicKey { .. } => {},
-                    OutputSpendingType::SegwitScript { .. } => {},
-                    _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
-                }
-            },
-        }
-
-        self.spending_type = Some(spending_type);
-        Ok(())
-    }
-
-    pub fn set_signatures(&mut self, signatures: Vec<Signature>) {
-        self.signatures = signatures;
-    }
-
-    pub fn sighash_type(&self) -> &SighashType {
-        &self.sighash_type
-    }
-
-    pub fn hashed_messages(&self) -> &Vec<Message> {
-        &self.hashed_messages
-    }
-
-    pub fn input_keys(&self) -> Vec<PublicKey> {
-        match &self.spending_type {
-            Some(OutputSpendingType::TaprootTweakedKey { key, .. }) => vec![*key],
-            Some(OutputSpendingType::TaprootUntweakedKey { key }) => vec![*key],
-            Some(OutputSpendingType::TaprootScript { spending_scripts, .. }) => spending_scripts.iter().map(|script| script.get_verifying_key()).collect(),
-            Some(OutputSpendingType::SegwitPublicKey { public_key, .. }) => vec![*public_key],
-            Some(OutputSpendingType::SegwitScript { script, .. }) => vec![script.get_verifying_key()],
-            None => vec![],
-        }
-    }
-
-    pub fn spending_type(&self) -> Result<&OutputSpendingType, GraphError> {
-        self.spending_type.as_ref().ok_or(GraphError::MissingOutputSpendingTypeForInputSpendingInfo(
-            format!("{:?}", self.sighash_type)
-        ))
-    }
-
-    pub fn signatures(&self) -> &Vec<Signature> {
-        &self.signatures
-    }
-
-    pub fn get_signature(&self, index: usize) -> Result<&Signature, GraphError> {
-        self.signatures.get(index).ok_or(GraphError::MissingSignature)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum SighashType {
-    Taproot(TapSighashType),
-    Ecdsa(EcdsaSighashType),
-}
-
-#[derive(Debug, Clone)]
-pub enum OutputSpendingType {
-    TaprootUntweakedKey{
-        key: PublicKey,
-    },
-    TaprootTweakedKey{
-        key: PublicKey,
-        tweak: Scalar,
-    },
-    TaprootScript{
-        spending_scripts: Vec<ProtocolScript>,
-        spend_info: TaprootSpendInfo,
-    },
-    SegwitPublicKey{
-        public_key: PublicKey,
-        value: Amount, 
-    },
-    SegwitScript{
-        script: ProtocolScript,
-        value: Amount, 
-    }
-}
-
-impl OutputSpendingType {
-    pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar) -> Self {
-        OutputSpendingType::TaprootTweakedKey {
-            key: *public_key,
-            tweak: *tweak,
-        }
-    }
-
-    pub fn new_taproot_key_spend(public_key: &PublicKey) -> Self {
-        OutputSpendingType::TaprootUntweakedKey {
-            key: *public_key,
-        }
-    }
-    
-    pub fn new_taproot_script_spend(spending_scripts: &[ProtocolScript], spend_info: &TaprootSpendInfo) -> OutputSpendingType {
-        OutputSpendingType::TaprootScript {
-            spending_scripts: spending_scripts.to_vec(),
-            spend_info: spend_info.clone(),
-        }
-    }
-    
-    pub fn new_segwit_key_spend(public_key: &PublicKey, value: Amount) -> OutputSpendingType {
-        OutputSpendingType::SegwitPublicKey { 
-            public_key: *public_key, 
-            value,
-        } 
-    }
-    
-    pub fn new_segwit_script_spend(script: &ProtocolScript, value: Amount) -> OutputSpendingType {
-        OutputSpendingType::SegwitScript { 
-            script: script.clone(),
-            value,
-        } 
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
     name: String,
     transaction: Transaction,
@@ -175,7 +31,7 @@ impl Node {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Connection {
     name: String,
     input_index: u32,
@@ -192,33 +48,29 @@ impl Connection {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransactionGraph {
     graph: Graph<Node, Connection>,
     node_indexes: HashMap<String, petgraph::graph::NodeIndex>,
 }
 
-impl Default for TransactionGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TransactionGraph {
-    pub fn new() -> Self {
+    pub fn new() -> Self{
+        let graph = Graph::new();
+        let node_indexes = HashMap::new();
+
         TransactionGraph {
-            graph: Graph::new(),
-            node_indexes: HashMap::new(),
+            graph,
+            node_indexes,
         }
     }
 
-    pub fn add_transaction(&mut self, name: &str, transaction: Transaction) {
-        let node_index = self.graph.add_node(Node::new(
-            name,
-            transaction
-        ));
+    pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+        let node = Node::new(name, transaction);
+        let node_index = self.graph.add_node(node.clone());
 
         self.node_indexes.insert(name.to_string(), node_index);
+        Ok(())
     }
 
     pub fn update_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
@@ -228,7 +80,6 @@ impl TransactionGraph {
         )?;
 
         node.transaction = transaction;
-
         Ok(())
     }
 
@@ -240,7 +91,6 @@ impl TransactionGraph {
 
         node.transaction = transaction;
         node.input_spending_infos.push(InputSpendingInfo::new(sighash_type));
-
         Ok(())
     }
 
@@ -250,9 +100,8 @@ impl TransactionGraph {
             name.to_string())
         )?;
 
-        node.transaction = transaction;
+        node.transaction = transaction;        
         node.output_spending_types.push(spending_type);
-
         Ok(())
     }
 
@@ -261,17 +110,20 @@ impl TransactionGraph {
         let to_node_index = self.get_node_index(to)?;
         let output_spending_type = self.get_output_spending_type(from, output_index)?;
 
-        self.graph.add_edge(from_node_index, to_node_index, Connection::new(
+        let connection = Connection::new(
             connection_name.to_string(),
             input_index,
             output_index,
-        ));
+        );
+        
+        self.graph.add_edge(from_node_index, to_node_index, connection.clone());
 
         let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
             to.to_string())
         )?;
 
         to_node.input_spending_infos[input_index as usize].set_spending_type(output_spending_type)?;
+
         Ok(())
     }
 
@@ -283,6 +135,7 @@ impl TransactionGraph {
         )?;
 
         to_node.input_spending_infos[to_node.transaction.input.len() - 1].set_spending_type(output_spending_type)?;
+
         Ok(())
     }
 
@@ -295,7 +148,7 @@ impl TransactionGraph {
         node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
     }
-
+        
     pub fn update_input_signatures(&mut self, transaction_name: &str, input_index: u32, signatures: Vec<Signature>) -> Result<(), GraphError> {
         let node_index = self.get_node_index(transaction_name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
@@ -303,6 +156,7 @@ impl TransactionGraph {
         )?;
 
         node.input_spending_infos[input_index as usize].set_signatures(signatures);
+
         Ok(())
     }
 
