@@ -49,9 +49,9 @@ mod tests {
         let challenge_spending_args = &[SpendingArgs::new_taproot_args(script_a.get_script()), SpendingArgs::new_taproot_args(renew_from.get_script())];
         let response_spending_args = &[SpendingArgs::new_taproot_args(script_a.get_script()), SpendingArgs::new_taproot_args(renew_to.get_script())];
 
-        let start = protocol.get_transaction_to_send("start", &[SpendingArgs::new_args()])?;
-        let challenge = protocol.get_transaction_to_send("challenge", challenge_spending_args)?;
-        let response = protocol.get_transaction_to_send("response", response_spending_args)?;
+        let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
+        let challenge = protocol.transaction_to_send("challenge", challenge_spending_args)?;
+        let response = protocol.transaction_to_send("response", response_spending_args)?;
 
         assert_eq!(start.input.len(), 1);
         assert_eq!(challenge.input.len(), 2);
@@ -61,9 +61,9 @@ mod tests {
         assert_eq!(challenge.output.len(), 2);
         assert_eq!(response.output.len(), 0);
 
-        let sighashes_start = protocol.get_transaction_spending_info("start")?;
-        let sighashes_challenge = protocol.get_transaction_spending_info("challenge")?;
-        let sighashes_response = protocol.get_transaction_spending_info("response")?;
+        let sighashes_start = protocol.spending_info("start")?;
+        let sighashes_challenge = protocol.spending_info("challenge")?;
+        let sighashes_response = protocol.spending_info("response")?;
 
         assert_eq!(sighashes_start.len(), 1);
         assert_eq!(sighashes_challenge.len(), 2);
@@ -157,12 +157,12 @@ mod tests {
             .connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
             .build()?;
 
-        let start = protocol.get_transaction_to_send("start", &[SpendingArgs::new_args()])?;
+        let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
 
         assert_eq!(start.input.len(), 1);
         assert_eq!(start.output.len(), 0);
 
-        let sighashes_start = protocol.get_transaction_spending_info("start")?;
+        let sighashes_start = protocol.spending_info("start")?;
 
         assert_eq!(sighashes_start.len(), 1);
         
@@ -194,13 +194,13 @@ mod tests {
 
         let spending_args = [SpendingArgs::new_taproot_args(script.get_script()), SpendingArgs::new_taproot_args(script.get_script())];
 
-        let a = protocol.get_transaction_to_send("A", &[SpendingArgs::new_args()])?;
-        let b0 = protocol.get_transaction_to_send("B_0", &spending_args)?;
-        let b1 = protocol.get_transaction_to_send("B_1", &spending_args)?;
-        let b2 = protocol.get_transaction_to_send("B_2", &spending_args)?;
-        let c0 = protocol.get_transaction_to_send("C_0", &spending_args)?;
-        let c1 = protocol.get_transaction_to_send("C_1", &spending_args)?;
-        let c2 = protocol.get_transaction_to_send("C_2", &spending_args)?;
+        let a = protocol.transaction_to_send("A", &[SpendingArgs::new_args()])?;
+        let b0 = protocol.transaction_to_send("B_0", &spending_args)?;
+        let b1 = protocol.transaction_to_send("B_1", &spending_args)?;
+        let b2 = protocol.transaction_to_send("B_2", &spending_args)?;
+        let c0 = protocol.transaction_to_send("C_0", &spending_args)?;
+        let c1 = protocol.transaction_to_send("C_1", &spending_args)?;
+        let c2 = protocol.transaction_to_send("C_2", &spending_args)?;
 
         assert_eq!(a.input.len(), 1);
         assert_eq!(b0.input.len(), 1);
@@ -212,13 +212,13 @@ mod tests {
         assert_eq!(c1.output.len(), 1);
         assert_eq!(c2.output.len(), 0);
 
-        let sighashes_a = protocol.get_transaction_spending_info("A")?;
-        let sighashes_b0 = protocol.get_transaction_spending_info("B_0")?;
-        let sighashes_b1 = protocol.get_transaction_spending_info("B_1")?;
-        let sighashes_b2 = protocol.get_transaction_spending_info("B_2")?;
-        let sighashes_c0 = protocol.get_transaction_spending_info("C_0")?;
-        let sighashes_c1 = protocol.get_transaction_spending_info("C_1")?;
-        let sighashes_c2 = protocol.get_transaction_spending_info("C_2")?;
+        let sighashes_a = protocol.spending_info("A")?;
+        let sighashes_b0 = protocol.spending_info("B_0")?;
+        let sighashes_b1 = protocol.spending_info("B_1")?;
+        let sighashes_b2 = protocol.spending_info("B_2")?;
+        let sighashes_c0 = protocol.spending_info("C_0")?;
+        let sighashes_c1 = protocol.spending_info("C_1")?;
+        let sighashes_c2 = protocol.spending_info("C_2")?;
 
         assert_eq!(sighashes_a.len(), 1);
         assert_eq!(sighashes_b0.len(), 1);
@@ -289,7 +289,7 @@ mod tests {
             .add_p2wsh_output(&to_rounds, value, &script)?;
 
         let protocol = builder.build()?;
-        let mut transaction_names = protocol.get_transaction_names();
+        let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 
         assert_eq!(&transaction_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
@@ -318,10 +318,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        let tx = protocol.get_transaction("A")?;
+        let tx = protocol.transaction("A")?;
         assert_eq!(tx.input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A"]);
 
         Ok(())
@@ -345,10 +345,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
@@ -371,10 +371,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
@@ -397,10 +397,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
@@ -426,10 +426,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
@@ -455,10 +455,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 3);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 2);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 3);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 2);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())
@@ -481,10 +481,10 @@ mod tests {
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
         let protocol = builder.build()?;
 
-        assert_eq!(protocol.get_transaction("A").unwrap().output.len(), 1);
-        assert_eq!(protocol.get_transaction("B").unwrap().input.len(), 1);
+        assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
+        assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
 
-        let transaction_names = protocol.get_transaction_names();
+        let transaction_names = protocol.transaction_names();
         assert_eq!(&transaction_names, &["A", "B"]);
 
         Ok(())

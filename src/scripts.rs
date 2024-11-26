@@ -126,43 +126,100 @@ pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ProtocolScript 
     check_signature(aggregated_key)
 }
 
-pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey) -> ProtocolScript {
+pub fn kickoff(aggregated_key: &PublicKey, ending_state_key: &WinternitzPublicKey, ending_step_number_key: &WinternitzPublicKey) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
-        { ots_checksig(xc_key, false) }
-        OP_PUSHNUM_1
+        { ots_checksig(ending_state_key, false)? }
+        { ots_checksig(ending_step_number_key, false)? }
     );
 
-    let mut script_with_keys = ProtocolScript::new(script, aggregated_key);
-    script_with_keys.add_key("xc", xc_key.derivation_index(), KeyType::WinternitzKey(xc_key.key_type()), 0);     
-
-    script_with_keys
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    protocol_script.add_key("ending_state", ending_state_key.derivation_index()?, KeyType::WinternitzKey(ending_state_key.key_type()), 0);
+    protocol_script.add_key("ending_step_number", ending_step_number_key.derivation_index()?, KeyType::WinternitzKey(ending_step_number_key.key_type()), 1);
+    Ok(protocol_script)
 }
 
-pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, yp_key: &WinternitzPublicKey) -> ProtocolScript {
+pub fn initial_stages(stage: usize, aggregated_key: &PublicKey, interval_keys: &[WinternitzPublicKey], selection_key: &WinternitzPublicKey) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
-        { ots_checksig(xc_key, false) }
-        { ots_checksig(xp_key, false) }
-        { ots_checksig(yp_key, false) }
+        for key in interval_keys {
+            { ots_checksig(key, false)? }
+        }
+        { ots_checksig(selection_key, false)? }
         OP_PUSHNUM_1
     );
 
-    let mut script_with_keys = ProtocolScript::new(script, aggregated_key);
-    script_with_keys.add_key("xc", xc_key.derivation_index(), KeyType::WinternitzKey(xc_key.key_type()), 0);    
-    script_with_keys.add_key("xp", xp_key.derivation_index(),KeyType::WinternitzKey(xp_key.key_type()), 1);  
-    script_with_keys.add_key("yp", yp_key.derivation_index(), KeyType::WinternitzKey(yp_key.key_type()), 2);  
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    for (index, key) in interval_keys.iter().enumerate() {
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32);
+    }
 
-    script_with_keys
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), selection_key.derivation_index()?, KeyType::WinternitzKey(selection_key.key_type()), interval_keys.len() as u32);
+    Ok(protocol_script)
+}
+
+pub fn stage_from_3_and_upward(stage: usize, aggregated_key: &PublicKey, interval_keys: &[WinternitzPublicKey], key_previous_selection_bob: &WinternitzPublicKey, key_previous_selection_alice: &WinternitzPublicKey) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        for key in interval_keys {
+            { ots_checksig(key, false)? }
+        }
+        { ots_checksig(key_previous_selection_bob, false)? }
+        { ots_checksig(key_previous_selection_alice, false)? }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    for (index, key) in interval_keys.iter().enumerate() {
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32);
+    }
+
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_bob.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_bob.key_type()), interval_keys.len() as u32);
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_alice.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_alice.key_type()), interval_keys.len() as u32);
+
+    Ok(protocol_script)
+}
+
+pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        { ots_checksig(xc_key, false)? }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0);     
+
+    Ok(protocol_script)
+}
+
+pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPublicKey, xp_key: &WinternitzPublicKey, yp_key: &WinternitzPublicKey) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        { ots_checksig(xc_key, false)? }
+        { ots_checksig(xp_key, false)? }
+        { ots_checksig(yp_key, false)? }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0);    
+    protocol_script.add_key("xp", xp_key.derivation_index()?,KeyType::WinternitzKey(xp_key.key_type()), 1);  
+    protocol_script.add_key("yp", yp_key.derivation_index()?, KeyType::WinternitzKey(yp_key.key_type()), 2);  
+
+    Ok(protocol_script)
 }
 
 // Winternitz Signature verification. Note that the script inputs are malleable.
-pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> ScriptBuf {
+pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Result<ScriptBuf, ScriptError> {
     let total_size = public_key.total_len() as u32;
-    let message_size = public_key.message_size() as u32;
-    let checksum_size = public_key.checksum_size() as u32;
+    let message_size = public_key.message_size()? as u32;
+    let checksum_size = public_key.checksum_size()? as u32;
     let base = public_key.base() as u32;
     let bits_per_digit = public_key.bits_per_digit();
     let public_key_hashes = public_key.to_hashes();
@@ -245,7 +302,7 @@ pub fn ots_checksig(public_key: &WinternitzPublicKey, keep_message: bool) -> Scr
         }
     };
 
-    verify
+    Ok(verify)
 }
 
 pub fn build_taproot_spend_info(secp: &Secp256k1<All> ,internal_key: &UntweakedPublicKey, taproot_spending_scripts: &[ProtocolScript]) -> Result<TaprootSpendInfo, ScriptError> {
@@ -311,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn test_script_with_keys() {
+    fn test_protocol_script() {
         let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
         let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 

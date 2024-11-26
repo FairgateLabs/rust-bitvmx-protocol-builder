@@ -12,12 +12,7 @@ static CONFIG_PATH: &str = "config";
 #[derive(Debug, Deserialize)]
 pub struct ProtocolBuilderConfig {
     pub protocol_amount: u64,
-    pub speedup_from_key: String,
-    pub speedup_to_key: String,
     pub speedup_amount: u64,
-    pub timelock_from_key: String,
-    pub timelock_to_key: String,
-    pub timelock_renew_key: String,
     pub locked_amount: u64,
     pub locked_blocks: u16,
     pub ecdsa_sighash_type: String,

@@ -25,7 +25,6 @@ pub struct Menu {
 
     #[arg(short, long, help = "Path to the graph storage file")]
     graph_storage_path: PathBuf,
-
 }
 
 #[derive(Subcommand)]
@@ -225,6 +224,7 @@ impl Cli {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_timelock_connection(&self, protocol_name: &str, graph_storage_path: PathBuf, from: &str, value: u64, to: &str, blocks: u16, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         let mut rng = secp256k1::rand::thread_rng();
@@ -240,6 +240,7 @@ impl Cli {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn connect_rounds(&self, protocol_name: &str, graph_storage_path: PathBuf, rounds: u32, from: &str, to: &str, value: u64, data: &str) -> Result<()> {
         let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");

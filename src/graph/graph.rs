@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{secp256k1::Message, Transaction, TxOut};
+use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,12 @@ impl Connection {
 pub struct TransactionGraph {
     graph: Graph<Node, Connection>,
     node_indexes: HashMap<String, petgraph::graph::NodeIndex>,
+}
+
+impl Default for TransactionGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TransactionGraph {
@@ -167,6 +173,15 @@ impl TransactionGraph {
                 &node.transaction
             }
         )
+    }
+
+    pub fn get_transaction_with_id(&self, txid: Txid) -> Result<&Transaction, GraphError> {
+        for node in self.graph.node_weights() {
+            if node.transaction.compute_txid() == txid {
+                return Ok(&node.transaction);
+            }
+        }
+        Err(GraphError::TransactionNotFound(txid.to_string()))
     }
 
     pub fn next_transactions(&self, name: &str) -> Result<Vec<&Transaction>, GraphError> {

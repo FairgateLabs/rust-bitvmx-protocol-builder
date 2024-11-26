@@ -1,5 +1,5 @@
 use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
-use key_manager::errors::KeyManagerError;
+use key_manager::errors::{KeyManagerError, WinternitzError};
 use thiserror::Error;
 
 use config as settings;
@@ -40,6 +40,9 @@ pub enum GraphError {
 
     #[error("Invalid signature type")]
     InvalidSignatureType,
+
+    #[error("Transaction with txid {0} not found in graph")]
+    TransactionNotFound(String),
 }
 
 #[derive(Error, Debug)]
@@ -52,6 +55,9 @@ pub enum ScriptError {
 
     #[error("Failed to build taptree for given spending conditions")]
     TapTreeError(#[from] TaprootBuilderError),
+
+    #[error("Missing extra data error in Winternitz Public Key")]
+    MissingExtraDataError(#[from] WinternitzError),
 }
 
 #[derive(Error, Debug)]

@@ -8,12 +8,7 @@
     },
     "builder": {
         "protocol_amount": 200,
-        "speedup_from_key": "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2",
-        "speedup_to_key": "023e328db822002ca45731f4a364e932c3fceea33d99e0544a50c3b1e752002947",
         "speedup_amount": 9999859,
-        "timelock_from_key": "03c7805b5add3c9ae01d0998392295f09dbcf25d33677842e8ad0b29f51bbaeac2",
-        "timelock_to_key": "023e328db822002ca45731f4a364e932c3fceea33d99e0544a50c3b1e752002947",
-        "timelock_renew_key": "023e328db822002ca45731f4a364e932c3fceea33d99e0544a50c3b1e752002947",
         "locked_amount": 5000000000,
         "locked_blocks": 200,
         "ecdsa_sighash_type": "SIGHASH_ALL",
