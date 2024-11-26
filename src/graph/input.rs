@@ -48,6 +48,16 @@ pub enum SighashType {
     Ecdsa(EcdsaSighashType),
 }
 
+impl SighashType {
+    pub fn taproot_all() -> SighashType {
+        SighashType::Taproot(TapSighashType::All)
+    }
+
+    pub fn ecdsa_all() -> SighashType {
+        SighashType::Ecdsa(EcdsaSighashType::All)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
     spending_type: Option<OutputSpendingType>,

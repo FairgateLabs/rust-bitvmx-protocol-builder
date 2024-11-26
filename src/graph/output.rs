@@ -1,7 +1,7 @@
 use bitcoin::{key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, XOnlyPublicKey};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::{builder::Protocol, scripts::{self, ProtocolScript}};
+use crate::scripts::{self, ProtocolScript};
 
 const ALL_OUTPUT_TYPES: &[&str] = &[
     "taproot_untweaked_key",
