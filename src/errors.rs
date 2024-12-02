@@ -43,6 +43,9 @@ pub enum GraphError {
 
     #[error("Transaction with txid {0} not found in graph")]
     TransactionNotFound(String),
+
+    #[error("Transaction with name {0} already exists in graph")]
+    TransactionAlreadyExists(String)
 }
 
 #[derive(Error, Debug)]
