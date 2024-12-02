@@ -45,7 +45,10 @@ pub enum GraphError {
     TransactionNotFound(String),
 
     #[error("Transaction with name {0} already exists in graph")]
-    TransactionAlreadyExists(String)
+    TransactionAlreadyExists(String),
+
+    #[error("Transaction name cannot be empty")]
+    EmptyTransactionName,
 }
 
 #[derive(Error, Debug)]
