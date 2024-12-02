@@ -72,10 +72,14 @@ impl TransactionGraph {
     }
 
     pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         if self.node_indexes.contains_key(name) {
             return Err(GraphError::TransactionAlreadyExists(name.to_string()));
         }
-        
+
         let node = Node::new(name, transaction);
         let node_index = self.graph.add_node(node.clone());
 
@@ -84,6 +88,10 @@ impl TransactionGraph {
     }
 
     pub fn update_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             name.to_string())
@@ -94,6 +102,10 @@ impl TransactionGraph {
     }
 
     pub fn add_transaction_input(&mut self, name: &str, transaction: Transaction, sighash_type: &SighashType) -> Result<(), GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+        
         let node_index = self.get_node_index(name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             name.to_string())
@@ -105,6 +117,10 @@ impl TransactionGraph {
     }
 
     pub fn add_transaction_output(&mut self, name: &str, transaction: Transaction, spending_type: OutputSpendingType) -> Result<(), GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+        
         let node_index = self.get_node_index(name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             name.to_string())
@@ -116,6 +132,14 @@ impl TransactionGraph {
     }
 
     pub fn connect(&mut self, connection_name: &str, from: &str, output_index: u32, to: &str, input_index: u32) -> Result<(), GraphError> {
+        if from.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
+        if to.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+        
         let from_node_index = self.get_node_index(from)?;
         let to_node_index = self.get_node_index(to)?;
         let output_spending_type = self.get_output_spending_type(from, output_index)?;
@@ -138,6 +162,10 @@ impl TransactionGraph {
     }
 
     pub fn connect_with_external_transaction(&mut self, output_spending_type: OutputSpendingType, to: &str) -> Result<(), GraphError> {
+        if to.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+        
         let to_node_index = self.get_node_index(to)?;
 
         let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
@@ -150,6 +178,10 @@ impl TransactionGraph {
     }
 
     pub fn update_hashed_messages(&mut self, transaction_name: &str, input_index: u32, message_hashes: Vec<Message>) -> Result<(), GraphError> {
+        if transaction_name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(transaction_name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             transaction_name.to_string())
@@ -160,6 +192,10 @@ impl TransactionGraph {
     }
         
     pub fn update_input_signatures(&mut self, transaction_name: &str, input_index: u32, signatures: Vec<Signature>) -> Result<(), GraphError> {
+        if transaction_name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(transaction_name)?;
         let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
             transaction_name.to_string())
@@ -171,6 +207,10 @@ impl TransactionGraph {
     }
 
     pub fn get_transaction(&self, name: &str) -> Result<&Transaction, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         self.node_indexes.get(name).ok_or(GraphError::MissingTransaction(name.to_string())).map(
             |node_index| {
                 let node = self.graph.node_weight(*node_index).unwrap();
@@ -189,6 +229,10 @@ impl TransactionGraph {
     }
 
     pub fn next_transactions(&self, name: &str) -> Result<Vec<&Transaction>, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let dependencies = self.get_dependencies(name)?;
         let next_transactions = dependencies.iter()
             .map(|(name, _)| self.get_transaction(name))
@@ -198,6 +242,10 @@ impl TransactionGraph {
     }
 
     pub fn get_dependencies(&self, name: &str) -> Result<Vec<(String, u32)>, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(name)?;
 
         let dependencies = self.graph.edges(node_index)
@@ -213,6 +261,10 @@ impl TransactionGraph {
     }
 
     pub fn get_prevouts(&self, name: &str) -> Result<Vec<TxOut>, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(name)?;
         let transaction = self.get_transaction(name)?;
 
@@ -232,6 +284,10 @@ impl TransactionGraph {
     }
 
     pub fn get_transaction_spending_info(&self, name: &str) -> Result<Vec<InputSpendingInfo>, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
         let node_index = self.get_node_index(name)?;
         let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
             name.to_string())
