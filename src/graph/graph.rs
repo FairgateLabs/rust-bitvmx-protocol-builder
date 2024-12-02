@@ -72,6 +72,10 @@ impl TransactionGraph {
     }
 
     pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+        if self.node_indexes.contains_key(name) {
+            return Err(GraphError::TransactionAlreadyExists(name.to_string()));
+        }
+        
         let node = Node::new(name, transaction);
         let node_index = self.graph.add_node(node.clone());
 
