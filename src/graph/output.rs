@@ -263,3 +263,77 @@ impl OutputSpendingType {
         } 
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bitcoin::{key::rand, secp256k1::Secp256k1};
+
+    #[test]
+    fn test_new_taproot_tweaked_key_spend() {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let tweak = Scalar::random();
+
+        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak);
+
+        match spending_type {
+            OutputSpendingType::TaprootTweakedKey { key, tweak: t } => {
+                assert_eq!(key, public_key.into());
+                assert_eq!(t, tweak);
+            },
+            _ => panic!("Wrong enum variant"),
+        }
+    }
+
+    #[test]
+    fn test_new_taproot_key_spend() {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+
+        let spending_type = OutputSpendingType::new_taproot_key_spend(&public_key.into());
+
+        match spending_type {
+            OutputSpendingType::TaprootUntweakedKey { key } => {
+                assert_eq!(key, public_key.into());
+            },
+            _ => panic!("Wrong enum variant"),
+        }
+    }
+
+    #[test]
+    fn test_new_segwit_key_spend() {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let value = Amount::from_sat(1000);
+
+        let spending_type = OutputSpendingType::new_segwit_key_spend(&public_key.into(), value);
+
+        match spending_type {
+            OutputSpendingType::SegwitPublicKey { public_key: key, value: v } => {
+                assert_eq!(key, public_key.into());
+                assert_eq!(v, value);
+            },
+            _ => panic!("Wrong enum variant"),
+        }
+    }
+
+    #[test]
+    fn test_new_segwit_script_spend() {
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let script = ProtocolScript::new(bitcoin::ScriptBuf::new(), &public_key.into());
+        let value = Amount::from_sat(1000);
+
+        let spending_type = OutputSpendingType::new_segwit_script_spend(&script, value);
+
+        match spending_type {
+            OutputSpendingType::SegwitScript { script: s, value: v } => {
+                assert_eq!(s.get_script(), script.get_script());
+                assert_eq!(v, value);
+            },
+            _ => panic!("Wrong enum variant"),
+        }
+    }
+}
