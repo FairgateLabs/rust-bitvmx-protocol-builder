@@ -64,6 +64,9 @@ pub enum ScriptError {
 
     #[error("Missing extra data error in Winternitz Public Key")]
     MissingExtraDataError(#[from] WinternitzError),
+
+    #[error("Script name cannot be empty")]
+    EmptyScriptName,
 }
 
 #[derive(Error, Debug)]

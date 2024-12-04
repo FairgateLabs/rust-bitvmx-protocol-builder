@@ -67,9 +67,14 @@ impl ProtocolScript {
         }
     }
 
-    pub fn add_key(&mut self, name: &str, derivation_index: u32, key_type: KeyType, key_position: u32) {
+    pub fn add_key(&mut self, name: &str, derivation_index: u32, key_type: KeyType, key_position: u32) -> Result<(), ScriptError> {
+        if name.trim().is_empty() {
+            return Err(ScriptError::EmptyScriptName);
+        }
         let key = ScriptKey::new(name, derivation_index, key_type, key_position);
         self.keys.insert(key.name().to_string(), key);
+
+        Ok(())
     }
 
     pub fn get_script(&self) -> &ScriptBuf {
@@ -135,8 +140,8 @@ pub fn kickoff(aggregated_key: &PublicKey, ending_state_key: &WinternitzPublicKe
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("ending_state", ending_state_key.derivation_index()?, KeyType::WinternitzKey(ending_state_key.key_type()), 0);
-    protocol_script.add_key("ending_step_number", ending_step_number_key.derivation_index()?, KeyType::WinternitzKey(ending_step_number_key.key_type()), 1);
+    protocol_script.add_key("ending_state", ending_state_key.derivation_index()?, KeyType::WinternitzKey(ending_state_key.key_type()), 0).unwrap();
+    protocol_script.add_key("ending_step_number", ending_step_number_key.derivation_index()?, KeyType::WinternitzKey(ending_step_number_key.key_type()), 1).unwrap();
     Ok(protocol_script)
 }
 
@@ -153,10 +158,10 @@ pub fn initial_stages(stage: usize, aggregated_key: &PublicKey, interval_keys: &
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
     for (index, key) in interval_keys.iter().enumerate() {
-        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32);
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32).unwrap();
     }
 
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), selection_key.derivation_index()?, KeyType::WinternitzKey(selection_key.key_type()), interval_keys.len() as u32);
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), selection_key.derivation_index()?, KeyType::WinternitzKey(selection_key.key_type()), interval_keys.len() as u32).unwrap();
     Ok(protocol_script)
 }
 
@@ -174,11 +179,11 @@ pub fn stage_from_3_and_upward(stage: usize, aggregated_key: &PublicKey, interva
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
     for (index, key) in interval_keys.iter().enumerate() {
-        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32);
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32).unwrap();
     }
 
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_bob.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_bob.key_type()), interval_keys.len() as u32);
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_alice.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_alice.key_type()), interval_keys.len() as u32);
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_bob.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_bob.key_type()), interval_keys.len() as u32).expect("Failed to add key");
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_alice.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_alice.key_type()), interval_keys.len() as u32).expect("Failed to add key");
 
     Ok(protocol_script)
 }
@@ -192,7 +197,7 @@ pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzP
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0);     
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0).unwrap();     
 
     Ok(protocol_script)
 }
@@ -208,9 +213,9 @@ pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPu
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0);    
-    protocol_script.add_key("xp", xp_key.derivation_index()?,KeyType::WinternitzKey(xp_key.key_type()), 1);  
-    protocol_script.add_key("yp", yp_key.derivation_index()?, KeyType::WinternitzKey(yp_key.key_type()), 2);  
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0).unwrap();    
+    protocol_script.add_key("xp", xp_key.derivation_index()?,KeyType::WinternitzKey(xp_key.key_type()), 1).unwrap();  
+    protocol_script.add_key("yp", yp_key.derivation_index()?, KeyType::WinternitzKey(yp_key.key_type()), 2).unwrap();  
 
     Ok(protocol_script)
 }
@@ -373,7 +378,7 @@ mod tests {
         let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
         let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
-        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 0);
+        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 0).expect("Failed to add key");
         
         assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().name, AGGREGATED_SIGNATURE);
         assert_eq!(script.get_key(AGGREGATED_SIGNATURE).unwrap().key_position(), 0);
@@ -387,11 +392,54 @@ mod tests {
         let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
         let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
-        script.add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0);
-        script.add_key(AGGREGATED_SIGNATURE, 2, KeyType::EcdsaKey, 2);
-        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 1);
+        script.add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0).expect("Failed to add key");
+        script.add_key(AGGREGATED_SIGNATURE, 2, KeyType::EcdsaKey, 2).expect("Failed to add key");
+        script.add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 1).expect("Failed to add key");
         let keys = script.get_keys();
 
-        assert!(keys.windows(2).all(|w| w[0].key_position() <= w[1].key_position()))        
+        assert!(keys.windows(2).all(|w| w[0].key_position() <= w[1].key_position()));
     }
+
+    #[test]
+    fn test_invalid_key_position() {
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        script.add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0).unwrap();
+        
+        // Non-existent key
+        assert!(script.get_key("non_existent_key").is_none());
+    }
+
+    #[test]
+    fn test_script_key_type() {
+        let ecdsa_key = ScriptKey::new("ecdsa_key", 1, KeyType::EcdsaKey, 0);
+        let xonly_key = ScriptKey::new("xonly_key", 1, KeyType::XOnlyKey, 0);
+        let winternitz_key = ScriptKey::new("winternitz_key", 1, KeyType::WinternitzKey(WinternitzType::HASH160), 0);
+
+        assert_eq!(xonly_key.key_type(), KeyType::XOnlyKey);
+        assert_eq!(ecdsa_key.key_type(), KeyType::EcdsaKey);
+        assert_eq!(winternitz_key.key_type(), KeyType::WinternitzKey(WinternitzType::HASH160));
+        assert_ne!(winternitz_key.key_type(), ecdsa_key.key_type());
+    }
+
+    #[test]
+    fn test_empty_protocol_script() {
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
+        let script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        assert!(script.get_keys().is_empty());
+    }
+
+    #[test]
+    fn test_empty_script_name() {
+        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let verifying_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        assert!(script.add_key("", 1, KeyType::EcdsaKey, 0).is_err());
+    }
+
 }

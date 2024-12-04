@@ -1041,7 +1041,7 @@ impl ProtocolBuilder {
     }
 
     fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {
-        self.storage.write(&self.protocol.name, serde_json::to_string(&self.protocol)?)?;
+        self.storage.write(&self.protocol.name, &serde_json::to_string(&self.protocol)?)?;
         Ok(())
     }
 }
