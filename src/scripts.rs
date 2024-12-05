@@ -140,8 +140,8 @@ pub fn kickoff(aggregated_key: &PublicKey, ending_state_key: &WinternitzPublicKe
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("ending_state", ending_state_key.derivation_index()?, KeyType::WinternitzKey(ending_state_key.key_type()), 0).unwrap();
-    protocol_script.add_key("ending_step_number", ending_step_number_key.derivation_index()?, KeyType::WinternitzKey(ending_step_number_key.key_type()), 1).unwrap();
+    protocol_script.add_key("ending_state", ending_state_key.derivation_index()?, KeyType::WinternitzKey(ending_state_key.key_type()), 0)?;
+    protocol_script.add_key("ending_step_number", ending_step_number_key.derivation_index()?, KeyType::WinternitzKey(ending_step_number_key.key_type()), 1)?;
     Ok(protocol_script)
 }
 
@@ -158,10 +158,10 @@ pub fn initial_stages(stage: usize, aggregated_key: &PublicKey, interval_keys: &
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
     for (index, key) in interval_keys.iter().enumerate() {
-        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32).unwrap();
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32)?;
     }
 
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), selection_key.derivation_index()?, KeyType::WinternitzKey(selection_key.key_type()), interval_keys.len() as u32).unwrap();
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), selection_key.derivation_index()?, KeyType::WinternitzKey(selection_key.key_type()), interval_keys.len() as u32)?;
     Ok(protocol_script)
 }
 
@@ -179,11 +179,11 @@ pub fn stage_from_3_and_upward(stage: usize, aggregated_key: &PublicKey, interva
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
     for (index, key) in interval_keys.iter().enumerate() {
-        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32).unwrap();
+        protocol_script.add_key(format!("stage_{}_{}", stage, index).as_str(), key.derivation_index()?, KeyType::WinternitzKey(key.key_type()), index as u32)?;
     }
 
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_bob.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_bob.key_type()), interval_keys.len() as u32).expect("Failed to add key");
-    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_alice.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_alice.key_type()), interval_keys.len() as u32).expect("Failed to add key");
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_bob.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_bob.key_type()), interval_keys.len() as u32)?;
+    protocol_script.add_key(format!("selection_{}", stage).as_str(), key_previous_selection_alice.derivation_index()?, KeyType::WinternitzKey(key_previous_selection_alice.key_type()), interval_keys.len() as u32)?;
 
     Ok(protocol_script)
 }
@@ -197,7 +197,7 @@ pub fn linked_message_challenge(aggregated_key: &PublicKey, xc_key: &WinternitzP
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0).unwrap();     
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0)?;     
 
     Ok(protocol_script)
 }
@@ -213,9 +213,9 @@ pub fn linked_message_response(aggregated_key: &PublicKey, xc_key: &WinternitzPu
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
-    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0).unwrap();    
-    protocol_script.add_key("xp", xp_key.derivation_index()?,KeyType::WinternitzKey(xp_key.key_type()), 1).unwrap();  
-    protocol_script.add_key("yp", yp_key.derivation_index()?, KeyType::WinternitzKey(yp_key.key_type()), 2).unwrap();  
+    protocol_script.add_key("xc", xc_key.derivation_index()?, KeyType::WinternitzKey(xc_key.key_type()), 0)?;    
+    protocol_script.add_key("xp", xp_key.derivation_index()?,KeyType::WinternitzKey(xp_key.key_type()), 1)?;  
+    protocol_script.add_key("yp", yp_key.derivation_index()?, KeyType::WinternitzKey(yp_key.key_type()), 2)?;  
 
     Ok(protocol_script)
 }
