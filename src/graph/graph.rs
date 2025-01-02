@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{hex::test_hex_unwrap, secp256k1::Message, Transaction, TxOut, Txid};
+use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
 use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
 use serde::{Deserialize, Serialize};
 
@@ -402,7 +402,7 @@ impl TransactionGraph {
 #[cfg(test)]
 mod test {    
     use bitcoin::{consensus::Decodable, Transaction};
-    use super::test_hex_unwrap as hex;
+    use bitcoin::hex::test_hex_unwrap as hex;
     use super::Node;
 
     const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
@@ -465,7 +465,7 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();        
         graph.add_transaction("tx1", tx.clone()).unwrap();        
-        graph.add_transaction("tx1", tx.clone());
+        assert!(graph.add_transaction("tx1", tx.clone()).is_err());
 
         assert!(graph.contains_transaction("tx1"));
         assert!(!graph.contains_transaction("tx2"));        

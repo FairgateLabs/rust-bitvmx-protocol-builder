@@ -242,11 +242,13 @@ impl InputSpendingInfo {
     }
 }
 
+
+#[cfg(test)]
 mod test {
     use super::*;
     use bitcoin::key::rand;
-    use bitcoin::secp256k1::{self, Message, Secp256k1};
-    use bitcoin::{taproot, ecdsa, EcdsaSighashType, TapSighashType};
+    use bitcoin::secp256k1::{Message, Secp256k1};
+    use bitcoin::{taproot, EcdsaSighashType, TapSighashType};
 
     #[test]
     fn test_empty_signatures() {
