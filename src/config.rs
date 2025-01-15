@@ -1,8 +1,8 @@
 use config as settings;
-use key_manager::config::{KeyManagerConfig, StorageConfig};
+use key_manager::config::{KeyManagerConfig, KeyStorageConfig};
 use serde::Deserialize;
-use tracing::warn;
 use std::env;
+use tracing::warn;
 
 use crate::errors::ConfigError;
 
@@ -34,7 +34,7 @@ pub struct Config {
     pub rpc: RpcConfig,
     pub builder: ProtocolBuilderConfig,
     pub key_manager: KeyManagerConfig,
-    pub storage: StorageConfig,
+    pub key_storage: KeyStorageConfig,
 }
 
 impl Config {

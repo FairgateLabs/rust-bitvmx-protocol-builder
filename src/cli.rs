@@ -1,13 +1,25 @@
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
 
-use bitcoin::{hashes::Hash, secp256k1, Amount, EcdsaSighashType, Network, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
+use bitcoin::{
+    hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType,
+    XOnlyPublicKey,
+};
 use clap::{Parser, Subcommand};
-use key_manager::{key_manager::KeyManager, keystorage::database::DatabaseKeyStore};
+use key_manager::{
+    create_database_key_store_from_config, create_key_manager_from_config, key_manager::KeyManager,
+    keystorage::database::DatabaseKeyStore,
+};
 use tracing::info;
 
-use crate::{builder::ProtocolBuilder, config::Config, errors::CliError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
+use crate::{
+    builder::ProtocolBuilder,
+    config::Config,
+    graph::{input::SighashType, output::OutputSpendingType},
+    scripts::ProtocolScript,
+    unspendable::unspendable_key,
+};
 
 pub struct Cli {
     pub config: Config,
@@ -254,47 +266,13 @@ impl Cli {
     }
 
     fn key_manager(&self) -> Result<KeyManager<DatabaseKeyStore>> {
-        let key_derivation_seed = self.get_key_derivation_seed()?;
-        let key_derivation_path = &self.config.key_manager.key_derivation_path;
-        let winternitz_seed = self.get_winternitz_seed()?;
-        let network = Network::from_str(self.config.key_manager.network.as_str()).map_err(|e| CliError::InvalidNetwork(e.to_string()))?;
-        let path = self.get_storage_path()?;
-        let password: Vec<u8> = self.config.storage.password.as_bytes().to_vec();
-
-        let keystore = DatabaseKeyStore::new(path, password, network)?;
-
-        let key_manager = KeyManager::new(
-            network, 
-            key_derivation_path, 
-            key_derivation_seed, 
-            winternitz_seed,
-            keystore,
+        let keystore = create_database_key_store_from_config(
+            &self.config.key_storage,
+            &self.config.key_manager.network,
         )?;
-
-        Ok(key_manager)
-    }
-
-    fn get_storage_path(&self) -> Result<PathBuf> {
-        Ok(PathBuf::from(&self.config.storage.path))
-    }
-
-    fn get_winternitz_seed(&self) -> Result<[u8; 32]> {
-        let winternitz_seed = hex::decode(self.config.key_manager.winternitz_seed.clone())?;
-
-        if winternitz_seed.len() > 32 {
-            return Err(CliError::BadArgument { msg: "Winternitz secret length must be 32 bytes".to_string() }.into());
-        }
-
-        Ok(winternitz_seed.as_slice().try_into()?)
-    }
-
-    fn get_key_derivation_seed(&self) -> Result<[u8; 32]> {
-        let key_derivation_seed = hex::decode(self.config.key_manager.key_derivation_seed.clone())?;
-
-        if key_derivation_seed.len() > 32 {
-            return Err(CliError::BadArgument { msg: "Key derivation seed length must be 32 bytes".to_string() }.into());
-        }
-
-        Ok(key_derivation_seed.as_slice().try_into()?)
+        Ok(create_key_manager_from_config(
+            &self.config.key_manager,
+            keystore,
+        )?)
     }
 }
