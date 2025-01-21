@@ -35,8 +35,8 @@ jobs:
           
       - name: Build project
         run: |
-          cd ..
-          ls
+          cd /home/runner/work/rust-bitvmx-workspace/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
+          ls  # List files to verify we're in the correct directory
           cargo build --verbose
 
       - name: Run tests
