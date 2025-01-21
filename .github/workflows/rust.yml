@@ -31,7 +31,7 @@ jobs:
           cd rust-bitvmx-workspace
           
       - name: Build project
-        run: ls && cd .. && cargo build --verbose
+        run: cd rust-bitvmx-protocol-builder && cargo build --verbose
 
       - name: Run tests
         run: cargo test --verbose
