@@ -30,7 +30,6 @@ jobs:
       
       - name: Clone rust-bitvmx-workspace
         run: |
-          cd ..
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
           
       - name: Build project
@@ -58,7 +57,6 @@ jobs:
         
     - name: Clone rust-bitvmx-workspace
       run: |
-        cd ..
         git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
 
     - name: Run cargo-tarpaulin
