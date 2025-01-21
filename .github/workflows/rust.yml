@@ -26,22 +26,20 @@ jobs:
           git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
 
       - name: Clone rust-bitvmx-workspace
+        working-directory: ./app
         run: |
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
 
       - name: List files after cloning repository
+        working-directory: ./app
         run: |
           ls -l
           ls -l rust-bitvmx-workspace  # List contents of the cloned directory
           ls -l rust-bitvmx-workspace/*  # List contents of all subdirectories for verification
       
       - name: Build project
-        run: |
-          # Verify if the directory is actually present          
-          ls -l /home/runner/work/rust-bitvmx-workspace/
-          # Build the project if Cargo.toml is found
-          cd /home/runner/work/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
-          ls  # List files here again for verification
+        working-directory: ./app
+        run: |       
           cargo build --verbose
 
       - name: Run tests
