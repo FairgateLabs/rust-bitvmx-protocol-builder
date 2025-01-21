@@ -42,7 +42,7 @@ jobs:
       
       - name: Build project
         run: |
-          cd $GITHUB_WORKSPACE/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
+          cd $GITHUB_WORKSPACE/rust-bitvmx-workspace/rust-bitvmx-protocol-builder/rust-bitvmx-protocol-builder
           pwd
           ls -l
           cd ..
