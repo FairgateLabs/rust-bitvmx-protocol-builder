@@ -31,13 +31,11 @@ jobs:
 
       - name: List files after cloning repository
         run: |
-          ls -l
-          ls -l rust-bitvmx-workspace
           ls -l rust-bitvmx-workspace/rust-bitvmx-protocol-builder  # List files in this directory
           
       - name: Build project
+        working-directory: rust-bitvmx-workspace/rust-bitvmx-protocol-builder
         run: |
-          cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
           ls
           cargo build --verbose
 
