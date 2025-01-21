@@ -34,26 +34,14 @@ jobs:
           ref: main
           path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
           submodules: true
-
-      - name: List files after cloning repository
-        run: |
-          ls -l
-          ls -l rust-bitvmx-workspace  # List contents of the cloned directory
-          ls -l rust-bitvmx-workspace/*  # List contents of all subdirectories for verification
       
       - name: Build project
         run: |
           cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
-          pwd
-          ls -l
-          cd ..
-          ls -l 
-          cd ..
-          ls -l
-        #  cargo build --verbose
+          cargo build --verbose
 
-      #- name: Run tests
-      #  run: cargo test --verbose
+      - name: Run tests
+        run: cargo test --verbose
   
   test-with-coverage:
     if: ${{ contains(github.event.pull_request.title, '[cov]') }}
@@ -65,19 +53,18 @@ jobs:
       repository-projects: write
 
     steps:
-    - name: Set up Git credentials for key manager and storage backend
+    - name: Set up Git credentials
       run: |
         git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
-    
-    - name: Checkout repository
+
+    - name: Checkout rust-bitvmx-workspace
       uses: actions/checkout@v4
-        
-    - name: Clone rust-bitvmx-workspace
-      run: |
-        cd ..
-        git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
-        cd rust-bitvmx-workspace
-        mv * .* ..
+      with:
+        repository: FairgateLabs/rust-bitvmx-workspace
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+        ref: main
+        path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
+        submodules: true
 
     - name: Run cargo-tarpaulin
       uses: actions-rs/tarpaulin@v0.1
