@@ -20,29 +20,26 @@ jobs:
   test:
     if: ${{ !contains(github.event.pull_request.title, '[cov]') }}
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Set up Git credentials for key manager and storage backend
-        run: |
-          git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
-
-      - name: Checkout repository
+      - name: Checkout rust-bitvmx-workspace
         uses: actions/checkout@v4
+        with:
+          repository: FairgateLabs/rust-bitvmx-workspace
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
+          ref: main
+          path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
+          submodules: true
       
-      - name: Clone rust-bitvmx-key-manager
-        run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
-          
-      - name: Clone rust-bitvmx-storage-backend
-        run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git
-          
       - name: Build project
-        run: cargo build --verbose
+        run: |
+          cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
+          cargo build --verbose
 
       - name: Run tests
-        run: cargo test --verbose
+        run: |
+          cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
+          cargo test --verbose
   
   test-with-coverage:
     if: ${{ contains(github.event.pull_request.title, '[cov]') }}
@@ -54,22 +51,18 @@ jobs:
       repository-projects: write
 
     steps:
-    - name: Set up Git credentials for key manager and storage backend
+    - name: Set up Git credentials
       run: |
         git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
-    
-    - name: Checkout repository
-      uses: actions/checkout@v4
-        
-    - name: Clone rust-bitvmx-key-manager
-      run: |
-        cd ..
-        git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
 
-    - name: Clone rust-bitvmx-storage-backend
-      run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git
+    - name: Checkout rust-bitvmx-workspace
+      uses: actions/checkout@v4
+      with:
+        repository: FairgateLabs/rust-bitvmx-workspace
+        token: ${{ secrets.REPO_ACCESS_TOKEN }}
+        ref: main
+        path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
+        submodules: true
 
     - name: Run cargo-tarpaulin
       uses: actions-rs/tarpaulin@v0.1
