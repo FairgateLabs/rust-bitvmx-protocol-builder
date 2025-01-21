@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: FairgateLabs/rust-bitvmx-workspace
+          token: ${{ secrets.REPO_ACCESS_TOKEN }}
           ref: main
           path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
 
