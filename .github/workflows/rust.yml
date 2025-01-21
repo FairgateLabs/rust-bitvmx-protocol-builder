@@ -33,9 +33,11 @@ jobs:
         run: |
           ls -l
           ls -l rust-bitvmx-workspace
+          ls -l rust-bitvmx-workspace/rust-bitvmx-protocol-builder  # List files in this directory
           
       - name: Build project
         run: |
+          cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
           ls
           cargo build --verbose
 
