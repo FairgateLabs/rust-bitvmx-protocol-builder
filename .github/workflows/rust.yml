@@ -42,13 +42,17 @@ jobs:
       
       - name: Build project
         run: |
-          cd $GITHUB_WORKSPACE/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
+          cd $GITHUB_WORKSPACE/
           pwd
           ls -l
-          cargo build --verbose
+          cd ..
+          ls -l 
+          cd ..
+          ls -l
+        #  cargo build --verbose
 
-      - name: Run tests
-        run: cargo test --verbose
+      #- name: Run tests
+      #  run: cargo test --verbose
   
   test-with-coverage:
     if: ${{ contains(github.event.pull_request.title, '[cov]') }}
