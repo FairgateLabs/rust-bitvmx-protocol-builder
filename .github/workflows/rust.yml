@@ -41,7 +41,11 @@ jobs:
           ls -l rust-bitvmx-workspace/*  # List contents of all subdirectories for verification
       
       - name: Build project
-        run: |       
+        run: |
+          cd ..
+          cd ..
+          pwd
+          ls -l
           cargo build --verbose
 
       - name: Run tests
