@@ -31,12 +31,17 @@ jobs:
 
       - name: List files after cloning repository
         run: |
-          ls -l rust-bitvmx-workspace/rust-bitvmx-protocol-builder  # List files in this directory
-          
+          ls -l
+          ls -l rust-bitvmx-workspace  # List contents of the cloned directory
+          ls -l rust-bitvmx-workspace/*  # List contents of all subdirectories for verification
+      
       - name: Build project
         run: |
+          # Verify if the directory is actually present          
+          ls -l /home/runner/work/rust-bitvmx-workspace/
+          # Build the project if Cargo.toml is found
           cd /home/runner/work/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
-          ls  # List files to verify we're in the correct directory
+          ls  # List files here again for verification
           cargo build --verbose
 
       - name: Run tests
