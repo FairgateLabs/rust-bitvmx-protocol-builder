@@ -28,15 +28,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Clone rust-bitvmx-key-manager
+      - name: Clone rust-bitvmx-workspace
         run: |
           cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
-          
-      - name: Clone rust-bitvmx-storage-backend
-        run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git
+          git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
           
       - name: Build project
         run: cargo build --verbose
@@ -61,15 +56,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
         
-    - name: Clone rust-bitvmx-key-manager
+    - name: Clone rust-bitvmx-workspace
       run: |
         cd ..
-        git clone https://github.com/FairgateLabs/rust-bitvmx-key-manager.git
-
-    - name: Clone rust-bitvmx-storage-backend
-      run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git
+        git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
 
     - name: Run cargo-tarpaulin
       uses: actions-rs/tarpaulin@v0.1
