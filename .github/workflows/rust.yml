@@ -42,8 +42,7 @@ jobs:
       
       - name: Build project
         run: |
-          cd ..
-          cd ..
+          cd /rust-bitvmx-workspace
           pwd
           ls -l
           cargo build --verbose
