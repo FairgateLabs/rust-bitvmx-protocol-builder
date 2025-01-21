@@ -42,7 +42,7 @@ jobs:
       
       - name: Build project
         run: |
-          cd /rust-bitvmx-workspace
+          cd $GITHUB_WORKSPACE/rust-bitvmx-workspace/rust-bitvmx-protocol-builder
           pwd
           ls -l
           cargo build --verbose
