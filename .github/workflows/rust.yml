@@ -29,6 +29,7 @@ jobs:
         run: |
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
           cd rust-bitvmx-workspace
+          mv * .* ..
           
       - name: Build project
         run: ls && cd rust-bitvmx-protocol-builder && cargo build --verbose
