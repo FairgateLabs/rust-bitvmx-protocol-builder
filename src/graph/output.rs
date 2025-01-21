@@ -1,4 +1,6 @@
-use bitcoin::{key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, XOnlyPublicKey};
+use bitcoin::{
+    key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, XOnlyPublicKey,
+};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::scripts::{self, ProtocolScript};
@@ -13,26 +15,26 @@ const ALL_OUTPUT_TYPES: &[&str] = &[
 
 #[derive(Debug, Clone)]
 pub enum OutputSpendingType {
-    TaprootUntweakedKey{
+    TaprootUntweakedKey {
         key: PublicKey,
     },
-    TaprootTweakedKey{
+    TaprootTweakedKey {
         key: PublicKey,
         tweak: Scalar,
     },
-    TaprootScript{
+    TaprootScript {
         spending_scripts: Vec<ProtocolScript>,
         spend_info: TaprootSpendInfo,
         internal_key: XOnlyPublicKey,
     },
-    SegwitPublicKey{
+    SegwitPublicKey {
         public_key: PublicKey,
-        value: Amount, 
+        value: Amount,
     },
-    SegwitScript{
+    SegwitScript {
         script: ProtocolScript,
-        value: Amount, 
-    }
+        value: Amount,
+    },
 }
 
 impl Serialize for OutputSpendingType {
@@ -54,7 +56,11 @@ impl Serialize for OutputSpendingType {
                 state.serialize_field("tweak", &tweak.to_be_bytes())?;
                 state.end()
             }
-            OutputSpendingType::TaprootScript { spending_scripts, spend_info: _, internal_key } => {
+            OutputSpendingType::TaprootScript {
+                spending_scripts,
+                spend_info: _,
+                internal_key,
+            } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
                 state.serialize_field("type", "taproot_script")?;
                 state.serialize_field("spending_scripts", spending_scripts)?;
@@ -78,7 +84,6 @@ impl Serialize for OutputSpendingType {
         }
     }
 }
-
 
 impl<'de> Deserialize<'de> for OutputSpendingType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -110,7 +115,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
             fn visit_map<V>(self, mut map: V) -> Result<OutputSpendingType, V::Error>
             where
                 V: serde::de::MapAccess<'de>,
-            {   
+            {
                 let mut type_field: Option<String> = None;
                 let mut key: Option<PublicKey> = None;
                 let mut tweak: Option<[u8; 32]> = None;
@@ -173,8 +178,8 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                     }
                 }
 
-
-                let output_type = type_field.ok_or_else(|| serde::de::Error::missing_field("type"))?;
+                let output_type =
+                    type_field.ok_or_else(|| serde::de::Error::missing_field("type"))?;
 
                 match output_type.as_str() {
                     "taproot_untweaked_key" => {
@@ -183,21 +188,29 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                     }
                     "taproot_tweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
-                        let tweak = tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
+                        let tweak =
+                            tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
                         Ok(OutputSpendingType::TaprootTweakedKey {
                             key,
-                            tweak: Scalar::from_be_bytes(tweak).map_err(|e| serde::de::Error::custom(e.to_string()))?,
+                            tweak: Scalar::from_be_bytes(tweak)
+                                .map_err(|e| serde::de::Error::custom(e.to_string()))?,
                         })
                     }
                     "taproot_script" => {
-                        let spending_scripts = spending_scripts.ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
-                        let internal_key = internal_key.ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
+                        let spending_scripts = spending_scripts
+                            .ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
+                        let internal_key = internal_key
+                            .ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
                         let secp = Secp256k1::new();
-                        let spend_info = scripts::build_taproot_spend_info(&secp, &internal_key, &spending_scripts)
-                            .map_err(|e| {
-                                eprintln!("Error creating taproot spend info: {:?}", e);
-                                serde::de::Error::custom("Error creating taproot spend info")
-                            })?;
+                        let spend_info = scripts::build_taproot_spend_info(
+                            &secp,
+                            &internal_key,
+                            &spending_scripts,
+                        )
+                        .map_err(|e| {
+                            eprintln!("Error creating taproot spend info: {:?}", e);
+                            serde::de::Error::custom("Error creating taproot spend info")
+                        })?;
                         Ok(OutputSpendingType::TaprootScript {
                             spending_scripts,
                             spend_info,
@@ -205,27 +218,43 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                         })
                     }
                     "segwit_public_key" => {
-                        let public_key = public_key.ok_or_else(|| serde::de::Error::missing_field("public_key"))?;
-                        let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                        let public_key = public_key
+                            .ok_or_else(|| serde::de::Error::missing_field("public_key"))?;
+                        let value =
+                            value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
                         Ok(OutputSpendingType::SegwitPublicKey { public_key, value })
                     }
                     "segwit_script" => {
-                        let script = script.ok_or_else(|| serde::de::Error::missing_field("script"))?;
-                        let value = value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
+                        let script =
+                            script.ok_or_else(|| serde::de::Error::missing_field("script"))?;
+                        let value =
+                            value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
                         Ok(OutputSpendingType::SegwitScript { script, value })
                     }
-                    _ => Err(serde::de::Error::unknown_variant(&output_type, ALL_OUTPUT_TYPES)),
+                    _ => Err(serde::de::Error::unknown_variant(
+                        &output_type,
+                        ALL_OUTPUT_TYPES,
+                    )),
                 }
             }
         }
 
         deserializer.deserialize_struct(
             "OutputSpendingType",
-            &["type","key", "tweak", "spending_scripts", "internal_key", "public_key", "script", "value"],
+            &[
+                "type",
+                "key",
+                "tweak",
+                "spending_scripts",
+                "internal_key",
+                "public_key",
+                "script",
+                "value",
+            ],
             OutputSpendingTypeVisitor,
         )
     }
-}     
+}
 
 impl OutputSpendingType {
     pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar) -> Self {
@@ -236,31 +265,32 @@ impl OutputSpendingType {
     }
 
     pub fn new_taproot_key_spend(public_key: &PublicKey) -> Self {
-        OutputSpendingType::TaprootUntweakedKey {
-            key: *public_key,
-        }
+        OutputSpendingType::TaprootUntweakedKey { key: *public_key }
     }
-    
-    pub fn new_taproot_script_spend(spending_scripts: &[ProtocolScript], spend_info: &TaprootSpendInfo) -> OutputSpendingType {
+
+    pub fn new_taproot_script_spend(
+        spending_scripts: &[ProtocolScript],
+        spend_info: &TaprootSpendInfo,
+    ) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
             internal_key: spend_info.internal_key(),
         }
     }
-    
+
     pub fn new_segwit_key_spend(public_key: &PublicKey, value: Amount) -> OutputSpendingType {
-        OutputSpendingType::SegwitPublicKey { 
-            public_key: *public_key, 
+        OutputSpendingType::SegwitPublicKey {
+            public_key: *public_key,
             value,
-        } 
+        }
     }
-    
+
     pub fn new_segwit_script_spend(script: &ProtocolScript, value: Amount) -> OutputSpendingType {
-        OutputSpendingType::SegwitScript { 
+        OutputSpendingType::SegwitScript {
             script: script.clone(),
             value,
-        } 
+        }
     }
 }
 
@@ -276,13 +306,14 @@ mod tests {
         let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
         let tweak = Scalar::random();
 
-        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak);
+        let spending_type =
+            OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak);
 
         match spending_type {
             OutputSpendingType::TaprootTweakedKey { key, tweak: t } => {
                 assert_eq!(key, public_key.into());
                 assert_eq!(t, tweak);
-            },
+            }
             _ => panic!("Wrong enum variant"),
         }
     }
@@ -297,7 +328,7 @@ mod tests {
         match spending_type {
             OutputSpendingType::TaprootUntweakedKey { key } => {
                 assert_eq!(key, public_key.into());
-            },
+            }
             _ => panic!("Wrong enum variant"),
         }
     }
@@ -311,10 +342,13 @@ mod tests {
         let spending_type = OutputSpendingType::new_segwit_key_spend(&public_key.into(), value);
 
         match spending_type {
-            OutputSpendingType::SegwitPublicKey { public_key: key, value: v } => {
+            OutputSpendingType::SegwitPublicKey {
+                public_key: key,
+                value: v,
+            } => {
                 assert_eq!(key, public_key.into());
                 assert_eq!(v, value);
-            },
+            }
             _ => panic!("Wrong enum variant"),
         }
     }
@@ -329,10 +363,13 @@ mod tests {
         let spending_type = OutputSpendingType::new_segwit_script_spend(&script, value);
 
         match spending_type {
-            OutputSpendingType::SegwitScript { script: s, value: v } => {
+            OutputSpendingType::SegwitScript {
+                script: s,
+                value: v,
+            } => {
                 assert_eq!(s.get_script(), script.get_script());
                 assert_eq!(v, value);
-            },
+            }
             _ => panic!("Wrong enum variant"),
         }
     }

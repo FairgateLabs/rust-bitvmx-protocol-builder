@@ -1,9 +1,20 @@
 #[cfg(test)]
 mod tests {
+    use bitcoin::{
+        hashes::Hash,
+        key::rand::RngCore,
+        secp256k1::{self, Scalar},
+        Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey,
+    };
     use std::{env, path::PathBuf};
-    use bitcoin::{hashes::Hash, key::rand::RngCore, secp256k1::{self, Scalar}, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey};
 
-    use crate::{builder::{ProtocolBuilder ,SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, unspendable::unspendable_key};
+    use crate::{
+        builder::{ProtocolBuilder, SpendingArgs},
+        errors::ProtocolBuilderError,
+        graph::{input::SighashType, output::OutputSpendingType},
+        scripts::ProtocolScript,
+        unspendable::unspendable_key,
+    };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
         let mut rng = secp256k1::rand::thread_rng();
@@ -22,7 +33,9 @@ mod tests {
         let output_index = 0;
         let blocks = 100;
 
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
         let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
@@ -33,21 +46,69 @@ mod tests {
         let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key);
         let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
 
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
-      
-        let mut builder = ProtocolBuilder::new("single_connection", temp_storage())?; 
-        let protocol = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "start", value, &internal_key, &scripts_from, "challenge", &sighash_type)?
-            .add_timelock_connection("start", value, &internal_key, &expired_from, &renew_from, "challenge", blocks, &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "challenge", value, &internal_key, &scripts_to, "response", &sighash_type)?
-            .add_timelock_connection("challenge", value, &internal_key, &expired_to, &renew_to, "response", blocks, &sighash_type)?
+
+        let mut builder = ProtocolBuilder::new("single_connection", temp_storage())?;
+        let protocol = builder
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "start",
+                &ecdsa_sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "start",
+                value,
+                &internal_key,
+                &scripts_from,
+                "challenge",
+                &sighash_type,
+            )?
+            .add_timelock_connection(
+                "start",
+                value,
+                &internal_key,
+                &expired_from,
+                &renew_from,
+                "challenge",
+                blocks,
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "challenge",
+                value,
+                &internal_key,
+                &scripts_to,
+                "response",
+                &sighash_type,
+            )?
+            .add_timelock_connection(
+                "challenge",
+                value,
+                &internal_key,
+                &expired_to,
+                &renew_to,
+                "response",
+                blocks,
+                &sighash_type,
+            )?
             .build()?;
 
-        let challenge_spending_args = &[SpendingArgs::new_taproot_args(script_a.get_script()), SpendingArgs::new_taproot_args(renew_from.get_script())];
-        let response_spending_args = &[SpendingArgs::new_taproot_args(script_a.get_script()), SpendingArgs::new_taproot_args(renew_to.get_script())];
+        let challenge_spending_args = &[
+            SpendingArgs::new_taproot_args(script_a.get_script()),
+            SpendingArgs::new_taproot_args(renew_from.get_script()),
+        ];
+        let response_spending_args = &[
+            SpendingArgs::new_taproot_args(script_a.get_script()),
+            SpendingArgs::new_taproot_args(renew_to.get_script()),
+        ];
 
         let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
         let challenge = protocol.transaction_to_send("challenge", challenge_spending_args)?;
@@ -73,31 +134,40 @@ mod tests {
     }
 
     #[test]
-    fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {       
+    fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
         let mut rng = secp256k1::rand::thread_rng();
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let spending_scripts = vec![script.clone(), script.clone()];
 
         let mut builder = ProtocolBuilder::new("cycle", temp_storage())?;
-            builder.add_taproot_script_spend_connection("cycle", "A", value, &internal_key, &spending_scripts, "A", &sighash_type)?;
+        builder.add_taproot_script_spend_connection(
+            "cycle",
+            "A",
+            value,
+            &internal_key,
+            &spending_scripts,
+            "A",
+            &sighash_type,
+        )?;
 
         let result = builder.build();
 
         match result {
-            Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {
-            }
+            Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
             Err(_) => {
                 panic!("Expected GraphCycleDetected error, got a different error");
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
             }
-        }    
+        }
 
         Ok(())
     }
@@ -109,35 +179,68 @@ mod tests {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
 
-        let mut builder = ProtocolBuilder::new("cycle", temp_storage())?; 
-        let result = builder.connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &scripts_from, "B", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "B", value, &internal_key, &scripts_to, "C", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "C", value, &internal_key, &scripts_to, "A", &sighash_type)?
+        let mut builder = ProtocolBuilder::new("cycle", temp_storage())?;
+        let result = builder
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "A",
+                &ecdsa_sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &scripts_from,
+                "B",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "B",
+                value,
+                &internal_key,
+                &scripts_to,
+                "C",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "C",
+                value,
+                &internal_key,
+                &scripts_to,
+                "A",
+                &sighash_type,
+            )?
             .build();
 
         match result {
-            Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {
-            }
+            Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
             Err(_) => {
                 panic!("Expected GraphCycleDetected error, got a different error");
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
             }
-        }    
-        
+        }
+
         Ok(())
     }
 
@@ -147,14 +250,23 @@ mod tests {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let mut builder = ProtocolBuilder::new("single_connection", temp_storage())?; 
+        let mut builder = ProtocolBuilder::new("single_connection", temp_storage())?;
         let protocol = builder
-            .connect_with_external_transaction(txid, output_index, output_spending_type, "start", &ecdsa_sighash_type)?
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "start",
+                &ecdsa_sighash_type,
+            )?
             .build()?;
 
         let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
@@ -165,7 +277,7 @@ mod tests {
         let sighashes_start = protocol.spending_info("start")?;
 
         assert_eq!(sighashes_start.len(), 1);
-        
+
         Ok(())
     }
 
@@ -177,22 +289,51 @@ mod tests {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
-      
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+
         let mut builder = ProtocolBuilder::new("rounds", temp_storage())?;
-        let (from_rounds, _) = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type)?;
+        let (from_rounds, _) = builder.connect_rounds(
+            "rounds",
+            rounds,
+            "B",
+            "C",
+            value,
+            &[script.clone()],
+            &[script.clone()],
+            &sighash_type,
+        )?;
 
         let protocol = builder
-            .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], &from_rounds, &sighash_type)?
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "A",
+                &ecdsa_sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &[script.clone()],
+                &from_rounds,
+                &sighash_type,
+            )?
             .build()?;
 
-        let spending_args = [SpendingArgs::new_taproot_args(script.get_script()), SpendingArgs::new_taproot_args(script.get_script())];
+        let spending_args = [
+            SpendingArgs::new_taproot_args(script.get_script()),
+            SpendingArgs::new_taproot_args(script.get_script()),
+        ];
 
         let a = protocol.transaction_to_send("A", &[SpendingArgs::new_args()])?;
         let b0 = protocol.transaction_to_send("B_0", &spending_args)?;
@@ -227,7 +368,7 @@ mod tests {
         assert_eq!(sighashes_c0.len(), 1);
         assert_eq!(sighashes_c1.len(), 1);
         assert_eq!(sighashes_c2.len(), 1);
-        
+
         Ok(())
     }
 
@@ -236,16 +377,26 @@ mod tests {
         let rounds = 0;
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
         let mut builder = ProtocolBuilder::new("rounds", temp_storage())?;
-        let result = builder.connect_rounds("rounds", rounds, "B", "C", value, &[script.clone()], &[script.clone()], &sighash_type);
+        let result = builder.connect_rounds(
+            "rounds",
+            rounds,
+            "B",
+            "C",
+            value,
+            &[script.clone()],
+            &[script.clone()],
+            &sighash_type,
+        );
 
         match result {
-            Err(ProtocolBuilderError::InvalidZeroRounds) => {
-            }
+            Err(ProtocolBuilderError::InvalidZeroRounds) => {}
             Err(_) => {
                 panic!("Expected InvalidZeroRounds error, got a different error");
             }
@@ -264,35 +415,129 @@ mod tests {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let mut builder = ProtocolBuilder::new("rounds", temp_storage())?;
         builder
-            .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "B", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "C", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "B", value, &internal_key, &[script.clone()], "D", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "C", value, &internal_key, &[script.clone()], "D", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "D", value, &internal_key, &[script.clone()], "E", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "A", value, &internal_key, &[script.clone()], "F", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "D", value, &internal_key, &[script.clone()], "F", &sighash_type)?
-            .add_taproot_script_spend_connection("protocol", "F", value, &internal_key, &[script.clone()], "G", &sighash_type)?;
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "A",
+                &ecdsa_sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "B",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "C",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "B",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "D",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "C",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "D",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "D",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "E",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "F",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "D",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "F",
+                &sighash_type,
+            )?
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "F",
+                value,
+                &internal_key,
+                &[script.clone()],
+                "G",
+                &sighash_type,
+            )?;
 
-        let (from_rounds, to_rounds) = builder.connect_rounds("rounds", rounds, "H", "I", value, &[script.clone()], &[script.clone()], &sighash_type)?;
-        
-        builder.add_taproot_script_spend_connection("protocol", "G", value, &internal_key, &[script.clone()], &from_rounds, &sighash_type)?
+        let (from_rounds, to_rounds) = builder.connect_rounds(
+            "rounds",
+            rounds,
+            "H",
+            "I",
+            value,
+            &[script.clone()],
+            &[script.clone()],
+            &sighash_type,
+        )?;
+
+        builder
+            .add_taproot_script_spend_connection(
+                "protocol",
+                "G",
+                value,
+                &internal_key,
+                &[script.clone()],
+                &from_rounds,
+                &sighash_type,
+            )?
             .add_p2wsh_output(&to_rounds, value, &script)?;
 
         let protocol = builder.build()?;
         let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 
-        assert_eq!(&transaction_names, &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]);
+        assert_eq!(
+            &transaction_names,
+            &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]
+        );
 
         Ok(())
     }
@@ -301,18 +546,26 @@ mod tests {
     fn test_persistence() -> Result<(), ProtocolBuilderError> {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type =
+            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
         let graph_storage_path = temp_storage();
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .connect_with_external_transaction(txid, output_index, output_spending_type, "A", &ecdsa_sighash_type)?;
-        
+        builder.connect_with_external_transaction(
+            txid,
+            output_index,
+            output_spending_type,
+            "A",
+            &ecdsa_sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -331,15 +584,23 @@ mod tests {
     fn test_persistence_2() -> Result<(), ProtocolBuilderError> {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let graph_storage_path = temp_storage();
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_p2wsh_connection("connection", "A", value, &script, "B", &ecdsa_sighash_type)?;
-        
+        builder.add_p2wsh_connection(
+            "connection",
+            "A",
+            value,
+            &script,
+            "B",
+            &ecdsa_sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -358,14 +619,22 @@ mod tests {
     fn test_persistence_3() -> Result<(), ProtocolBuilderError> {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let graph_storage_path = temp_storage();
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_p2wpkh_connection("connection", "A", value, &public_key, "B", &ecdsa_sighash_type)?;
-        
+        builder.add_p2wpkh_connection(
+            "connection",
+            "A",
+            value,
+            &public_key,
+            "B",
+            &ecdsa_sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -384,14 +653,22 @@ mod tests {
     fn test_persistence_4() -> Result<(), ProtocolBuilderError> {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let graph_storage_path = temp_storage();
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_taproot_key_spend_connection("connection", "A", value, &public_key, "B", &sighash_type)?;
-        
+        builder.add_taproot_key_spend_connection(
+            "connection",
+            "A",
+            value,
+            &public_key,
+            "B",
+            &sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -411,16 +688,25 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
         let mut rng = secp256k1::rand::thread_rng();
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let graph_storage_path = temp_storage();
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_taproot_script_spend_connection("connection", "A", value, &internal_key, &[script.clone()], "B", &sighash_type)?;
-        
+        builder.add_taproot_script_spend_connection(
+            "connection",
+            "A",
+            value,
+            &internal_key,
+            &[script.clone()],
+            "B",
+            &sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -439,7 +725,9 @@ mod tests {
     fn test_persistence_6() -> Result<(), ProtocolBuilderError> {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let graph_storage_path = temp_storage();
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
@@ -447,9 +735,19 @@ mod tests {
         let script_renew = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_linked_message_connection("A", "B", value, &[script.clone()], 100, &script_expired,&script_renew, 100, &public_key, &sighash_type)?;
-        
+        builder.add_linked_message_connection(
+            "A",
+            "B",
+            value,
+            &[script.clone()],
+            100,
+            &script_expired,
+            &script_renew,
+            100,
+            &public_key,
+            &sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;
@@ -468,14 +766,23 @@ mod tests {
     fn test_persistence_7() -> Result<(), ProtocolBuilderError> {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").expect("Decoding failed");
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let graph_storage_path = temp_storage();
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path.clone())?;
-        builder
-            .add_taproot_tweaked_key_spend_connection("connection", "A", value, &public_key, &Scalar::ZERO , "B", &sighash_type)?;
-        
+        builder.add_taproot_tweaked_key_spend_connection(
+            "connection",
+            "A",
+            value,
+            &public_key,
+            &Scalar::ZERO,
+            "B",
+            &sighash_type,
+        )?;
+
         drop(builder);
 
         let mut builder = ProtocolBuilder::new("rounds", graph_storage_path)?;

@@ -1,7 +1,10 @@
 use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, TapSighashType};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
-use crate::{errors::{GraphError, ProtocolBuilderError}, graph::output::OutputSpendingType};
+use crate::{
+    errors::{GraphError, ProtocolBuilderError},
+    graph::output::OutputSpendingType,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Signature {
@@ -16,12 +19,13 @@ pub struct InputSignatures {
 
 impl InputSignatures {
     pub fn new(signatures: Vec<Signature>) -> Self {
-        InputSignatures {
-            signatures,
-        }
+        InputSignatures { signatures }
     }
 
-    pub fn get_taproot_signature(&self, index: usize) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+    pub fn get_taproot_signature(
+        &self,
+        index: usize,
+    ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
         match self.signatures.get(index) {
             Some(Signature::Ecdsa(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
             Some(Signature::Taproot(signature)) => Ok(*signature),
@@ -29,7 +33,10 @@ impl InputSignatures {
         }
     }
 
-    pub fn get_ecdsa_signature(&self, index: usize) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+    pub fn get_ecdsa_signature(
+        &self,
+        index: usize,
+    ) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
         match self.signatures.get(index) {
             Some(Signature::Ecdsa(signature)) => Ok(*signature),
             Some(Signature::Taproot(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
@@ -145,16 +152,23 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                     }
                 }
                 Ok(InputSpendingInfo {
-                    sighash_type: sighash_type.ok_or_else(|| serde::de::Error::missing_field("sighash_type"))?,
+                    sighash_type: sighash_type
+                        .ok_or_else(|| serde::de::Error::missing_field("sighash_type"))?,
                     hashed_messages: {
                         let mut messages = vec![];
-                        for message in hashed_messages.ok_or_else(|| serde::de::Error::missing_field("hashed_messages"))? {
-                            messages.push(Message::from_digest_slice(&message).map_err(|e| serde::de::Error::custom(e.to_string()))?);
+                        for message in hashed_messages
+                            .ok_or_else(|| serde::de::Error::missing_field("hashed_messages"))?
+                        {
+                            messages.push(
+                                Message::from_digest_slice(&message)
+                                    .map_err(|e| serde::de::Error::custom(e.to_string()))?,
+                            );
                         }
                         messages
                     },
                     spending_type,
-                    signatures: signatures.ok_or_else(|| serde::de::Error::missing_field("signatures"))?,
+                    signatures: signatures
+                        .ok_or_else(|| serde::de::Error::missing_field("signatures"))?,
                 })
             }
         }
@@ -168,35 +182,34 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
 }
 
 impl InputSpendingInfo {
-    pub (crate) fn new(sighash_type: &SighashType) -> Self {
-        Self { 
-            spending_type: None, 
-            sighash_type: sighash_type.clone(), 
+    pub(crate) fn new(sighash_type: &SighashType) -> Self {
+        Self {
+            spending_type: None,
+            sighash_type: sighash_type.clone(),
             hashed_messages: vec![],
             signatures: vec![],
         }
     }
 
-    pub (crate) fn set_hashed_messages(&mut self, messages: Vec<Message>) {
+    pub(crate) fn set_hashed_messages(&mut self, messages: Vec<Message>) {
         self.hashed_messages = messages;
     }
 
-    pub (crate) fn set_spending_type(&mut self, spending_type: OutputSpendingType) -> Result<(), GraphError> {
+    pub(crate) fn set_spending_type(
+        &mut self,
+        spending_type: OutputSpendingType,
+    ) -> Result<(), GraphError> {
         match self.sighash_type {
-            SighashType::Taproot(_) => {
-                match spending_type {
-                    OutputSpendingType::TaprootTweakedKey { .. } => {},
-                    OutputSpendingType::TaprootUntweakedKey { .. } => {},
-                    OutputSpendingType::TaprootScript { .. } => {},
-                    _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
-                }
+            SighashType::Taproot(_) => match spending_type {
+                OutputSpendingType::TaprootTweakedKey { .. } => {}
+                OutputSpendingType::TaprootUntweakedKey { .. } => {}
+                OutputSpendingType::TaprootScript { .. } => {}
+                _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
             },
-            SighashType::Ecdsa(_) => {
-                match spending_type {
-                    OutputSpendingType::SegwitPublicKey { .. } => {},
-                    OutputSpendingType::SegwitScript { .. } => {},
-                    _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
-                }
+            SighashType::Ecdsa(_) => match spending_type {
+                OutputSpendingType::SegwitPublicKey { .. } => {}
+                OutputSpendingType::SegwitScript { .. } => {}
+                _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
             },
         }
 
@@ -220,17 +233,27 @@ impl InputSpendingInfo {
         match &self.spending_type {
             Some(OutputSpendingType::TaprootTweakedKey { key, .. }) => vec![*key],
             Some(OutputSpendingType::TaprootUntweakedKey { key }) => vec![*key],
-            Some(OutputSpendingType::TaprootScript { spending_scripts, .. }) => spending_scripts.iter().map(|script| script.get_verifying_key()).collect(),
+            Some(OutputSpendingType::TaprootScript {
+                spending_scripts, ..
+            }) => spending_scripts
+                .iter()
+                .map(|script| script.get_verifying_key())
+                .collect(),
             Some(OutputSpendingType::SegwitPublicKey { public_key, .. }) => vec![*public_key],
-            Some(OutputSpendingType::SegwitScript { script, .. }) => vec![script.get_verifying_key()],
+            Some(OutputSpendingType::SegwitScript { script, .. }) => {
+                vec![script.get_verifying_key()]
+            }
             None => vec![],
         }
     }
 
     pub fn spending_type(&self) -> Result<&OutputSpendingType, GraphError> {
-        self.spending_type.as_ref().ok_or(GraphError::MissingOutputSpendingTypeForInputSpendingInfo(
-            format!("{:?}", self.sighash_type)
-        ))
+        self.spending_type.as_ref().ok_or(
+            GraphError::MissingOutputSpendingTypeForInputSpendingInfo(format!(
+                "{:?}",
+                self.sighash_type
+            )),
+        )
     }
 
     pub fn signatures(&self) -> &Vec<Signature> {
@@ -238,10 +261,11 @@ impl InputSpendingInfo {
     }
 
     pub fn get_signature(&self, index: usize) -> Result<&Signature, GraphError> {
-        self.signatures.get(index).ok_or(GraphError::MissingSignature)
+        self.signatures
+            .get(index)
+            .ok_or(GraphError::MissingSignature)
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -256,13 +280,13 @@ mod test {
         assert!(empty_sigs.get_taproot_signature(0).is_err());
         assert!(empty_sigs.get_ecdsa_signature(0).is_err());
     }
-    
+
     #[test]
     fn test_taproot_signature() {
         let _msg = Message::from_digest_slice(&[0; 32]).unwrap();
         let tap_sig = taproot::Signature::from_slice(&[1; 64]).unwrap();
         let sigs = InputSignatures::new(vec![Signature::Taproot(tap_sig)]);
-        
+
         assert!(sigs.get_taproot_signature(0).is_ok());
         assert!(sigs.get_ecdsa_signature(0).is_err());
         assert!(sigs.get_taproot_signature(1).is_err());
@@ -274,8 +298,10 @@ mod test {
         let msg = Message::from_digest_slice(&[0; 32]).unwrap();
         let (secret_key, _) = secp.generate_keypair(&mut rand::thread_rng());
         let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);
-        let sigs = InputSignatures::new(vec![Signature::Ecdsa(bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig))]);
-        
+        let sigs = InputSignatures::new(vec![Signature::Ecdsa(
+            bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig),
+        )]);
+
         assert!(sigs.get_ecdsa_signature(0).is_ok());
         assert!(sigs.get_taproot_signature(0).is_err());
     }
@@ -286,11 +312,12 @@ mod test {
         let secp = Secp256k1::new();
         let msg = Message::from_digest_slice(&[0; 32]).unwrap();
         let (secret_key, _) = secp.generate_keypair(&mut rand::thread_rng());
-        let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);        
-        let sigs = InputSignatures::new(vec![            
+        let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);
+        let sigs = InputSignatures::new(vec![
             Signature::Taproot(tap_sig),
-            Signature::Ecdsa(bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig))]);
-        
+            Signature::Ecdsa(bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig)),
+        ]);
+
         assert_eq!(sigs.iter().count(), 2);
     }
 
@@ -300,13 +327,13 @@ mod test {
         let ecdsa_sighash = SighashType::Ecdsa(EcdsaSighashType::All);
 
         match tap_sighash {
-            SighashType::Taproot(_) => {},
-            _ => panic!("Expected Taproot sighash type")
+            SighashType::Taproot(_) => {}
+            _ => panic!("Expected Taproot sighash type"),
         }
 
         match ecdsa_sighash {
-            SighashType::Ecdsa(_) => {},
-            _ => panic!("Expected ECDSA sighash type") 
+            SighashType::Ecdsa(_) => {}
+            _ => panic!("Expected ECDSA sighash type"),
         }
     }
 }

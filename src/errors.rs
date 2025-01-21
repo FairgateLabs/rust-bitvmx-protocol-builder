@@ -1,4 +1,9 @@
-use bitcoin::{key::{ParsePublicKeyError, UncompressedPublicKeyError}, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction};
+use bitcoin::{
+    key::{ParsePublicKeyError, UncompressedPublicKeyError},
+    sighash::{P2wpkhError, SighashTypeParseError, TaprootError},
+    taproot::TaprootBuilderError,
+    transaction,
+};
 use key_manager::errors::{KeyManagerError, WinternitzError};
 use thiserror::Error;
 
@@ -7,9 +12,7 @@ use config as settings;
 #[derive(Error, Debug)]
 pub enum UnspendableKeyError {
     #[error("Failed to build NUMS (unspendable) public key")]
-    FailedToBuildUnspendableKey{
-        reason: String
-    },
+    FailedToBuildUnspendableKey { reason: String },
 
     #[error("Failed to decode hex value")]
     HexDecodeError,
@@ -55,7 +58,7 @@ pub enum GraphError {
 pub enum ScriptError {
     #[error("Segwit public keys must always be compressed")]
     InvalidPublicKeyForSegwit(#[from] UncompressedPublicKeyError),
-    
+
     #[error("Failed to finalize taptree for given spending conditions")]
     TapTreeFinalizeError,
 
@@ -79,7 +82,7 @@ pub enum ConfigError {
 
     #[error("Public key in config is invalid")]
     InvalidPublicKey(#[from] ParsePublicKeyError),
-  
+
     #[error("SighashType in config is invalid")]
     InvalidSighashType(#[from] SighashTypeParseError),
 }
@@ -179,4 +182,3 @@ pub enum CliError {
     #[error("Invalid Hex String: {0}")]
     InvalidHexString(String),
 }
-

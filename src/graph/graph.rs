@@ -1,12 +1,20 @@
 use std::{collections::HashMap, vec};
 
 use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
-use petgraph::{algo::toposort, graph::{EdgeIndex, NodeIndex}, visit::EdgeRef, Graph};
+use petgraph::{
+    algo::toposort,
+    graph::{EdgeIndex, NodeIndex},
+    visit::EdgeRef,
+    Graph,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::GraphError;
 
-use super::{input::{InputSignatures, InputSpendingInfo, SighashType, Signature}, output::OutputSpendingType};
+use super::{
+    input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
+    output::OutputSpendingType,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
@@ -26,8 +34,16 @@ impl Node {
         }
     }
 
-    fn get_input_spending_info(&self, input_index: usize) -> Result<&InputSpendingInfo, GraphError> {
-        self.input_spending_infos.get(input_index).ok_or(GraphError::MissingInputSpendingInfo(self.name.clone(), input_index))
+    fn get_input_spending_info(
+        &self,
+        input_index: usize,
+    ) -> Result<&InputSpendingInfo, GraphError> {
+        self.input_spending_infos
+            .get(input_index)
+            .ok_or(GraphError::MissingInputSpendingInfo(
+                self.name.clone(),
+                input_index,
+            ))
     }
 }
 
@@ -61,7 +77,7 @@ impl Default for TransactionGraph {
 }
 
 impl TransactionGraph {
-    pub fn new() -> Self{
+    pub fn new() -> Self {
         let graph = Graph::new();
         let node_indexes = HashMap::new();
 
@@ -71,7 +87,11 @@ impl TransactionGraph {
         }
     }
 
-    pub fn add_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+    pub fn add_transaction(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+    ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
@@ -87,51 +107,76 @@ impl TransactionGraph {
         Ok(())
     }
 
-    pub fn update_transaction(&mut self, name: &str, transaction: Transaction) -> Result<(), GraphError> {
+    pub fn update_transaction(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+    ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
 
         let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         node.transaction = transaction;
         Ok(())
     }
 
-    pub fn add_transaction_input(&mut self, name: &str, transaction: Transaction, sighash_type: &SighashType) -> Result<(), GraphError> {
+    pub fn add_transaction_input(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+        sighash_type: &SighashType,
+    ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
-        
+
         let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         node.transaction = transaction;
-        node.input_spending_infos.push(InputSpendingInfo::new(sighash_type));
+        node.input_spending_infos
+            .push(InputSpendingInfo::new(sighash_type));
         Ok(())
     }
 
-    pub fn add_transaction_output(&mut self, name: &str, transaction: Transaction, spending_type: OutputSpendingType) -> Result<(), GraphError> {
+    pub fn add_transaction_output(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+        spending_type: OutputSpendingType,
+    ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
-        
-        let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
 
-        node.transaction = transaction;        
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+        node.transaction = transaction;
         node.output_spending_types.push(spending_type);
         Ok(())
     }
 
-    pub fn connect(&mut self, connection_name: &str, from: &str, output_index: u32, to: &str, input_index: u32) -> Result<(), GraphError> {
+    pub fn connect(
+        &mut self,
+        connection_name: &str,
+        from: &str,
+        output_index: u32,
+        to: &str,
+        input_index: u32,
+    ) -> Result<(), GraphError> {
         if from.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
@@ -139,67 +184,84 @@ impl TransactionGraph {
         if to.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
-        
+
         let from_node_index = self.get_node_index(from)?;
         let to_node_index = self.get_node_index(to)?;
         let output_spending_type = self.get_output_spending_type(from, output_index)?;
 
-        let connection = Connection::new(
-            connection_name.to_string(),
-            input_index,
-            output_index,
-        );
-        
-        self.graph.add_edge(from_node_index, to_node_index, connection.clone());
+        let connection = Connection::new(connection_name.to_string(), input_index, output_index);
 
-        let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
-            to.to_string())
-        )?;
+        self.graph
+            .add_edge(from_node_index, to_node_index, connection.clone());
 
-        to_node.input_spending_infos[input_index as usize].set_spending_type(output_spending_type)?;
+        let to_node = self
+            .graph
+            .node_weight_mut(to_node_index)
+            .ok_or(GraphError::MissingTransaction(to.to_string()))?;
+
+        to_node.input_spending_infos[input_index as usize]
+            .set_spending_type(output_spending_type)?;
 
         Ok(())
     }
 
-    pub fn connect_with_external_transaction(&mut self, output_spending_type: OutputSpendingType, to: &str) -> Result<(), GraphError> {
+    pub fn connect_with_external_transaction(
+        &mut self,
+        output_spending_type: OutputSpendingType,
+        to: &str,
+    ) -> Result<(), GraphError> {
         if to.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
-        
+
         let to_node_index = self.get_node_index(to)?;
 
-        let to_node = self.graph.node_weight_mut(to_node_index).ok_or(GraphError::MissingTransaction(
-            to.to_string())
-        )?;
+        let to_node = self
+            .graph
+            .node_weight_mut(to_node_index)
+            .ok_or(GraphError::MissingTransaction(to.to_string()))?;
 
-        to_node.input_spending_infos[to_node.transaction.input.len() - 1].set_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[to_node.transaction.input.len() - 1]
+            .set_spending_type(output_spending_type)?;
 
         Ok(())
     }
 
-    pub fn update_hashed_messages(&mut self, transaction_name: &str, input_index: u32, message_hashes: Vec<Message>) -> Result<(), GraphError> {
+    pub fn update_hashed_messages(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        message_hashes: Vec<Message>,
+    ) -> Result<(), GraphError> {
         if transaction_name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
 
         let node_index = self.get_node_index(transaction_name)?;
-        let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
-            transaction_name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
 
         node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
     }
-        
-    pub fn update_input_signatures(&mut self, transaction_name: &str, input_index: u32, signatures: Vec<Signature>) -> Result<(), GraphError> {
+
+    pub fn update_input_signatures(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        signatures: Vec<Signature>,
+    ) -> Result<(), GraphError> {
         if transaction_name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
 
         let node_index = self.get_node_index(transaction_name)?;
-        let node = self.graph.node_weight_mut(node_index).ok_or(GraphError::MissingTransaction(
-            transaction_name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
 
         node.input_spending_infos[input_index as usize].set_signatures(signatures);
 
@@ -211,12 +273,13 @@ impl TransactionGraph {
             return Err(GraphError::EmptyTransactionName);
         }
 
-        self.node_indexes.get(name).ok_or(GraphError::MissingTransaction(name.to_string())).map(
-            |node_index| {
+        self.node_indexes
+            .get(name)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))
+            .map(|node_index| {
                 let node = self.graph.node_weight(*node_index).unwrap();
                 &node.transaction
-            }
-        )
+            })
     }
 
     pub fn get_transaction_with_id(&self, txid: Txid) -> Result<&Transaction, GraphError> {
@@ -234,7 +297,8 @@ impl TransactionGraph {
         }
 
         let dependencies = self.get_dependencies(name)?;
-        let next_transactions = dependencies.iter()
+        let next_transactions = dependencies
+            .iter()
             .map(|(name, _)| self.get_transaction(name))
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -248,14 +312,16 @@ impl TransactionGraph {
 
         let node_index = self.get_node_index(name)?;
 
-        let dependencies = self.graph.edges(node_index)
+        let dependencies = self
+            .graph
+            .edges(node_index)
             .map(|edge| {
                 let node_index = edge.target();
                 let node = self.graph.node_weight(node_index).unwrap();
                 let connection = edge.weight();
                 (node.name.clone(), connection.input_index)
-            }
-        ).collect();
+            })
+            .collect();
 
         Ok(dependencies)
     }
@@ -273,92 +339,138 @@ impl TransactionGraph {
         for edge in self.find_incoming_edges(node_index) {
             let from = self.get_from_transaction(edge)?;
             let connection = self.get_connection(edge)?;
-            prevouts[connection.input_index as usize] = Some(from.output[connection.output_index as usize].clone());
-        };
+            prevouts[connection.input_index as usize] =
+                Some(from.output[connection.output_index as usize].clone());
+        }
 
-        let result = prevouts.iter()
-            .map(|txout| txout.clone().ok_or(GraphError::MissingTransaction(name.to_string())))
+        let result = prevouts
+            .iter()
+            .map(|txout| {
+                txout
+                    .clone()
+                    .ok_or(GraphError::MissingTransaction(name.to_string()))
+            })
             .collect();
 
         result
     }
 
-    pub fn get_transaction_spending_info(&self, name: &str) -> Result<Vec<InputSpendingInfo>, GraphError> {
+    pub fn get_transaction_spending_info(
+        &self,
+        name: &str,
+    ) -> Result<Vec<InputSpendingInfo>, GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
         }
 
         let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         Ok(node.input_spending_infos.clone())
     }
 
-    pub fn get_transaction_spending_infos(&self) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
-        self.node_indexes.keys().map(|name| {
-            let node_index = self.get_node_index(name)?;
-            let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
-                name.to_string())
-            )?;
-    
-            Ok((name.clone(), node.input_spending_infos.clone()))
-        }).collect()
+    pub fn get_transaction_spending_infos(
+        &self,
+    ) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
+        self.node_indexes
+            .keys()
+            .map(|name| {
+                let node_index = self.get_node_index(name)?;
+                let node = self
+                    .graph
+                    .node_weight(node_index)
+                    .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+                Ok((name.clone(), node.input_spending_infos.clone()))
+            })
+            .collect()
     }
 
     fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
-        self.node_indexes.get(name).cloned().ok_or(GraphError::MissingTransaction(name.to_string()))
+        self.node_indexes
+            .get(name)
+            .cloned()
+            .ok_or(GraphError::MissingTransaction(name.to_string()))
     }
 
     fn get_connection(&self, edge: EdgeIndex) -> Result<&Connection, GraphError> {
-        self.graph.edge_weight(edge).ok_or(GraphError::MissingConnection)
+        self.graph
+            .edge_weight(edge)
+            .ok_or(GraphError::MissingConnection)
     }
 
     fn find_incoming_edges(&self, node_index: NodeIndex) -> Vec<EdgeIndex> {
-        self.graph.edges_directed(node_index, petgraph::Direction::Incoming).map(|edge| edge.id()).collect()
+        self.graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| edge.id())
+            .collect()
     }
 
     fn get_from_node(&self, edge: EdgeIndex) -> Result<&Node, GraphError> {
-        let (from_index, _) = self.graph.edge_endpoints(edge).ok_or(GraphError::MissingConnection)?;
-        let from = self.graph.node_weight(from_index).ok_or(GraphError::MissingTransaction("".to_string()))?;
+        let (from_index, _) = self
+            .graph
+            .edge_endpoints(edge)
+            .ok_or(GraphError::MissingConnection)?;
+        let from = self
+            .graph
+            .node_weight(from_index)
+            .ok_or(GraphError::MissingTransaction("".to_string()))?;
         Ok(from)
     }
-    
+
     fn get_from_transaction(&self, edge: EdgeIndex) -> Result<&Transaction, GraphError> {
         let from = self.get_from_node(edge)?;
         Ok(&from.transaction)
     }
 
-    fn get_output_spending_type(&self, transaction_name: &str, output_index: u32) -> Result<OutputSpendingType, GraphError> {
+    fn get_output_spending_type(
+        &self,
+        transaction_name: &str,
+        output_index: u32,
+    ) -> Result<OutputSpendingType, GraphError> {
         let node_index = self.get_node_index(transaction_name)?;
-        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
-            transaction_name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
 
         Ok(node.output_spending_types[output_index as usize].clone())
     }
-    
+
     pub fn get_transaction_names(&self) -> Vec<String> {
-        self.graph.node_weights().map(|node| node.name.clone()).collect()
+        self.graph
+            .node_weights()
+            .map(|node| node.name.clone())
+            .collect()
     }
 
     pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, GraphError> {
         let mut all_signatures = HashMap::new();
 
         for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
-            let signatures = input_spending_infos.iter().map(|info| InputSignatures::new(info.signatures().clone())).collect();
+            let signatures = input_spending_infos
+                .iter()
+                .map(|info| InputSignatures::new(info.signatures().clone()))
+                .collect();
             all_signatures.insert(name, signatures);
         }
 
         Ok(all_signatures)
     }
 
-    pub fn get_input_ecdsa_signature(&self, name: &str, input_index: usize) -> Result<bitcoin::ecdsa::Signature, GraphError> {
+    pub fn get_input_ecdsa_signature(
+        &self,
+        name: &str,
+        input_index: usize,
+    ) -> Result<bitcoin::ecdsa::Signature, GraphError> {
         let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(0)? {
@@ -369,11 +481,17 @@ impl TransactionGraph {
         Ok(*signature)
     }
 
-    pub fn get_input_taproot_signature(&self, name: &str, input_index: usize, leaf_index: usize) -> Result<bitcoin::taproot::Signature, GraphError> {
+    pub fn get_input_taproot_signature(
+        &self,
+        name: &str,
+        input_index: usize,
+        leaf_index: usize,
+    ) -> Result<bitcoin::taproot::Signature, GraphError> {
         let node_index = self.get_node_index(name)?;
-        let node = self.graph.node_weight(node_index).ok_or(GraphError::MissingTransaction(
-            name.to_string())
-        )?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(leaf_index)? {
@@ -390,20 +508,23 @@ impl TransactionGraph {
 
     pub fn sort(&self) -> Result<Vec<String>, GraphError> {
         let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
-        let result = sorted.iter().map(|node_index| {
-            let node = self.graph.node_weight(*node_index).unwrap();
-            node.name.clone()
-        }).collect();
+        let result = sorted
+            .iter()
+            .map(|node_index| {
+                let node = self.graph.node_weight(*node_index).unwrap();
+                node.name.clone()
+            })
+            .collect();
 
         Ok(result)
     }
 }
 
 #[cfg(test)]
-mod test {    
-    use bitcoin::{consensus::Decodable, Transaction};
-    use bitcoin::hex::test_hex_unwrap as hex;
+mod test {
     use super::Node;
+    use bitcoin::hex::test_hex_unwrap as hex;
+    use bitcoin::{consensus::Decodable, Transaction};
 
     const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
 
@@ -423,7 +544,7 @@ mod test {
         use super::Connection;
 
         let connection = Connection::new("test_connection".to_string(), 1, 2);
-        
+
         assert_eq!(connection.name, "test_connection");
         assert_eq!(connection.input_index, 1);
         assert_eq!(connection.output_index, 2);
@@ -443,11 +564,11 @@ mod test {
         let mut graph = super::TransactionGraph::default();
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        
+
         graph.add_transaction("tx1", tx.clone()).unwrap();
-        
+
         assert!(graph.contains_transaction("tx1"));
-        assert_eq!(graph.graph.node_count(), 1);        
+        assert_eq!(graph.graph.node_count(), 1);
     }
 
     #[test]
@@ -455,7 +576,7 @@ mod test {
         let mut graph = super::TransactionGraph::default();
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-                
+
         assert!(graph.add_transaction("", tx.clone()).is_err());
     }
 
@@ -463,12 +584,12 @@ mod test {
     fn add_duplicated_transaction_to_graph() {
         let mut graph = super::TransactionGraph::default();
         let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();        
-        graph.add_transaction("tx1", tx.clone()).unwrap();        
+        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
+        graph.add_transaction("tx1", tx.clone()).unwrap();
         assert!(graph.add_transaction("tx1", tx.clone()).is_err());
 
         assert!(graph.contains_transaction("tx1"));
-        assert!(!graph.contains_transaction("tx2"));        
+        assert!(!graph.contains_transaction("tx2"));
         assert_eq!(graph.graph.node_count(), 1);
     }
 
@@ -477,17 +598,17 @@ mod test {
         let mut graph = super::TransactionGraph::default();
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        
+
         graph.add_transaction("tx1", tx.clone()).unwrap();
         graph.add_transaction("tx2", tx).unwrap();
-        
+
         let sorted = graph.sort().unwrap();
         assert_eq!(sorted.len(), 2);
-        
+
         // The order is deterministic but either tx1->tx2 or tx2->tx1 is valid
         assert!(
-            (sorted[0] == "tx1" && sorted[1] == "tx2") ||
-            (sorted[0] == "tx2" && sorted[1] == "tx1")
+            (sorted[0] == "tx1" && sorted[1] == "tx2")
+                || (sorted[0] == "tx2" && sorted[1] == "tx1")
         );
     }
 
@@ -499,7 +620,7 @@ mod test {
 
         let result = node.get_input_spending_info(0);
         assert!(result.is_err());
-        
+
         if let Err(super::GraphError::MissingInputSpendingInfo(name, index)) = result {
             assert_eq!(name, "test_tx");
             assert_eq!(index, 0);
