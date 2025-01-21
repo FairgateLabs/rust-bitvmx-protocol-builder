@@ -27,12 +27,13 @@ jobs:
 
       - name: Clone rust-bitvmx-workspace
         run: |
-          cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git          
+          git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
+
+      - name: List files after cloning repository
+        run: ls -l
           
       - name: Build project
         run: |
-          ls
           cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
           ls
           cargo build --verbose
