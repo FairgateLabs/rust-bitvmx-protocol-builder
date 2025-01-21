@@ -21,20 +21,18 @@ jobs:
     if: ${{ !contains(github.event.pull_request.title, '[cov]') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Set up Git credentials for key manager and storage backend
+      - name: Set up Git credentials
         run: |
           git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
 
       - name: Clone rust-bitvmx-workspace
         run: |
           cd ..
-          git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
-          cd rust-bitvmx-workspace
-          mv * .* ..
+          git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git          
           
       - name: Build project
         run: |
-          # Move directly to rust-bitvmx-protocol-builder
+          ls
           cd rust-bitvmx-workspace/rust-bitvmx-protocol-builder
           ls
           cargo build --verbose
@@ -65,7 +63,6 @@ jobs:
         git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
         cd rust-bitvmx-workspace
         mv * .* ..
-
 
     - name: Run cargo-tarpaulin
       uses: actions-rs/tarpaulin@v0.1
