@@ -36,7 +36,7 @@ jobs:
       - name: Build project
         working-directory: rust-bitvmx-workspace/rust-bitvmx-protocol-builder
         run: |
-          ls
+          cd ..
           cargo build --verbose
 
       - name: Run tests
