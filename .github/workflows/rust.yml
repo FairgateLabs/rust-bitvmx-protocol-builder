@@ -32,8 +32,8 @@ jobs:
         run: |
           cd ..
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
-          mv rust-bitvmx-workspace/* rust-bitvmx-workspace/.[^.]* .
-
+          cd rust-bitvmx-workspace
+          mv * .* ..
           
       - name: Build project
         run: ls && cargo build --verbose
@@ -62,7 +62,8 @@ jobs:
       run: |
         cd ..
         git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
-        mv rust-bitvmx-workspace/* rust-bitvmx-workspace/.[^.]* .
+        cd rust-bitvmx-workspace
+        mv * .* ..
 
 
     - name: Run cargo-tarpaulin
