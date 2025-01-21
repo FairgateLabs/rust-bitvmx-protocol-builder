@@ -33,6 +33,7 @@ jobs:
           token: ${{ secrets.REPO_ACCESS_TOKEN }}
           ref: main
           path: rust-bitvmx-workspace # Store in $GITHUB_WORKSPACE/other-repo
+          submodules: true
 
       - name: List files after cloning repository
         run: |
