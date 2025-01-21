@@ -20,25 +20,29 @@ jobs:
   test:
     if: ${{ !contains(github.event.pull_request.title, '[cov]') }}
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: /rust-bitvmx-protocol-builder
     steps:
       - name: Set up Git credentials
         run: |
           git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
+        
+      - name: List files before cloning repository
+        run: |
+          ls -l
 
       - name: Clone rust-bitvmx-workspace
-        working-directory: /app
         run: |
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
 
       - name: List files after cloning repository
-        working-directory: /app
         run: |
           ls -l
           ls -l rust-bitvmx-workspace  # List contents of the cloned directory
           ls -l rust-bitvmx-workspace/*  # List contents of all subdirectories for verification
       
       - name: Build project
-        working-directory: /app
         run: |       
           cargo build --verbose
 
