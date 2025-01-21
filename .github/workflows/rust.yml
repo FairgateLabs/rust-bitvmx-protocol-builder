@@ -25,18 +25,13 @@ jobs:
         run: |
           git config --global url."https://${{ secrets.REPO_ACCESS_TOKEN }}:x-oauth-basic@github.com/FairgateLabs/".insteadOf "https://github.com/FairgateLabs/"
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      
       - name: Clone rust-bitvmx-workspace
         run: |
-          cd ..
           git clone https://github.com/FairgateLabs/rust-bitvmx-workspace.git
           cd rust-bitvmx-workspace
-          mv * .* ..
           
       - name: Build project
-        run: ls && cargo build --verbose
+        run: cd rust-bitvmx-protocol-builder && cargo build --verbose
 
       - name: Run tests
         run: cargo test --verbose
