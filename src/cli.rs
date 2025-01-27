@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
 
 use anyhow::{Ok, Result};
 
@@ -11,6 +11,7 @@ use key_manager::{
     create_database_key_store_from_config, create_key_manager_from_config, key_manager::KeyManager,
     keystorage::database::DatabaseKeyStore,
 };
+use storage_backend::storage::Storage;
 use tracing::info;
 
 use crate::{
@@ -241,7 +242,8 @@ impl Cli {
     }
 
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         builder.build()?;
 
         info!("Protocol {} built", protocol_name);
@@ -249,7 +251,8 @@ impl Cli {
     }
 
     fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let key_manager = self.key_manager()?;
         builder.build_and_sign(&key_manager)?;
 
@@ -266,7 +269,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let txid = Hash::all_zeros();
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let output_index = 0;
@@ -299,7 +303,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_p2wpkh_output(transaction_name, value, &public_key)?;
@@ -316,7 +321,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         builder.add_speedup_output(transaction_name, value, &public_key)?;
@@ -334,7 +340,8 @@ impl Cli {
         to: &str,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
@@ -369,7 +376,8 @@ impl Cli {
         blocks: u16,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
@@ -403,7 +411,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let mut builder = ProtocolBuilder::new(protocol_name, graph_storage_path)?;
+        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
