@@ -118,6 +118,20 @@ impl Protocol {
         }
     }
 
+    pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
+        let protocol = match storage.read(name)?{
+            Some(protocol) => protocol,
+            None => return Ok(None),
+        };
+        let protocol: Protocol = serde_json::from_str(&protocol)?;
+        Ok(Some(protocol))
+    }
+
+    pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
+        storage.write(&self.name, &serde_json::to_string(self)?)?;
+        Ok(())
+    }
+
     pub fn add_taproot_tweaked_key_spend_output(
         &mut self,
         transaction_name: &str,
@@ -1420,15 +1434,16 @@ impl ProtocolBuilder {
         protocol_name: &str,
         storage: Rc<Storage>,
     ) -> Result<Self, ProtocolBuilderError> {
-        match storage.read(protocol_name)? {
-            Some(protocol) => Ok(ProtocolBuilder {
-                protocol: serde_json::from_str(&protocol)?,
+        match Protocol::load(protocol_name, storage.clone())? {
+            Some(protocol) => Ok(Self {
+                protocol,
                 storage,
             }),
-            None => Ok(ProtocolBuilder {
+            None => Ok(Self {
                 protocol: Protocol::new(protocol_name),
                 storage,
             }),
+
         }
     }
 
@@ -1857,8 +1872,7 @@ impl ProtocolBuilder {
     }
 
     fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {
-        self.storage
-            .write(&self.protocol.name, &serde_json::to_string(&self.protocol)?)?;
+        self.protocol.save(self.storage.clone())?;
         Ok(())
     }
 }
