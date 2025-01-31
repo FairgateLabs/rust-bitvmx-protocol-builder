@@ -32,6 +32,7 @@ bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/",
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx"}
 
 bitvmx-key-manager = { path = "../rust-bitvmx-key-manager" }
+bitvmx-bitcoin-rpc = { path = "../rust-bitvmx-bitcoin-rpc" }
 rust-bitvmx-storage-backend = {path = "../rust-bitvmx-storage-backend"}
 
 [[bin]]

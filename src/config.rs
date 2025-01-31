@@ -1,3 +1,4 @@
+use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use config as settings;
 use key_manager::config::{KeyManagerConfig, KeyStorageConfig};
 use serde::Deserialize;
@@ -17,15 +18,6 @@ pub struct ProtocolBuilderConfig {
     pub locked_blocks: u16,
     pub ecdsa_sighash_type: String,
     pub taproot_sighash_type: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RpcConfig {
-    pub network: String,
-    pub url: String,
-    pub username: String,
-    pub password: String,
-    pub wallet: String,
 }
 
 #[derive(Debug, Deserialize)]
