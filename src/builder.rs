@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, rc::Rc};
 
 use bitcoin::{
     hashes::Hash,
@@ -29,7 +29,7 @@ use crate::{
 
 pub struct ProtocolBuilder {
     protocol: Protocol,
-    storage: Storage,
+    storage: Rc<Storage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -116,6 +116,20 @@ impl Protocol {
             name: name.to_string(),
             graph: TransactionGraph::new(),
         }
+    }
+
+    pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
+        let protocol = match storage.read(name)?{
+            Some(protocol) => protocol,
+            None => return Ok(None),
+        };
+        let protocol: Protocol = serde_json::from_str(&protocol)?;
+        Ok(Some(protocol))
+    }
+
+    pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
+        storage.write(&self.name, &serde_json::to_string(self)?)?;
+        Ok(())
     }
 
     pub fn add_taproot_tweaked_key_spend_output(
@@ -831,14 +845,14 @@ impl Protocol {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    tap_sighash_type,
+                                    &tap_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::TaprootUntweakedKey { .. } => {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    tap_sighash_type,
+                                    &tap_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::TaprootScript {
@@ -849,7 +863,7 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     spending_scripts,
-                                    tap_sighash_type,
+                                    &tap_sighash_type,
                                 )?;
                             }
                             _ => {
@@ -863,9 +877,9 @@ impl Protocol {
                                 self.segwit_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    public_key,
-                                    value,
-                                    ecdsa_sighash_type,
+                                    &public_key,
+                                    &value,
+                                    &ecdsa_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::SegwitScript { ref script, value } => {
@@ -873,8 +887,8 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     script,
-                                    value,
-                                    ecdsa_sighash_type,
+                                    &value,
+                                    &ecdsa_sighash_type,
                                 )?;
                             }
                             _ => {
@@ -908,9 +922,9 @@ impl Protocol {
                                 self.taproot_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    key,
-                                    Some(tweak),
-                                    tap_sighash_type,
+                                    &key,
+                                    Some(&tweak),
+                                    &tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -918,9 +932,9 @@ impl Protocol {
                                 self.taproot_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    key,
+                                    &key,
                                     None,
-                                    tap_sighash_type,
+                                    &tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -932,7 +946,7 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     spending_scripts,
-                                    tap_sighash_type,
+                                    &tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -947,9 +961,9 @@ impl Protocol {
                                 self.segwit_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    public_key,
-                                    value,
-                                    ecdsa_sighash_type,
+                                    &public_key,
+                                    &value,
+                                    &ecdsa_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -958,8 +972,8 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     script,
-                                    value,
-                                    ecdsa_sighash_type,
+                                    &value,
+                                    &ecdsa_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -1418,19 +1432,18 @@ impl Protocol {
 impl ProtocolBuilder {
     pub fn new(
         protocol_name: &str,
-        graph_storage_path: PathBuf,
+        storage: Rc<Storage>,
     ) -> Result<Self, ProtocolBuilderError> {
-        let storage = Storage::new_with_path(&graph_storage_path)?;
-
-        match storage.read(protocol_name)? {
-            Some(protocol) => Ok(ProtocolBuilder {
-                protocol: serde_json::from_str(&protocol)?,
+        match Protocol::load(protocol_name, storage.clone())? {
+            Some(protocol) => Ok(Self {
+                protocol,
                 storage,
             }),
-            None => Ok(ProtocolBuilder {
+            None => Ok(Self {
                 protocol: Protocol::new(protocol_name),
                 storage,
             }),
+
         }
     }
 
@@ -1859,8 +1872,7 @@ impl ProtocolBuilder {
     }
 
     fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {
-        self.storage
-            .write(&self.protocol.name, &serde_json::to_string(&self.protocol)?)?;
+        self.protocol.save(self.storage.clone())?;
         Ok(())
     }
 }

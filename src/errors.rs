@@ -166,6 +166,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Signature not found")]
     MissingSignature,
+
+    #[error("Protocol not built")]
+    ProtocolNotBuilt,
 }
 
 #[derive(Error, Debug)]
