@@ -12,7 +12,7 @@ use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
 use serde::{Deserialize, Serialize};
 
-use crate::errors::ScriptError;
+use crate::{errors::ScriptError, graph::input};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
@@ -148,28 +148,36 @@ pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ProtocolScript 
 
 pub fn kickoff(
     aggregated_key: &PublicKey,
+    input_key: &WinternitzPublicKey,
     ending_state_key: &WinternitzPublicKey,
     ending_step_number_key: &WinternitzPublicKey,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
+        { ots_checksig(input_key, false)? }
         { ots_checksig(ending_state_key, false)? }
         { ots_checksig(ending_step_number_key, false)? }
     );
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key);
     protocol_script.add_key(
+        "input",
+        input_key.derivation_index()?,
+        KeyType::WinternitzKey(input_key.key_type()),
+        0,
+    )?;
+    protocol_script.add_key(
         "ending_state",
         ending_state_key.derivation_index()?,
         KeyType::WinternitzKey(ending_state_key.key_type()),
-        0,
+        1,
     )?;
     protocol_script.add_key(
         "ending_step_number",
         ending_step_number_key.derivation_index()?,
         KeyType::WinternitzKey(ending_step_number_key.key_type()),
-        1,
+        2,
     )?;
     Ok(protocol_script)
 }

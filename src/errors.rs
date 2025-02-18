@@ -1,8 +1,5 @@
 use bitcoin::{
-    key::{ParsePublicKeyError, UncompressedPublicKeyError},
-    sighash::{P2wpkhError, SighashTypeParseError, TaprootError},
-    taproot::TaprootBuilderError,
-    transaction,
+    key::{ParsePublicKeyError, UncompressedPublicKeyError}, script::PushBytesError, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction
 };
 use key_manager::errors::{KeyManagerError, WinternitzError};
 use thiserror::Error;
@@ -169,6 +166,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Protocol not built")]
     ProtocolNotBuilt,
+
+    #[error("Failed to push data in op_return script")]
+    OpReturnDataError(#[from] PushBytesError),
 }
 
 #[derive(Error, Debug)]

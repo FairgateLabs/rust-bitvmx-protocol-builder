@@ -1,14 +1,7 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc, vec};
 
 use bitcoin::{
-    hashes::Hash,
-    key::{TweakedPublicKey, UntweakedPublicKey},
-    locktime,
-    secp256k1::{self, Message, Scalar},
-    sighash::{self, SighashCache},
-    taproot::{LeafVersion, TaprootSpendInfo},
-    transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash,
-    TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey,
+    hashes::Hash, key::{TweakedPublicKey, UntweakedPublicKey}, locktime, opcodes::all::OP_RETURN, script::{PushBytes, PushBytesBuf}, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey
 };
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature,
@@ -119,7 +112,7 @@ impl Protocol {
     }
 
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        let protocol = match storage.read(name)?{
+        let protocol = match storage.read(name)? {
             Some(protocol) => protocol,
             None => return Ok(None),
         };
@@ -252,6 +245,20 @@ impl Protocol {
             internal_key,
             &[expired_script.clone(), renew_script.clone()],
         )
+    }
+
+    pub fn add_op_return_output(
+        &mut self,
+        transaction_name: &str,
+        data: Vec<u8>
+    ) -> Result<&mut Self, ProtocolBuilderError> { 
+        let value = Amount::from_sat(0);
+        let script_pubkey = ScriptBuf::new_op_return(PushBytesBuf::try_from(data)?);
+
+        let spending_type = OutputSpendingType::new_segwit_unspendable();
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+
+        Ok(self)
     }
 
     pub fn add_taproot_tweaked_key_spend_input(
@@ -1434,20 +1441,13 @@ impl Protocol {
 }
 
 impl ProtocolBuilder {
-    pub fn new(
-        protocol_name: &str,
-        storage: Rc<Storage>,
-    ) -> Result<Self, ProtocolBuilderError> {
+    pub fn new(protocol_name: &str, storage: Rc<Storage>) -> Result<Self, ProtocolBuilderError> {
         match Protocol::load(protocol_name, storage.clone())? {
-            Some(protocol) => Ok(Self {
-                protocol,
-                storage,
-            }),
+            Some(protocol) => Ok(Self { protocol, storage }),
             None => Ok(Self {
                 protocol: Protocol::new(protocol_name),
                 storage,
             }),
-
         }
     }
 
@@ -1552,6 +1552,18 @@ impl ProtocolBuilder {
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol
             .add_speedup_output(transaction_name, value, speedup_public_key)?;
+        self.save_protocol()?;
+
+        Ok(self)
+    }
+
+    pub fn add_op_return_output(
+        &mut self,
+        transaction_name: &str,
+        data: Vec<u8>,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol
+            .add_op_return_output(transaction_name, data)?;
         self.save_protocol()?;
 
         Ok(self)

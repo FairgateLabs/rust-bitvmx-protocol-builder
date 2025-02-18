@@ -35,6 +35,8 @@ pub enum OutputSpendingType {
         script: ProtocolScript,
         value: Amount,
     },
+    SegwitUnspendable{
+    }
 }
 
 impl Serialize for OutputSpendingType {
@@ -79,6 +81,11 @@ impl Serialize for OutputSpendingType {
                 state.serialize_field("type", "segwit_script")?;
                 state.serialize_field("script", script)?;
                 state.serialize_field("value", value)?;
+                state.end()
+            }
+            OutputSpendingType::SegwitUnspendable { } => {
+                let mut state = serializer.serialize_struct("OutputSpendingType", 1)?;
+                state.serialize_field("type", "segwit_unspendable")?;
                 state.end()
             }
         }
@@ -231,6 +238,9 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             value.ok_or_else(|| serde::de::Error::missing_field("value"))?;
                         Ok(OutputSpendingType::SegwitScript { script, value })
                     }
+                    "segwit_unspendable" => {
+                        Ok(OutputSpendingType::SegwitUnspendable { })
+                    }
                     _ => Err(serde::de::Error::unknown_variant(
                         &output_type,
                         ALL_OUTPUT_TYPES,
@@ -291,6 +301,10 @@ impl OutputSpendingType {
             script: script.clone(),
             value,
         }
+    }
+
+    pub fn new_segwit_unspendable() -> OutputSpendingType {
+        OutputSpendingType::SegwitUnspendable {  }
     }
 }
 
