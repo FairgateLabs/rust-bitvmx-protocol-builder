@@ -547,6 +547,9 @@ mod tests {
             &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]
         );
 
+        let graph = protocol.visualize()?;
+        println!("{}", graph);
+
         Ok(())
     }
 

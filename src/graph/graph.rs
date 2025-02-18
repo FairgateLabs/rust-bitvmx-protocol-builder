@@ -518,6 +518,27 @@ impl TransactionGraph {
 
         Ok(result)
     }
+
+    pub fn visualize(&self) -> Result<String, GraphError> {
+        let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=Record]\n".to_owned();
+
+        for node_index in self.graph.node_indices() {
+            let from = self.graph.node_weight(node_index).unwrap();
+
+            for edge in self.graph.edges(node_index) {
+                let connection = edge.weight();
+                let to = self.graph.node_weight(edge.target()).unwrap();
+                result.push_str(&format!(
+                    "{} -> {} [label={}]\n",
+                    from.name, to.name, connection.name
+                ));
+            }
+        }
+
+        result.push_str("}");
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]

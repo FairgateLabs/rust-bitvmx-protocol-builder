@@ -725,6 +725,10 @@ impl Protocol {
         Ok(input_signature)
     }
 
+    pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {
+        Ok(self.graph.visualize()?)
+    }
+
     fn add_transaction_output(
         &mut self,
         transaction_name: &str,
