@@ -110,6 +110,18 @@ impl ProtocolScript {
     }
 }
 
+pub fn op_return(data: &[u8]) -> ProtocolScript {
+    let script = script!(
+        OP_RETURN
+        { data.to_vec() }
+    );
+
+    // Create a dummy public key since OP_RETURN scripts don't use signatures
+    let pubkey_bytes = hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd").unwrap();
+    let dummy_pubkey = PublicKey::from_slice(&pubkey_bytes).unwrap();
+    ProtocolScript::new(script, &dummy_pubkey)
+}
+
 pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
