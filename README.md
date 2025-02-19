@@ -22,6 +22,7 @@ Here’s a basic example of how to use the Protocol Builder to create and connec
 ```rust
 let mut builder = ProtocolBuilder::new("protocol_name");
 ```
+
 ### Connecting transactions
 
 In Bitcoin, spending scripts define the spending conditions for an output. The Protocol Builder allows you to connect transactions using these scripts.
@@ -90,6 +91,14 @@ let mut builder = ProtocolBuilder::new("protocol_name");
 let protocol = builder.build()?;
 ```
 
+### Create the scripts
+Besides the high level functions to create connections, it is possible to create custom scripts and use them in the connections.
+
+```rust
+let script_timelock = timelock(blocks, &public_key);
+let script = ProtocolScript::new(script_timelock.get_script(), &public_key);
+```
+
 ## Error handling
 
 All methods return Result types, with errors encapsulated in ProtocolBuilderError.
@@ -111,3 +120,4 @@ Taproot is a type of Bitcoin script upgrade that improves privacy, scalability, 
 
 ### What are signature hashes?
 Signature hashes (sighashes) determine which parts of a Bitcoin transaction are signed. The SighashType enum defines which portions are included in the signature.
+
