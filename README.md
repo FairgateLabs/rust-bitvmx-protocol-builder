@@ -91,14 +91,6 @@ let mut builder = ProtocolBuilder::new("protocol_name");
 let protocol = builder.build()?;
 ```
 
-### Create the scripts
-Besides the high level functions to create connections, it is possible to create custom scripts and use them in the connections.
-
-```rust
-let script_timelock = timelock(blocks, &public_key);
-let script = ProtocolScript::new(script_timelock.get_script(), &public_key);
-```
-
 ## Error handling
 
 All methods return Result types, with errors encapsulated in ProtocolBuilderError.
