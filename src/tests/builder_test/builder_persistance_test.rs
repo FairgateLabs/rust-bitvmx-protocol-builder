@@ -10,7 +10,7 @@ mod tests {
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs},
+        builder::ProtocolBuilder,
         errors::ProtocolBuilderError,
         graph::{input::SighashType, output::OutputSpendingType},
         scripts::ProtocolScript,
