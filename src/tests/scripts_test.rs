@@ -10,7 +10,7 @@ mod tests {
     ;
 
     #[test]
-    fn test_timelock_tx() {
+    fn test_timelock_output_script() {
         // Arrenge
         let blocks = 587;
         let pubkey_bytes =
@@ -35,4 +35,5 @@ mod tests {
         let script_timelock_bytes_hex = hex::encode(script_timelock.get_script().to_bytes());
         assert_eq!(script_timelock_bytes_hex, "024b02b27520c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fdac");
     }
+
 }
