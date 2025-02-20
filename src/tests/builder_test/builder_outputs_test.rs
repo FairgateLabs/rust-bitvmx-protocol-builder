@@ -8,7 +8,7 @@ mod tests {
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::ProtocolBuilder,
+        builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
         graph::output::OutputSpendingType,
         scripts::ProtocolScript, 
@@ -95,7 +95,7 @@ mod tests {
     }
 
     #[test]
-    fn test_taproot_keypath_and_speedup() -> Result<(), anyhow::Error> {
+    fn test_taproot_keypath_and_signature() -> Result<(), anyhow::Error> {
         // Arrange
         let key_manager = common::new_key_manager()?;
         let ecdsa_sighash_type = common::ecdsa_sighash_type();
@@ -121,6 +121,7 @@ mod tests {
             "keypath_origin",
             &ecdsa_sighash_type,
         )?
+        // This connection creates the output and input scripts for the taprootkeypath spend
         .add_taproot_key_spend_connection(
             "connection",
             "keypath_origin",
@@ -137,9 +138,15 @@ mod tests {
         )?
         .build_and_sign(&key_manager)?;
 
+        let signature = protocol.input_taproot_signature("keypath_spend", 0, 0).unwrap();
+        let mut spending_args = SpendingArgs::new_args();
+        spending_args.push_taproot_signature(signature);
+        // This methods adds the witness and other impiortant information to the transaction
+        let transaction = protocol.transaction_to_send("keypath_spend", &[spending_args])?;
+
         let tx_origin = protocol.transaction("keypath_origin")?;
         let tx_spend = protocol.transaction("keypath_spend")?;
-        //println!("tx: {:?}", tx_spended);
+
         // Assert
         assert_eq!(tx_origin.output.len(), 2, "Origin transaction should have 2 outputs");
         let script_taproot_output = tx_origin.output[0].script_pubkey.clone();
@@ -170,7 +177,9 @@ mod tests {
         assert_eq!(tx_spend.input[0].previous_output.txid, tx_origin.compute_txid(), "Spend input should have the same txid as the origin transaction");
         assert_eq!(tx_spend.input[0].previous_output.vout, 0, "Spend input should have the same output index as the origin transaction");
         assert_eq!(tx_spend.input[0].sequence, Sequence::from_hex("0xfffffffd").unwrap(), "Spend input should have the sequence number 0xfffffffd");
-        
+        // Check that the witness is added to the transaction
+        assert_eq!(transaction.input[0].witness.len(), 1, "Spend input should have 1 witness");
+
         Ok(())
     }
 
