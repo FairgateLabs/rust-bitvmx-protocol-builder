@@ -475,7 +475,14 @@ impl TransactionGraph {
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(0)? {
             Signature::Ecdsa(signature) => signature,
-            _ => return Err(GraphError::InvalidSignatureType),
+            _ => {
+                return Err(GraphError::InvalidSignatureType(
+                    name.to_string(),
+                    input_index,
+                    "Ecdsa".to_string(),
+                    "Taproot".to_string(),
+                ))
+            }
         };
 
         Ok(*signature)
@@ -496,7 +503,14 @@ impl TransactionGraph {
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(leaf_index)? {
             Signature::Taproot(signature) => signature,
-            _ => return Err(GraphError::InvalidSignatureType),
+            _ => {
+                return Err(GraphError::InvalidSignatureType(
+                    name.to_string(),
+                    input_index,
+                    "Taproot".to_string(),
+                    "ECDSA".to_string(),
+                ))
+            }
         };
 
         Ok(*signature)
@@ -535,7 +549,7 @@ impl TransactionGraph {
             }
         }
 
-        result.push_str("}");
+        result.push('}');
 
         Ok(result)
     }

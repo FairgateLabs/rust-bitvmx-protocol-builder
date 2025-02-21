@@ -1,7 +1,15 @@
 use std::{collections::HashMap, rc::Rc, vec};
 
 use bitcoin::{
-    hashes::Hash, key::{TweakedPublicKey, UntweakedPublicKey}, locktime, opcodes::all::OP_RETURN, script::{PushBytes, PushBytesBuf}, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey
+    hashes::Hash,
+    key::{TweakedPublicKey, UntweakedPublicKey},
+    locktime,
+    script::PushBytesBuf,
+    secp256k1::{self, Message, Scalar},
+    sighash::{self, SighashCache},
+    taproot::{LeafVersion, TaprootSpendInfo},
+    transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash,
+    TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey,
 };
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature,
@@ -250,8 +258,8 @@ impl Protocol {
     pub fn add_op_return_output(
         &mut self,
         transaction_name: &str,
-        data: Vec<u8>
-    ) -> Result<&mut Self, ProtocolBuilderError> { 
+        data: Vec<u8>,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
         let value = Amount::from_sat(0);
         let script_pubkey = ScriptBuf::new_op_return(PushBytesBuf::try_from(data)?);
 
@@ -694,6 +702,14 @@ impl Protocol {
             .map_err(ProtocolBuilderError::from)
     }
 
+    pub fn transaction_without_witness(
+        &self,
+        transaction_name: &str,
+    ) -> Result<Transaction, ProtocolBuilderError> {
+        let transaction = self.transaction(transaction_name)?.clone();
+        Ok(transaction)
+    }
+
     pub(crate) fn transaction(
         &self,
         transaction_name: &str,
@@ -856,14 +872,14 @@ impl Protocol {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    &tap_sighash_type,
+                                    tap_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::TaprootUntweakedKey { .. } => {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    &tap_sighash_type,
+                                    tap_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::TaprootScript {
@@ -874,7 +890,7 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     spending_scripts,
-                                    &tap_sighash_type,
+                                    tap_sighash_type,
                                 )?;
                             }
                             _ => {
@@ -888,9 +904,9 @@ impl Protocol {
                                 self.segwit_key_spend_sighash(
                                     &transaction_name,
                                     index,
-                                    &public_key,
-                                    &value,
-                                    &ecdsa_sighash_type,
+                                    public_key,
+                                    value,
+                                    ecdsa_sighash_type,
                                 )?;
                             }
                             OutputSpendingType::SegwitScript { ref script, value } => {
@@ -898,8 +914,8 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     script,
-                                    &value,
-                                    &ecdsa_sighash_type,
+                                    value,
+                                    ecdsa_sighash_type,
                                 )?;
                             }
                             _ => {
@@ -933,9 +949,9 @@ impl Protocol {
                                 self.taproot_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    &key,
-                                    Some(&tweak),
-                                    &tap_sighash_type,
+                                    key,
+                                    Some(tweak),
+                                    tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -943,9 +959,9 @@ impl Protocol {
                                 self.taproot_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    &key,
+                                    key,
                                     None,
-                                    &tap_sighash_type,
+                                    tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -957,7 +973,7 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     spending_scripts,
-                                    &tap_sighash_type,
+                                    tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -972,9 +988,9 @@ impl Protocol {
                                 self.segwit_key_spend_signature(
                                     &transaction_name,
                                     index,
-                                    &public_key,
-                                    &value,
-                                    &ecdsa_sighash_type,
+                                    public_key,
+                                    value,
+                                    ecdsa_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -983,8 +999,8 @@ impl Protocol {
                                     &transaction_name,
                                     index,
                                     script,
-                                    &value,
-                                    &ecdsa_sighash_type,
+                                    value,
+                                    ecdsa_sighash_type,
                                     key_manager,
                                 )?;
                             }
@@ -1562,8 +1578,7 @@ impl ProtocolBuilder {
         transaction_name: &str,
         data: Vec<u8>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.protocol
-            .add_op_return_output(transaction_name, data)?;
+        self.protocol.add_op_return_output(transaction_name, data)?;
         self.save_protocol()?;
 
         Ok(self)
@@ -1808,6 +1823,21 @@ impl ProtocolBuilder {
         Ok(self)
     }
 
+    pub fn connect(
+        &mut self,
+        connection_name: &str,
+        from: &str,
+        output_index: u32,
+        to: &str,
+        input_index: u32,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol
+            .connect(connection_name, from, output_index, to, input_index)?;
+        self.save_protocol()?;
+
+        Ok(self)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn connect_rounds(
         &mut self,
@@ -1885,6 +1915,10 @@ impl ProtocolBuilder {
         self.add_speedup_output(transaction_name, speedup_value, speedup_public_key)?;
 
         Ok(self)
+    }
+
+    pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {
+        Ok(self.protocol.visualize()?)
     }
 
     fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {

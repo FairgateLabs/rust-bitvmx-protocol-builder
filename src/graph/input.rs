@@ -243,7 +243,7 @@ impl InputSpendingInfo {
             Some(OutputSpendingType::SegwitScript { script, .. }) => {
                 vec![script.get_verifying_key()]
             }
-            Some(OutputSpendingType::SegwitUnspendable {  }) => vec![],
+            Some(OutputSpendingType::SegwitUnspendable {}) => vec![],
             None => vec![],
         }
     }

@@ -12,7 +12,7 @@ use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::ScriptError, graph::input};
+use crate::errors::ScriptError;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
@@ -110,6 +110,27 @@ impl ProtocolScript {
     }
 }
 
+pub fn verify_winternitz_signature(
+    verifying_key: &PublicKey,
+    public_key: &WinternitzPublicKey,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        { ots_checksig(public_key, false)? }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, verifying_key);
+    protocol_script.add_key(
+        "value",
+        public_key.derivation_index()?,
+        KeyType::WinternitzKey(public_key.key_type()),
+        0,
+    )?;
+
+    Ok(protocol_script)
+}
 
 pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     let script = script!(

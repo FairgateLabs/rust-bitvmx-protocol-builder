@@ -1,5 +1,9 @@
 use bitcoin::{
-    key::{ParsePublicKeyError, UncompressedPublicKeyError}, script::PushBytesError, sighash::{P2wpkhError, SighashTypeParseError, TaprootError}, taproot::TaprootBuilderError, transaction
+    key::{ParsePublicKeyError, UncompressedPublicKeyError},
+    script::PushBytesError,
+    sighash::{P2wpkhError, SighashTypeParseError, TaprootError},
+    taproot::TaprootBuilderError,
+    transaction,
 };
 use key_manager::errors::{KeyManagerError, WinternitzError};
 use thiserror::Error;
@@ -38,8 +42,8 @@ pub enum GraphError {
     #[error("Missing input spending information in transaction {0} for input {1}")]
     MissingInputSpendingInfo(String, usize),
 
-    #[error("Invalid signature type")]
-    InvalidSignatureType,
+    #[error("Invalid signature type in transaction {0} for input {1}. Expected {2}, got {3}")]
+    InvalidSignatureType(String, usize, String, String),
 
     #[error("Transaction with txid {0} not found in graph")]
     TransactionNotFound(String),
