@@ -1184,15 +1184,12 @@ impl Protocol {
         let transaction = self.transaction(transaction_name)?.clone();
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
-        println!("input_index: {:?}", input_index);
-        println!("prevouts: {:?}", prevouts);
-        println!("sighash_type: {:?}", sighash_type);
+
         let hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
             input_index,
             &sighash::Prevouts::All(&prevouts),
             *sighash_type,
         )?);
-        println!("hashed_message: {:?}", hashed_message);
 
         let (schnorr_signature, _) = match tweak {
             Some(t) => key_manager.sign_schnorr_message_with_tweak(&hashed_message, key, t)?,
