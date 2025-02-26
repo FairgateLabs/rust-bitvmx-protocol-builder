@@ -14,8 +14,6 @@ use bitcoin::{
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature,
 };
-
-use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use serde::{Deserialize, Serialize};
 use storage_backend::storage::Storage;
 
