@@ -1,18 +1,21 @@
-
 #[cfg(test)]
 mod tests {
     use bitcoin::{
+        Network,
         hashes::Hash, key::rand::RngCore, opcodes::all::{OP_PUSHNUM_1, OP_RETURN}, secp256k1::{self}, Amount, PublicKey, ScriptBuf, Sequence
     };
     use std::{env, path::PathBuf, rc::Rc};
     use storage_backend::storage::Storage;
+    use key_manager::{
+            errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
+    };
+    use anyhow::Error;
 
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
-        graph::output::OutputSpendingType,
+        graph::{input::SighashType, output::OutputSpendingType},
         scripts::ProtocolScript, 
-        tests::common,
     };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
@@ -21,10 +24,46 @@ mod tests {
         dir.join(format!("storage_{}.db", index))
     }
 
-    
+    pub fn new_key_manager() -> Result<KeyManager<DatabaseKeyStore>, Error> {
+        let network = Network::Regtest;
+        let key_derivation_path = "m/101/1/0/0/";
+        let keystore_path = "/tmp/storage.db";
+        let keystore_password = "secret_password".as_bytes().to_vec();
+
+        let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+        let key_derivation_seed: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
+
+        let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+        let winternitz_seed: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
+
+        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
+        let key_manager = KeyManager::new(
+            network,
+            key_derivation_path,
+            key_derivation_seed,
+            winternitz_seed,
+            database_keystore,
+        )?;
+
+        Ok(key_manager)
+    }
+
+    pub fn ecdsa_sighash_type() -> SighashType {
+        SighashType::ecdsa_all()
+    }
+
+    pub fn taproot_sighash_type() -> SighashType {
+        SighashType::taproot_all()
+    }
+
+
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
-        let ecdsa_sighash_type = common::ecdsa_sighash_type();
+        let ecdsa_sighash_type = ecdsa_sighash_type();
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
@@ -97,9 +136,9 @@ mod tests {
     #[test]
     fn test_taproot_keypath_and_signature() -> Result<(), anyhow::Error> {
         // Arrange
-        let key_manager = common::new_key_manager()?;
-        let ecdsa_sighash_type = common::ecdsa_sighash_type();
-        let taproot_sighash_type = common::taproot_sighash_type();
+        let key_manager = new_key_manager()?;
+        let ecdsa_sighash_type = ecdsa_sighash_type();
+        let taproot_sighash_type = taproot_sighash_type();
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
