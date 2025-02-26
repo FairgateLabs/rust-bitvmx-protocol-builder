@@ -1,21 +1,24 @@
 #[cfg(test)]
 mod tests {
+    use anyhow::Error;
     use bitcoin::{
-        Network,
-        hashes::Hash, key::rand::RngCore, opcodes::all::{OP_PUSHNUM_1, OP_RETURN}, secp256k1::{self}, Amount, PublicKey, ScriptBuf, Sequence
+        hashes::Hash,
+        key::rand::RngCore,
+        opcodes::all::{OP_PUSHNUM_1, OP_RETURN},
+        secp256k1::{self},
+        Amount, Network, PublicKey, ScriptBuf, Sequence,
+    };
+    use key_manager::{
+        errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
     };
     use std::{env, path::PathBuf, rc::Rc};
     use storage_backend::storage::Storage;
-    use key_manager::{
-            errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
-    };
-    use anyhow::Error;
 
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
         graph::{input::SighashType, output::OutputSpendingType},
-        scripts::ProtocolScript, 
+        scripts::ProtocolScript,
     };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
@@ -30,12 +33,14 @@ mod tests {
         let keystore_path = "/tmp/storage.db";
         let keystore_password = "secret_password".as_bytes().to_vec();
 
-        let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+        let bytes =
+            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
         let key_derivation_seed: [u8; 32] = bytes
             .try_into()
             .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
 
-        let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+        let bytes =
+            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
         let winternitz_seed: [u8; 32] = bytes
             .try_into()
             .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
@@ -59,7 +64,6 @@ mod tests {
     pub fn taproot_sighash_type() -> SighashType {
         SighashType::taproot_all()
     }
-
 
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
@@ -146,38 +150,37 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
-    
+
         let speedup_value = 2450000;
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
-    
+
         // Act
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("tap_keypath", storage.clone())?;
-        let protocol =builder.connect_with_external_transaction(
-            txid,
-            output_index,
-            output_spending_type,
-            "keypath_origin",
-            &ecdsa_sighash_type,
-        )?
-        // This connection creates the output and input scripts for the taprootkeypath spend
-        .add_taproot_key_spend_connection(
-            "connection",
-            "keypath_origin",
-            value,
-            &public_key,
-            "keypath_spend",
-            &taproot_sighash_type,
-        )?
-        .add_speedup_output("keypath_origin", speedup_value, &pubkey_alice)?
-        .add_p2wpkh_output(
-            "keypath_spend",
-            value,
-            &pubkey_alice
-        )?
-        .build_and_sign(&key_manager)?;
+        let protocol = builder
+            .connect_with_external_transaction(
+                txid,
+                output_index,
+                output_spending_type,
+                "keypath_origin",
+                &ecdsa_sighash_type,
+            )?
+            // This connection creates the output and input scripts for the taprootkeypath spend
+            .add_taproot_key_spend_connection(
+                "connection",
+                "keypath_origin",
+                value,
+                &public_key,
+                "keypath_spend",
+                &taproot_sighash_type,
+            )?
+            .add_speedup_output("keypath_origin", speedup_value, &pubkey_alice)?
+            .add_p2wpkh_output("keypath_spend", value, &pubkey_alice)?
+            .build_and_sign(&key_manager)?;
 
-        let signature = protocol.input_taproot_signature("keypath_spend", 0, 0).unwrap();
+        let signature = protocol
+            .input_taproot_signature("keypath_spend", 0, 0)
+            .unwrap();
         let mut spending_args = SpendingArgs::new_args();
         spending_args.push_taproot_signature(signature);
         // This methods adds the witness and other impiortant information to the transaction
@@ -187,7 +190,11 @@ mod tests {
         let tx_spend = protocol.transaction("keypath_spend")?;
 
         // Assert
-        assert_eq!(tx_origin.output.len(), 2, "Origin transaction should have 2 outputs");
+        assert_eq!(
+            tx_origin.output.len(),
+            2,
+            "Origin transaction should have 2 outputs"
+        );
         let script_taproot_output = tx_origin.output[0].script_pubkey.clone();
         //println!("script_taproot_output: {:?}", hex::encode(script_taproot_output.to_bytes()));
         let taproot_output_instructions = script_taproot_output
@@ -195,10 +202,26 @@ mod tests {
             .flatten()
             .collect::<Vec<_>>();
         // Check Origin Outputs
-        assert_eq!(tx_origin.output.len(), 2, "Origin transaction should have 2 outputs");
-        assert_eq!(tx_origin.output[0].value, Amount::from_sat(value), "Origin output should have the value we sent");
-        assert_eq!(tx_origin.output[1].value, Amount::from_sat(speedup_value), "Origin output should have the speedup value");
-        assert_eq!(taproot_output_instructions.len(), 2, "Taproot output script should have 2 instructions");
+        assert_eq!(
+            tx_origin.output.len(),
+            2,
+            "Origin transaction should have 2 outputs"
+        );
+        assert_eq!(
+            tx_origin.output[0].value,
+            Amount::from_sat(value),
+            "Origin output should have the value we sent"
+        );
+        assert_eq!(
+            tx_origin.output[1].value,
+            Amount::from_sat(speedup_value),
+            "Origin output should have the speedup value"
+        );
+        assert_eq!(
+            taproot_output_instructions.len(),
+            2,
+            "Taproot output script should have 2 instructions"
+        );
         assert_eq!(
             taproot_output_instructions[0].opcode(),
             Some(OP_PUSHNUM_1),
@@ -212,14 +235,32 @@ mod tests {
 
         // Check Spend Input
         println!("tx_spend.input: {:?}", tx_spend.input);
-        assert_eq!(tx_spend.input.len(), 1, "Spend transaction should have 1 input");
-        assert_eq!(tx_spend.input[0].previous_output.txid, tx_origin.compute_txid(), "Spend input should have the same txid as the origin transaction");
-        assert_eq!(tx_spend.input[0].previous_output.vout, 0, "Spend input should have the same output index as the origin transaction");
-        assert_eq!(tx_spend.input[0].sequence, Sequence::from_hex("0xfffffffd").unwrap(), "Spend input should have the sequence number 0xfffffffd");
+        assert_eq!(
+            tx_spend.input.len(),
+            1,
+            "Spend transaction should have 1 input"
+        );
+        assert_eq!(
+            tx_spend.input[0].previous_output.txid,
+            tx_origin.compute_txid(),
+            "Spend input should have the same txid as the origin transaction"
+        );
+        assert_eq!(
+            tx_spend.input[0].previous_output.vout, 0,
+            "Spend input should have the same output index as the origin transaction"
+        );
+        assert_eq!(
+            tx_spend.input[0].sequence,
+            Sequence::from_hex("0xfffffffd").unwrap(),
+            "Spend input should have the sequence number 0xfffffffd"
+        );
         // Check that the witness is added to the transaction
-        assert_eq!(transaction.input[0].witness.len(), 1, "Spend input should have 1 witness");
+        assert_eq!(
+            transaction.input[0].witness.len(),
+            1,
+            "Spend input should have 1 witness"
+        );
 
         Ok(())
     }
-
 }
