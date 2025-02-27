@@ -1,5 +1,4 @@
 use std::{collections::HashMap, rc::Rc, vec};
-
 use bitcoin::{
     hashes::Hash,
     key::{TweakedPublicKey, UntweakedPublicKey},
@@ -27,7 +26,6 @@ use crate::{
     scripts::{self, ProtocolScript},
     unspendable::unspendable_key,
 };
-
 
 #[derive(Clone, Debug)]
 pub struct SpendingArgs {
@@ -100,7 +98,6 @@ impl SpendingArgs {
         self.args.iter()
     }
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Protocol {
