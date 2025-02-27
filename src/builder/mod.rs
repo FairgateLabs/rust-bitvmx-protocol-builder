@@ -1,4 +1,4 @@
 mod builder;
 mod protocol;
 
-pub use self::{builder::ProtocolBuilder, protocol::SpendingArgs};
+pub use self::{protocol::Protocol, builder::ProtocolBuilder, protocol::SpendingArgs};
