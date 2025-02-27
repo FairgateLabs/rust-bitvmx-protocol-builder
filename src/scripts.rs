@@ -146,10 +146,7 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
 }
 
 pub fn op_return(data: Vec<u8>) -> ScriptBuf {
-    script!(
-        OP_RETURN
-        { data }
-    )
+    script!(OP_RETURN { data })
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
@@ -701,7 +698,10 @@ mod tests {
         let script_op_return = op_return(data.clone());
 
         // Assert
-        let instructions = script_op_return.instructions().flatten().collect::<Vec<_>>();
+        let instructions = script_op_return
+            .instructions()
+            .flatten()
+            .collect::<Vec<_>>();
         //println!("instructions: {:?}", instructions);
         assert_eq!(instructions.len(), 2, "Script should have 2 instructions");
         assert_eq!(

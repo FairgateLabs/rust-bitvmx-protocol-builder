@@ -1,4 +1,3 @@
-use std::{collections::HashMap, rc::Rc, vec};
 use bitcoin::{
     hashes::Hash,
     key::{TweakedPublicKey, UntweakedPublicKey},
@@ -13,6 +12,7 @@ use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature,
 };
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::Storage;
 
 use crate::{
