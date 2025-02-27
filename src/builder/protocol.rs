@@ -3,7 +3,6 @@ use bitcoin::{
     hashes::Hash,
     key::{TweakedPublicKey, UntweakedPublicKey},
     locktime,
-    script::PushBytesBuf,
     secp256k1::{self, Message, Scalar},
     sighash::{self, SighashCache},
     taproot::{LeafVersion, TaprootSpendInfo},
@@ -255,7 +254,7 @@ impl Protocol {
         data: Vec<u8>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         let value = Amount::from_sat(0);
-        let script_pubkey = ScriptBuf::new_op_return(PushBytesBuf::try_from(data)?);
+        let script_pubkey = scripts::op_return(data);
 
         let spending_type = OutputSpendingType::new_segwit_unspendable();
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;

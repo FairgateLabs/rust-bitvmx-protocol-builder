@@ -145,6 +145,13 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
     ProtocolScript::new(script, timelock_key)
 }
 
+pub fn op_return(data: Vec<u8>) -> ScriptBuf {
+    script!(
+        OP_RETURN
+        { data }
+    )
+}
+
 // TODO aggregated_key must be an aggregated key and not a single public key
 pub fn timelock_renew(aggregated_key: &PublicKey) -> ProtocolScript {
     let script = script!(
@@ -473,7 +480,8 @@ pub fn build_taproot_spend_info(
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP},
+        hex::FromHex,
+        opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP, OP_RETURN},
         PublicKey,
     };
     use std::str::FromStr;
@@ -679,6 +687,39 @@ mod tests {
         assert_eq!(
             script_timelock_bytes_hex,
             "024b02b27520c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fdac"
+        );
+    }
+
+    #[test]
+    fn test_op_return_output_script() {
+        // Arrange
+        let value: u64 = 587;
+        let address = Vec::from_hex("7ac5496aee77c1ba1f0854206a26dda82a81d6d8").unwrap();
+        let data = [&value.to_be_bytes(), address.as_slice()].concat();
+
+        // Act
+        let script_op_return = op_return(data.clone());
+
+        // Assert
+        let instructions = script_op_return.instructions().flatten().collect::<Vec<_>>();
+        //println!("instructions: {:?}", instructions);
+        assert_eq!(instructions.len(), 2, "Script should have 2 instructions");
+        assert_eq!(
+            instructions[0].opcode(),
+            Some(OP_RETURN),
+            "First instruction should be OP_RETURN"
+        );
+
+        assert_eq!(
+            instructions[1].push_bytes().unwrap().as_bytes(),
+            &data,
+            "Second instruction should be the data"
+        );
+        // Check the scriptPubKey hex is ok
+        let script_bytes_hex = hex::encode(script_op_return.to_bytes());
+        assert_eq!(
+            script_bytes_hex,
+            "6a1c000000000000024b7ac5496aee77c1ba1f0854206a26dda82a81d6d8"
         );
     }
 }
