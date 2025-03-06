@@ -1,15 +1,8 @@
 use bitcoin::{
-    hashes::Hash,
-    key::{TweakedPublicKey, UntweakedPublicKey},
-    locktime,
-    secp256k1::{self, Message, Scalar},
-    sighash::{self, SighashCache},
-    taproot::{LeafVersion, TaprootSpendInfo},
-    transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash,
-    TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey,
+    hashes::Hash, key::{Parity, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapNodeHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey
 };
 use key_manager::{
-    key_manager::KeyManager, keystorage::keystore::KeyStore, winternitz::WinternitzSignature,
+    key_manager::KeyManager, keystorage::keystore::KeyStore, verifier::SignatureVerifier, winternitz::WinternitzSignature
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
@@ -467,16 +460,19 @@ impl Protocol {
         expired_script: &ProtocolScript,
         renew_script: &ProtocolScript,
         to: &str,
-        renew_blocks: u16,
+        _expired_blocks: u16,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.transaction(from)?.output.len() - 1) as u32;
 
+        // This input consumes the renew_script output, no need to use the expired_blocks
         self.add_timelock_input(to, output_index, 0, sighash_type)?;
         let input_index = (self.transaction(to)?.input.len() - 1) as u32;
 
         self.connect("timelock", from, output_index, to, input_index)
+
+        // TODO use expired_blocks to create a transaction that consumes the expired_script
     }
 
     pub fn connect_with_external_transaction(
@@ -729,7 +725,7 @@ impl Protocol {
         Ok(input_signature)
     }
 
-    pub fn input_taproot_signature(
+    pub fn input_taproot_script_spend_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
@@ -737,7 +733,18 @@ impl Protocol {
     ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
         let input_signature =
             self.graph
-                .get_input_taproot_signature(transaction_name, input_index, leaf_index)?;
+                .get_input_taproot_script_spend_signature(transaction_name, input_index, leaf_index)?;
+        Ok(input_signature)
+    }
+
+    pub fn input_taproot_key_spend_signature(
+        &self,
+        transaction_name: &str,
+        input_index: usize,
+    ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+        let input_signature =
+            self.graph
+                .get_input_taproot_key_spend_signature(transaction_name, input_index)?;
         Ok(input_signature)
     }
 
@@ -960,11 +967,14 @@ impl Protocol {
                             }
                             OutputSpendingType::TaprootScript {
                                 ref spending_scripts,
-                                ..
+                                ref internal_key,
+                                ref spend_info,
                             } => {
                                 self.taproot_script_spend_signature(
                                     &transaction_name,
                                     index,
+                                    internal_key,
+                                    spend_info.merkle_root(),
                                     spending_scripts,
                                     tap_sighash_type,
                                     key_manager,
@@ -1024,15 +1034,30 @@ impl Protocol {
                     self.taproot_key_spend_witness(spending_args)?
                 }
                 OutputSpendingType::TaprootScript { ref spend_info, .. } => {
-                    let taproot_leaf = spending_args
-                        .get_taproot_leaf()
-                        .ok_or(ProtocolBuilderError::MissingTaprootLeaf(input_index))?;
-                    self.taproot_script_spend_witness(
-                        input_index,
-                        &taproot_leaf,
-                        spend_info,
-                        spending_args,
-                    )?
+                    // This could be a script spend or a key spend. Check if taproot_leaf is present to determine.
+                    match spending_args.get_taproot_leaf() {
+                        Some(taproot_leaf) => {
+                            self.taproot_script_spend_witness(
+                                input_index,
+                                &taproot_leaf,
+                                spend_info,
+                                spending_args,
+                            )?
+                        },
+                        None => {
+                            self.taproot_key_spend_witness(spending_args)?
+                        }
+                    }
+
+                    // let taproot_leaf = spending_args
+                    //     .get_taproot_leaf()
+                    //     .ok_or(ProtocolBuilderError::MissingTaprootLeaf(input_index))?;
+                    // self.taproot_script_spend_witness(
+                    //     input_index,
+                    //     &taproot_leaf,
+                    //     spend_info,
+                    //     spending_args,
+                    // )?
                 }
                 _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
             },
@@ -1103,6 +1128,16 @@ impl Protocol {
 
             hashed_messages.push(hashed_message);
         }
+
+        // Compute and push a message hash for the key spend signature.
+        let key_spend_hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
+            input_index,
+            &sighash::Prevouts::All(&prevouts),
+            *sighash_type,
+        )?);
+
+        hashed_messages.push(key_spend_hashed_message);
+
         self.graph
             .update_hashed_messages(transaction_name, input_index as u32, hashed_messages)?;
         Ok(())
@@ -1187,7 +1222,7 @@ impl Protocol {
 
         let (schnorr_signature, _) = match tweak {
             Some(t) => key_manager.sign_schnorr_message_with_tweak(&hashed_message, key, t)?,
-            None => key_manager.sign_schnorr_message_with_tap_tweak(&hashed_message, key)?,
+            None => key_manager.sign_schnorr_message_with_tap_tweak(&hashed_message, key, None)?,
         };
 
         let signature = Signature::Taproot(bitcoin::taproot::Signature {
@@ -1213,6 +1248,8 @@ impl Protocol {
         &mut self,
         transaction_name: &str,
         input_index: usize,
+        internal_key: &XOnlyPublicKey,
+        merkle_root: Option<TapNodeHash>,
         spending_scripts: &Vec<ProtocolScript>,
         sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
@@ -1241,6 +1278,39 @@ impl Protocol {
             hashed_messages.push(hashed_message);
             signatures.push(signature);
         }
+
+        // Compute a sighash and its signature for the key spend path.
+
+        // 1. Reconstruct the bitcoin::PublicKey from the XOnlyPublicKey to sign the message using the KeyManager.
+        // Taproot internal keys always have an Even parity.
+        let full_public_key: PublicKey = internal_key.public_key(Parity::Even).into();
+
+        // 2. Compute and push a message hash for the key spend signature.
+        let key_spend_hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
+            input_index,
+            &sighash::Prevouts::All(&prevouts),
+            *sighash_type,
+        )?);
+
+        hashed_messages.push(key_spend_hashed_message);
+
+        // 3. Compute and push the key spend signature.
+        let (schnorr_signature, output_key) = key_manager
+            .sign_schnorr_message_with_tap_tweak(&key_spend_hashed_message, &full_public_key, merkle_root)?;
+
+        let key_spend_signature = Signature::Taproot(bitcoin::taproot::Signature {
+            signature: schnorr_signature,
+            sighash_type: *sighash_type,
+        });
+
+        // 4. Verify the signature:
+        if !SignatureVerifier::new().verify_schnorr_signature(&schnorr_signature, &key_spend_hashed_message, output_key) {
+            return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed);
+        }
+
+        signatures.push(key_spend_signature);
+
+        // 5. Update hashes and signatures for the input
         self.graph
             .update_hashed_messages(transaction_name, input_index as u32, hashed_messages)?;
         self.graph

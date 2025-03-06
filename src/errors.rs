@@ -173,6 +173,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to push data in op_return script")]
     OpReturnDataError(#[from] PushBytesError),
+
+    #[error("Failed to generate signature for key spend path for taproot output with taptree")]
+    KeySpendSignatureGenerationFailed,
 }
 
 #[derive(Error, Debug)]
