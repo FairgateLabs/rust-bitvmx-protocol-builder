@@ -478,7 +478,7 @@ impl ProtocolBuilder {
     }
 
     pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {
-        Ok(self.protocol.visualize()?)
+        self.protocol.visualize()
     }
 
     fn save_protocol(&self) -> Result<(), ProtocolBuilderError> {

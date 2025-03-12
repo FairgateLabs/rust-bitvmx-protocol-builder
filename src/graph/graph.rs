@@ -488,7 +488,7 @@ impl TransactionGraph {
         Ok(*signature)
     }
 
-    pub fn get_input_taproot_signature(
+    pub fn get_input_taproot_script_spend_signature(
         &self,
         name: &str,
         input_index: usize,
@@ -502,6 +502,33 @@ impl TransactionGraph {
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(leaf_index)? {
+            Signature::Taproot(signature) => signature,
+            _ => {
+                return Err(GraphError::InvalidSignatureType(
+                    name.to_string(),
+                    input_index,
+                    "Taproot".to_string(),
+                    "ECDSA".to_string(),
+                ))
+            }
+        };
+
+        Ok(*signature)
+    }
+
+    pub fn get_input_taproot_key_spend_signature(
+        &self,
+        name: &str,
+        input_index: usize,
+    ) -> Result<bitcoin::taproot::Signature, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+        let spending_info = node.get_input_spending_info(input_index)?;
+        let signature = match spending_info.signatures().last().ok_or(GraphError::MissingSignature)? {
             Signature::Taproot(signature) => signature,
             _ => {
                 return Err(GraphError::InvalidSignatureType(
