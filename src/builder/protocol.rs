@@ -473,7 +473,7 @@ impl Protocol {
         self.add_timelock_output(from, value, internal_key, expired_script, renew_script)?;
         let output_index = (self.transaction(from)?.output.len() - 1) as u32;
 
-        self.add_timelock_input(to, output_index, renew_blocks, sighash_type)?;
+        self.add_timelock_input(to, output_index, 0, sighash_type)?;
         let input_index = (self.transaction(to)?.input.len() - 1) as u32;
 
         self.connect("timelock", from, output_index, to, input_index)
