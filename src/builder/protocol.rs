@@ -699,7 +699,7 @@ impl Protocol {
         Ok(transaction)
     }
 
-    pub(crate) fn transaction(
+    pub fn transaction(
         &self,
         transaction_name: &str,
     ) -> Result<&Transaction, ProtocolBuilderError> {
@@ -918,6 +918,8 @@ impl Protocol {
                                     ecdsa_sighash_type,
                                 )?;
                             }
+                            OutputSpendingType::SegwitUnspendable { } => {
+                            }
                             _ => {
                                 return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType)
                             }
@@ -1007,6 +1009,8 @@ impl Protocol {
                                     key_manager,
                                 )?;
                             }
+                            OutputSpendingType::SegwitUnspendable { } => {
+                            }
                             _ => {
                                 return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType)
                             }
@@ -1067,6 +1071,10 @@ impl Protocol {
                 }
                 OutputSpendingType::SegwitScript { ref script, .. } => {
                     self.segwit_script_spend_witness(script, spending_args)?
+                }
+                OutputSpendingType::SegwitUnspendable { } => {
+                    // Create an empty witness for unspendable outputs
+                    Witness::new()
                 }
                 _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
             },
