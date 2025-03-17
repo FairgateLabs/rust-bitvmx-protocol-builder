@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{collections::HashMap, vec};
 
 use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
@@ -61,6 +62,33 @@ impl Connection {
             input_index,
             output_index,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageId {
+    transaction: String,
+    input_index: u32,
+    script_index: u32,
+}
+
+impl MessageId {
+    pub fn new(transaction: String, input_index: u32, script_index: u32) -> Self {
+        MessageId {
+            transaction,
+            input_index,
+            script_index,
+        }
+    }
+}
+
+impl fmt::Display for MessageId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "tx:{}_ix:{}_sx:{}",
+            self.transaction, self.input_index, self.script_index
+        )
     }
 }
 
@@ -389,6 +417,35 @@ impl TransactionGraph {
             .collect()
     }
 
+    pub fn get_all_sighashes(&self) -> Result<Vec<(MessageId, Message)>, GraphError> {
+        let mut all_sighashes = Vec::new();
+
+        for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
+            for (input_index, spending_info) in input_spending_infos.iter().enumerate() {
+                for (script_index, message) in spending_info.hashed_messages().iter().enumerate() {
+                    let message_id = MessageId::new(name.clone(), input_index as u32, script_index as u32);
+                    all_sighashes.push((message_id, message.clone()));
+                }
+            }
+        }
+
+        Ok(all_sighashes)
+    }
+
+    pub fn get_output_for_input(&self, name: &str, input_index: u32) -> Result<OutputSpendingType, GraphError> {
+        let node_index = self.get_node_index(name)?;
+
+        for edge in self.find_incoming_edges(node_index) {
+            let connection = self.get_connection(edge)?;
+            if connection.input_index == input_index {
+                let from = self.get_from_node(edge)?;
+                return Ok(from.output_spending_types[connection.output_index as usize].clone());
+            }
+        }
+
+        Err(GraphError::MissingConnection)
+    }
+
     fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
         self.node_indexes
             .get(name)
@@ -542,6 +599,8 @@ impl TransactionGraph {
 
         Ok(*signature)
     }
+
+
 
     pub fn contains_transaction(&self, name: &str) -> bool {
         self.node_indexes.contains_key(name)
