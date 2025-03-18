@@ -296,6 +296,25 @@ impl TransactionGraph {
         Ok(())
     }
 
+    pub fn get_hashed_message(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        message_index: u32,
+    ) -> Result<Message, GraphError> {
+        if transaction_name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
+
+        let node_index = self.get_node_index(transaction_name)?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
+
+        Ok(node.input_spending_infos[input_index as usize].hashed_messages()[message_index as usize])
+    }
+
     pub fn get_transaction(&self, name: &str) -> Result<&Transaction, GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);

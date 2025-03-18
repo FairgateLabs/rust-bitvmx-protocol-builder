@@ -4,7 +4,6 @@ use bitcoin::{
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, verifier::SignatureVerifier, winternitz::WinternitzSignature
 };
-use petgraph::Direction::Outgoing;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::Storage;
