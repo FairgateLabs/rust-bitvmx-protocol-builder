@@ -1,5 +1,5 @@
 use bitcoin::{
-    hashes::Hash, key::{Parity, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapNodeHash, TapSighashType, Transaction, Txid, WScriptHash, Witness, XOnlyPublicKey
+    hashes::Hash, key::{Parity, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Address, Amount, EcdsaSighashType, OutPoint, PublicKey, Script, ScriptBuf, Sequence, TapLeafHash, TapNodeHash, TapSighashType, Transaction, TxIn, TxOut, Txid, WScriptHash, Witness, XOnlyPublicKey
 };
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, verifier::SignatureVerifier, winternitz::WinternitzSignature
@@ -18,6 +18,26 @@ use crate::{
     scripts::{self, ProtocolScript},
     unspendable::unspendable_key,
 };
+#[derive(Clone, Debug)]
+pub struct Utxo {
+    pub txname: String,
+    pub txid: Txid,
+    pub vout: u32,
+    pub amount: u64,
+    pub pub_key: PublicKey,
+}
+
+impl Utxo {
+    pub fn new(txname: String, txid: Txid, vout: u32, amount: u64, pub_key: &PublicKey) -> Self {
+        Utxo {
+            txname,
+            txid,
+            vout,
+            amount,
+            pub_key: pub_key.clone(),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SpendingArgs {
@@ -649,6 +669,109 @@ impl Protocol {
         }
 
         Ok(transaction)
+    }
+
+    pub fn consume_expired_timelock_transaction<K: KeyStore>(
+        expired_timelock_utxo: Utxo,
+        change_address: Address,
+        speedup_fee: u64,
+        key_manager: &KeyManager<K>,
+    ) {
+
+    }
+
+    pub fn speedup_transaction<K: KeyStore>(
+        &self, 
+        transaction_to_speedup_utxo: Utxo,
+        funding_transaction_utxo: Utxo,
+        change_address: Address,
+        speedup_fee: u64,
+        key_manager: &KeyManager<K>,
+    ) -> Result<Transaction, ProtocolBuilderError> {
+
+        let transaction_to_speedup = self.transaction(&transaction_to_speedup_utxo.txname)?;
+        let mut speedup_transaction = Protocol::transaction_template();
+
+        // The speedup input to consume the speedup output of the transaction to speedup
+        speedup_transaction.input.push(TxIn {
+            previous_output: OutPoint {
+                txid: transaction_to_speedup.compute_txid(),
+                vout: transaction_to_speedup_utxo.vout,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::new(),
+        });
+
+        // The speedup input to consume the funding output of the funding transaction
+        speedup_transaction.input.push(TxIn {
+            previous_output: OutPoint {
+                txid: funding_transaction_utxo.txid,
+                vout: funding_transaction_utxo.vout,
+            },
+            script_sig: ScriptBuf::new(),
+            sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::new(),
+        });
+
+        // The speedup output for the change
+        let funding_amount = Amount::from_sat(funding_transaction_utxo.amount);
+        let fees = Amount::from_sat(speedup_fee);
+        let amount_to_send = funding_amount.checked_sub(fees).ok_or(ProtocolBuilderError::InsufficientFunds(funding_transaction_utxo.amount, speedup_fee))?;
+        
+        let txout = TxOut {
+            value: amount_to_send,
+            script_pubkey: change_address.script_pubkey(),
+        };
+
+        speedup_transaction.output.push(txout);
+
+        // Witness for the speedup input 0
+        let witness_public_key_hash = transaction_to_speedup_utxo.pub_key.wpubkey_hash().expect("key is compressed");
+        let value = Amount::from_sat(transaction_to_speedup_utxo.amount);
+        let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
+
+        let mut sighasher = SighashCache::new(speedup_transaction.clone());
+
+        let speedup_input_0_hash = Message::from(sighasher.p2wpkh_signature_hash(
+            0,
+            &script_pubkey,
+            value,
+            EcdsaSighashType::All,
+        )?);
+
+        let speedup_input_0_signature = bitcoin::ecdsa::Signature {
+            signature: key_manager.sign_ecdsa_message(&speedup_input_0_hash, &transaction_to_speedup_utxo.pub_key)?,
+            sighash_type: EcdsaSighashType::All,
+        };
+       
+        let witness_input_0 = Witness::p2wpkh(&speedup_input_0_signature, &transaction_to_speedup_utxo.pub_key.inner);
+
+        // Witness for the funding input 1
+        let witness_public_key_hash = funding_transaction_utxo.pub_key.wpubkey_hash().expect("key is compressed");
+        let value = Amount::from_sat(funding_transaction_utxo.amount);
+        let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
+
+        let funding_input_1_hash = Message::from(sighasher.p2wpkh_signature_hash(
+            1,
+            &script_pubkey,
+            value,
+            EcdsaSighashType::All,
+        )?);
+
+        let funding_input_1_signature = bitcoin::ecdsa::Signature {
+            signature: key_manager.sign_ecdsa_message(&funding_input_1_hash, &funding_transaction_utxo.pub_key)?,
+            sighash_type: EcdsaSighashType::All,
+        };
+       
+        let witness_input_1 = Witness::p2wpkh(&funding_input_1_signature, &funding_transaction_utxo.pub_key.inner);
+
+        // Attach the witnesses to the transaction
+        speedup_transaction.input[0].witness = witness_input_0;
+        speedup_transaction.input[1].witness = witness_input_1;
+
+        Ok(speedup_transaction)
+
     }
 
     pub fn next_transactions(

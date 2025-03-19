@@ -176,6 +176,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to generate signature for key spend path for taproot output with taptree")]
     KeySpendSignatureGenerationFailed,
+
+    #[error("Insufficient funds for transaction, cannot cover fees. Total amount: {0}, Fees: {1}")]
+    InsufficientFunds(u64, u64),
 }
 
 #[derive(Error, Debug)]
