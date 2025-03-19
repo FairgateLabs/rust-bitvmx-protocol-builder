@@ -177,6 +177,9 @@ pub enum ProtocolBuilderError {
     #[error("Failed to generate signature for key spend path for taproot output with taptree")]
     KeySpendSignatureGenerationFailed,
 
+    #[error("Failed to get spending script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
+    InvalidSpendingTypeForScript(String, u32, u32, String),
+
     #[error("Insufficient funds for transaction, cannot cover fees. Total amount: {0}, Fees: {1}")]
     InsufficientFunds(u64, u64),
 }

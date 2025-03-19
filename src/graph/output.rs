@@ -263,6 +263,8 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
     }
 }
 
+
+
 impl OutputSpendingType {
     pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar) -> Self {
         OutputSpendingType::TaprootTweakedKey {
@@ -302,6 +304,17 @@ impl OutputSpendingType {
 
     pub fn new_segwit_unspendable() -> OutputSpendingType {
         OutputSpendingType::SegwitUnspendable {}
+    }
+
+    pub fn get_name(&self) -> &str {
+        match self {
+            OutputSpendingType::TaprootUntweakedKey { .. } => "TaprootUntweakedKey",
+            OutputSpendingType::TaprootTweakedKey { .. } => "TaprootTweakedKey",
+            OutputSpendingType::TaprootScript { .. } => "TaprootScript",
+            OutputSpendingType::SegwitPublicKey { .. } => "SegwitPublicKey",
+            OutputSpendingType::SegwitScript { .. } => "SegwitScript",
+            OutputSpendingType::SegwitUnspendable { .. } => "SegwitUnspendable",
+        }
     }
 }
 

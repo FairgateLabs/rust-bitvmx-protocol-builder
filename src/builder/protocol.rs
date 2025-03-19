@@ -11,7 +11,7 @@ use storage_backend::storage::Storage;
 use crate::{
     errors::ProtocolBuilderError,
     graph::{
-        graph::TransactionGraph,
+        graph::{MessageId, TransactionGraph},
         input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
         output::OutputSpendingType,
     },
@@ -800,6 +800,10 @@ impl Protocol {
         Ok(self.graph.get_transaction_spending_infos()?)
     }
 
+    pub fn get_all_sighashes(&self) -> Result<Vec<(MessageId, Message)>, ProtocolBuilderError> {
+        Ok(self.graph.get_all_sighashes()?)
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -869,6 +873,21 @@ impl Protocol {
             self.graph
                 .get_input_taproot_key_spend_signature(transaction_name, input_index)?;
         Ok(input_signature)
+    }
+
+    pub fn get_script_to_spend(&self, transaction_name: &str, input_index: u32, script_index: u32) -> Result<ProtocolScript, ProtocolBuilderError> {
+        let output =  self.graph.get_output_for_input(transaction_name, input_index)?;
+    
+        match output {
+            OutputSpendingType::TaprootScript { ref spending_scripts, .. } => {
+                let script = spending_scripts[script_index as usize].clone();
+                Ok(script)
+            }
+            OutputSpendingType::SegwitScript { ref script, .. } => {
+                Ok(script.clone())
+            }
+            _ => Err(ProtocolBuilderError::InvalidSpendingTypeForScript(transaction_name.to_string(), input_index, script_index, output.get_name().to_string())),
+        }
     }
 
     pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {
