@@ -9,7 +9,6 @@ use petgraph::{
     Graph,
 };
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::fmt::format;
 
 use crate::errors::GraphError;
 
