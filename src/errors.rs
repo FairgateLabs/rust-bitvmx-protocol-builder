@@ -5,7 +5,7 @@ use bitcoin::{
     taproot::TaprootBuilderError,
     transaction,
 };
-use key_manager::errors::{KeyManagerError, WinternitzError};
+use key_manager::{errors::{KeyManagerError, WinternitzError}, musig2::errors::Musig2SignerError};
 use thiserror::Error;
 
 use config as settings;
@@ -179,6 +179,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to get spending script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
     InvalidSpendingTypeForScript(String, u32, u32, String),
+
+    #[error("Failed to generate nonce for MuSig2 signature aggregation")]
+    MuSig2NonceGenerationError(#[from] Musig2SignerError),
 
     #[error("Insufficient funds for transaction, cannot cover fees. Total amount: {0}, Fees: {1}")]
     InsufficientFunds(u64, u64),

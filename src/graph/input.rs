@@ -232,7 +232,7 @@ impl InputSpendingInfo {
     pub fn input_keys(&self) -> Vec<PublicKey> {
         match &self.spending_type {
             Some(OutputSpendingType::TaprootTweakedKey { key, .. }) => vec![*key],
-            Some(OutputSpendingType::TaprootUntweakedKey { key }) => vec![*key],
+            Some(OutputSpendingType::TaprootUntweakedKey { key, .. }) => vec![*key],
             Some(OutputSpendingType::TaprootScript {
                 spending_scripts, ..
             }) => spending_scripts

@@ -1,5 +1,5 @@
 use bitcoin::{
-    key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, XOnlyPublicKey,
+    key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, TxOut, XOnlyPublicKey
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
@@ -17,10 +17,12 @@ const ALL_OUTPUT_TYPES: &[&str] = &[
 pub enum OutputSpendingType {
     TaprootUntweakedKey {
         key: PublicKey,
+        prevouts: Vec<TxOut>, 
     },
     TaprootTweakedKey {
         key: PublicKey,
         tweak: Scalar,
+        prevouts: Vec<TxOut>, 
     },
     TaprootScript {
         spending_scripts: Vec<ProtocolScript>,
@@ -44,17 +46,19 @@ impl Serialize for OutputSpendingType {
         S: serde::Serializer,
     {
         match self {
-            OutputSpendingType::TaprootUntweakedKey { key } => {
+            OutputSpendingType::TaprootUntweakedKey { key, prevouts } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 2)?;
                 state.serialize_field("type", "taproot_untweaked_key")?;
                 state.serialize_field("key", key)?;
+                state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
-            OutputSpendingType::TaprootTweakedKey { key, tweak } => {
+            OutputSpendingType::TaprootTweakedKey { key, tweak, prevouts } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
                 state.serialize_field("type", "taproot_tweaked_key")?;
                 state.serialize_field("key", key)?;
                 state.serialize_field("tweak", &tweak.to_be_bytes())?;
+                state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
             OutputSpendingType::TaprootScript {
@@ -102,6 +106,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
             Type,
             Key,
             Tweak,
+            Prevouts,
             SpendingScripts,
             InternalKey,
             PublicKey,
@@ -125,6 +130,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                 let mut type_field: Option<String> = None;
                 let mut key: Option<PublicKey> = None;
                 let mut tweak: Option<[u8; 32]> = None;
+                let mut prevouts: Option<Vec<TxOut>> = None;
                 let mut spending_scripts: Option<Vec<ProtocolScript>> = None;
                 let mut internal_key: Option<XOnlyPublicKey> = None;
                 let mut public_key: Option<PublicKey> = None;
@@ -150,6 +156,12 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                                 return Err(serde::de::Error::duplicate_field("tweak"));
                             }
                             tweak = Some(map.next_value()?);
+                        }
+                        Field::Prevouts => {
+                            if prevouts.is_some() {
+                                return Err(serde::de::Error::duplicate_field("prevouts"));
+                            }
+                            prevouts = Some(map.next_value()?);
                         }
                         Field::SpendingScripts => {
                             if spending_scripts.is_some() {
@@ -190,16 +202,19 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                 match output_type.as_str() {
                     "taproot_untweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
-                        Ok(OutputSpendingType::TaprootUntweakedKey { key })
+                        let prevouts = prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
+                        Ok(OutputSpendingType::TaprootUntweakedKey { key, prevouts })
                     }
                     "taproot_tweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
                         let tweak =
                             tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
+                        let prevouts = prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
                         Ok(OutputSpendingType::TaprootTweakedKey {
                             key,
                             tweak: Scalar::from_be_bytes(tweak)
                                 .map_err(|e| serde::de::Error::custom(e.to_string()))?,
+                            prevouts
                         })
                     }
                     "taproot_script" => {
@@ -266,15 +281,16 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
 
 
 impl OutputSpendingType {
-    pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar) -> Self {
+    pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar, prevouts: Vec<TxOut>) -> Self {
         OutputSpendingType::TaprootTweakedKey {
             key: *public_key,
             tweak: *tweak,
+            prevouts,
         }
     }
 
-    pub fn new_taproot_key_spend(public_key: &PublicKey) -> Self {
-        OutputSpendingType::TaprootUntweakedKey { key: *public_key }
+    pub fn new_taproot_key_spend(public_key: &PublicKey, prevouts: Vec<TxOut>) -> Self {
+        OutputSpendingType::TaprootUntweakedKey { key: *public_key, prevouts }
     }
 
     pub fn new_taproot_script_spend(
@@ -331,12 +347,13 @@ mod tests {
         let tweak = Scalar::random();
 
         let spending_type =
-            OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak);
+            OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak, vec![]);
 
         match spending_type {
-            OutputSpendingType::TaprootTweakedKey { key, tweak: t } => {
+            OutputSpendingType::TaprootTweakedKey { key, tweak: t, prevouts } => {
                 assert_eq!(key, public_key.into());
                 assert_eq!(t, tweak);
+                assert!(prevouts.is_empty());
             }
             _ => panic!("Wrong enum variant"),
         }
@@ -347,11 +364,12 @@ mod tests {
         let secp = Secp256k1::new();
         let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
 
-        let spending_type = OutputSpendingType::new_taproot_key_spend(&public_key.into());
+        let spending_type = OutputSpendingType::new_taproot_key_spend(&public_key.into(), vec![]);
 
         match spending_type {
-            OutputSpendingType::TaprootUntweakedKey { key } => {
+            OutputSpendingType::TaprootUntweakedKey { key, prevouts} => {
                 assert_eq!(key, public_key.into());
+                assert!(prevouts.is_empty());
             }
             _ => panic!("Wrong enum variant"),
         }

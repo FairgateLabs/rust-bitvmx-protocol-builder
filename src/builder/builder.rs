@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, Txid};
+use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, TxOut, Txid};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use storage_backend::storage::Storage;
 
@@ -27,13 +27,25 @@ impl ProtocolBuilder {
         }
     }
 
-    pub fn build(&mut self) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.build()
+    pub fn build<K: KeyStore>(
+        &mut self,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
+    ) -> Result<Protocol, ProtocolBuilderError> {
+        self.protocol.build(id, key_manager)
+    }
+
+    pub fn sign<K: KeyStore>(
+        &mut self,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
+    ) -> Result<Protocol, ProtocolBuilderError> {
+        self.protocol.sign(id, key_manager)
     }
 
     pub fn build_and_sign<K: KeyStore>(
         &mut self,
-        key_manager: &KeyManager<K>,
+        key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Protocol, ProtocolBuilderError> {
         self.protocol.build_and_sign(key_manager)
     }
@@ -44,12 +56,14 @@ impl ProtocolBuilder {
         value: u64,
         internal_key: &PublicKey,
         tweak: &Scalar,
+        prevouts: Vec<TxOut>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_tweaked_key_spend_output(
             transaction_name,
             value,
             internal_key,
             tweak,
+            prevouts,
         )?;
         self.save_protocol()?;
 

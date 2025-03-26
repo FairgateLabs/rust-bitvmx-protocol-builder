@@ -9,6 +9,7 @@ use petgraph::{
     Graph,
 };
 use serde::{Deserialize, Serialize};
+use tracing_subscriber::fmt::format;
 
 use crate::errors::GraphError;
 
@@ -79,6 +80,10 @@ impl MessageId {
             input_index,
             script_index,
         }
+    }
+
+    pub fn new_string_id(transaction: &str, input_index: u32, script_index: u32) -> String {
+        format!("tx:{}_ix:{}_sx:{}", transaction, input_index, script_index)
     }
 }
 

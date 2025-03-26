@@ -145,6 +145,7 @@ impl Protocol {
         value: u64,
         internal_key: &PublicKey,
         tweak: &Scalar,
+        prevouts: Vec<TxOut>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
@@ -160,7 +161,7 @@ impl Protocol {
             ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(output_key));
         let value = Amount::from_sat(value);
 
-        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(internal_key, tweak);
+        let spending_type = OutputSpendingType::new_taproot_tweaked_key_spend(internal_key, tweak, prevouts);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
         Ok(self)
@@ -171,12 +172,13 @@ impl Protocol {
         transaction_name: &str,
         value: u64,
         internal_key: &PublicKey,
+        prevouts: Vec<TxOut>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
         let script_pubkey = ScriptBuf::new_p2tr(&secp, untweaked_key, None);
         let value = Amount::from_sat(value);
-        let spending_type = OutputSpendingType::new_taproot_key_spend(internal_key);
+        let spending_type = OutputSpendingType::new_taproot_key_spend(internal_key, prevouts);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
         Ok(self)
@@ -388,7 +390,7 @@ impl Protocol {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_taproot_tweaked_key_spend_output(from, value, internal_key, tweak)?;
+        self.add_taproot_tweaked_key_spend_output(from, value, internal_key, tweak, vec![])?;
         let output_index = (self.transaction(from)?.output.len() - 1) as u32;
 
         self.add_taproot_tweaked_key_spend_input(to, output_index, sighash_type)?;
@@ -406,7 +408,7 @@ impl Protocol {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_taproot_key_spend_output(from, value, internal_key)?;
+        self.add_taproot_key_spend_output(from, value, internal_key, vec![])?;
         let output_index = (self.transaction(from)?.output.len() - 1) as u32;
 
         self.add_taproot_key_spend_input(to, output_index, sighash_type)?;
@@ -621,18 +623,31 @@ impl Protocol {
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
 
-    pub fn build(&mut self) -> Result<Self, ProtocolBuilderError> {
+    pub fn build<K: KeyStore>(
+        &mut self,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
+    ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_sighashes()?;
+        self.compute_sighashes(id, key_manager)?;
+        Ok(self.clone())
+    }
+
+    pub fn sign<K: KeyStore>(
+        &mut self,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
+    ) -> Result<Self, ProtocolBuilderError> {
+        self.compute_signatures(id, key_manager)?;
         Ok(self.clone())
     }
 
     pub fn build_and_sign<K: KeyStore>(
         &mut self,
-        key_manager: &KeyManager<K>,
+        key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_signatures(key_manager)?;
+        self.compute_sighashes_and_signatures(key_manager)?;
         Ok(self.clone())
     }
 
@@ -998,7 +1013,11 @@ impl Protocol {
         Ok(())
     }
 
-    fn compute_sighashes(&mut self) -> Result<(), ProtocolBuilderError> {
+    fn compute_sighashes<K: KeyStore>(
+        &mut self,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
+    ) -> Result<(), ProtocolBuilderError> {
         let sorted_transactions = self.graph.sort()?;
 
         for transaction_name in sorted_transactions {
@@ -1010,29 +1029,39 @@ impl Protocol {
                 match spending_info.sighash_type() {
                     SighashType::Taproot(tap_sighash_type) => {
                         match spending_info.spending_type()? {
-                            OutputSpendingType::TaprootTweakedKey { .. } => {
+                            OutputSpendingType::TaprootTweakedKey { prevouts, .. } => {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
                                     tap_sighash_type,
+                                    prevouts,
+                                    id,
+                                    key_manager,
                                 )?;
                             }
-                            OutputSpendingType::TaprootUntweakedKey { .. } => {
+                            OutputSpendingType::TaprootUntweakedKey { prevouts, .. } => {
                                 self.taproot_key_spend_sighash(
                                     &transaction_name,
                                     index,
                                     tap_sighash_type,
+                                    prevouts,
+                                    id,
+                                    key_manager,
                                 )?;
                             }
                             OutputSpendingType::TaprootScript {
                                 ref spending_scripts,
+                                ref spend_info,
                                 ..
                             } => {
                                 self.taproot_script_spend_sighash(
                                     &transaction_name,
                                     index,
+                                    spend_info.merkle_root(),
                                     spending_scripts,
                                     tap_sighash_type,
+                                    id,
+                                    key_manager,
                                 )?;
                             }
                             _ => {
@@ -1076,6 +1105,7 @@ impl Protocol {
 
     fn compute_signatures<K: KeyStore>(
         &mut self,
+        id: &str,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
         let sorted_transactions = self.graph.sort()?;
@@ -1089,22 +1119,111 @@ impl Protocol {
                 match spending_info.sighash_type() {
                     SighashType::Taproot(tap_sighash_type) => {
                         match spending_info.spending_type()? {
-                            OutputSpendingType::TaprootTweakedKey { key, tweak } => {
+                            OutputSpendingType::TaprootTweakedKey { .. } => {
                                 self.taproot_key_spend_signature(
+                                    &transaction_name,
+                                    index,
+                                    tap_sighash_type,
+                                    id,
+                                    key_manager,
+                                )?;
+                            }
+                            OutputSpendingType::TaprootUntweakedKey { .. } => {
+                                self.taproot_key_spend_signature(
+                                    &transaction_name,
+                                    index,
+                                    tap_sighash_type,
+                                    id,
+                                    key_manager,
+                                )?;
+                            }
+                            OutputSpendingType::TaprootScript {
+                                ref spending_scripts,
+                                // ref internal_key,
+                                ..
+                            } => {
+                                self.taproot_script_spend_signature(
+                                    &transaction_name,
+                                    index,
+                                    // internal_key,
+                                    spending_scripts,
+                                    tap_sighash_type,
+                                    id,
+                                    key_manager,
+                                )?;
+                            }
+                            _ => {
+                                return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType)
+                            }
+                        };
+                    }
+                    SighashType::Ecdsa(ecdsa_sighash_type) => {
+                        match spending_info.spending_type()? {
+                            OutputSpendingType::SegwitPublicKey { public_key, .. } => {
+                                self.segwit_key_spend_signature(
+                                    &transaction_name,
+                                    index,
+                                    public_key,
+                                    ecdsa_sighash_type,
+                                    key_manager,
+                                )?;
+                            }
+                            OutputSpendingType::SegwitScript { ref script, .. } => {
+                                self.segwit_script_spend_signature(
+                                    &transaction_name,
+                                    index,
+                                    script,
+                                    ecdsa_sighash_type,
+                                    key_manager,
+                                )?;
+                            }
+                            OutputSpendingType::SegwitUnspendable { } => {
+                            }
+                            _ => {
+                                return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType)
+                            }
+                        };
+                    }
+                };
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compute_sighashes_and_signatures<K: KeyStore>(
+        &mut self,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let sorted_transactions = self.graph.sort()?;
+
+        for transaction_name in sorted_transactions {
+            let input_spending_info = self
+                .graph
+                .get_transaction_spending_info(&transaction_name)?;
+
+            for (index, spending_info) in input_spending_info.iter().enumerate() {
+                match spending_info.sighash_type() {
+                    SighashType::Taproot(tap_sighash_type) => {
+                        match spending_info.spending_type()? {
+                            OutputSpendingType::TaprootTweakedKey { key, tweak, prevouts } => {
+                                self.taproot_key_spend_sighash_and_signature(
                                     &transaction_name,
                                     index,
                                     key,
                                     Some(tweak),
+                                    prevouts,
                                     tap_sighash_type,
                                     key_manager,
                                 )?;
                             }
-                            OutputSpendingType::TaprootUntweakedKey { key } => {
-                                self.taproot_key_spend_signature(
+                            OutputSpendingType::TaprootUntweakedKey { key, prevouts } => {
+                                self.taproot_key_spend_sighash_and_signature(
                                     &transaction_name,
                                     index,
                                     key,
                                     None,
+                                    prevouts,
                                     tap_sighash_type,
                                     key_manager,
                                 )?;
@@ -1114,7 +1233,7 @@ impl Protocol {
                                 ref internal_key,
                                 ref spend_info,
                             } => {
-                                self.taproot_script_spend_signature(
+                                self.taproot_script_spend_sighash_and_signature(
                                     &transaction_name,
                                     index,
                                     internal_key,
@@ -1132,7 +1251,7 @@ impl Protocol {
                     SighashType::Ecdsa(ecdsa_sighash_type) => {
                         match spending_info.spending_type()? {
                             OutputSpendingType::SegwitPublicKey { public_key, value } => {
-                                self.segwit_key_spend_signature(
+                                self.segwit_key_spend_sighash_and_signature(
                                     &transaction_name,
                                     index,
                                     public_key,
@@ -1142,7 +1261,7 @@ impl Protocol {
                                 )?;
                             }
                             OutputSpendingType::SegwitScript { ref script, value } => {
-                                self.segwit_script_spend_signature(
+                                self.segwit_script_spend_sighash_and_signature(
                                     &transaction_name,
                                     index,
                                     script,
@@ -1231,14 +1350,25 @@ impl Protocol {
         Ok(key)
     }
 
-    fn taproot_key_spend_sighash(
+    fn taproot_key_spend_sighash<K: KeyStore>(
         &mut self,
         transaction_name: &str,
         input_index: usize,
         sighash_type: &TapSighashType,
+        prevouts: &Vec<TxOut>,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
     ) -> Result<(), ProtocolBuilderError> {
+
         let transaction = self.transaction(transaction_name)?.clone();
-        let prevouts = self.graph.get_prevouts(transaction_name)?;
+
+        let prevouts = if prevouts.is_empty() {
+            self.graph.get_prevouts(transaction_name)?
+        } else {
+            prevouts.clone()
+        };
+
+        // let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
 
         let hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
@@ -1246,6 +1376,17 @@ impl Protocol {
             &sighash::Prevouts::All(&prevouts),
             *sighash_type,
         )?);
+
+        key_manager.generate_nonce(
+            id, 
+            MessageId::new_string_id(
+                transaction_name, 
+                input_index as u32, 
+                0,
+            ).as_str(), 
+            hashed_message.as_ref().to_vec(), 
+            None,
+        )?;
 
         self.graph.update_hashed_messages(
             transaction_name,
@@ -1256,19 +1397,22 @@ impl Protocol {
         Ok(())
     }
 
-    fn taproot_script_spend_sighash(
+    fn taproot_script_spend_sighash<K: KeyStore>(
         &mut self,
         transaction_name: &str,
         input_index: usize,
+        merkle_root: Option<TapNodeHash>,
         spending_scripts: &Vec<ProtocolScript>,
         sighash_type: &TapSighashType,
+        id: &str,
+        key_manager: &Rc<KeyManager<K>>,
     ) -> Result<(), ProtocolBuilderError> {
         let transaction = self.transaction(transaction_name)?.clone();
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let mut sighasher = SighashCache::new(transaction);
 
         let mut hashed_messages = vec![];
-        for spending_script in spending_scripts {
+        for (script_index, spending_script) in spending_scripts.iter().enumerate() {
             let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
                 input_index,
                 &sighash::Prevouts::All(&prevouts),
@@ -1276,6 +1420,17 @@ impl Protocol {
                 *sighash_type,
             )?);
 
+            key_manager.generate_nonce(
+                id, 
+                MessageId::new_string_id(
+                    transaction_name, 
+                    input_index as u32, 
+                    script_index as u32,
+                ).as_str(), 
+                hashed_message.as_ref().to_vec(), 
+                None,
+            )?;
+            
             hashed_messages.push(hashed_message);
         }
 
@@ -1285,6 +1440,17 @@ impl Protocol {
             &sighash::Prevouts::All(&prevouts),
             *sighash_type,
         )?);
+
+        key_manager.generate_nonce(
+            id, 
+            MessageId::new_string_id(
+                transaction_name, 
+                input_index as u32, 
+                spending_scripts.len() as u32,
+            ).as_str(), 
+            key_spend_hashed_message.as_ref().to_vec(), 
+            merkle_root,
+        )?;
 
         hashed_messages.push(key_spend_hashed_message);
 
@@ -1355,13 +1521,189 @@ impl Protocol {
         &mut self,
         transaction_name: &str,
         input_index: usize,
+        sighash_type: &TapSighashType,
+        id: &str,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?[input_index].hashed_messages().clone();
+        
+        // There must be only one hashed message for the key spend path
+        assert!(hashed_messages.len() == 1);
+
+        let message_id = MessageId::new_string_id(transaction_name, input_index as u32, 0);
+        let schnorr_signature = key_manager.get_aggregated_signature(id, &message_id)?;
+        
+        let signature = Signature::Taproot(bitcoin::taproot::Signature {
+            signature: schnorr_signature,
+            sighash_type: *sighash_type,
+        });
+
+        // let (schnorr_signature, _) = match tweak {
+        //     Some(t) => key_manager.sign_schnorr_message_with_tweak(&hashed_messages[0].clone(), key, t)?,
+        //     None => key_manager.sign_schnorr_message_with_tap_tweak(&hashed_messages[0].clone(), key, None)?,
+        // };
+
+        // let signature = Signature::Taproot(bitcoin::taproot::Signature {
+        //     signature: schnorr_signature,
+        //     sighash_type: *sighash_type,
+        // });
+
+        self.graph.update_input_signatures(
+            transaction_name,
+            input_index as u32,
+            vec![signature],
+        )?;
+
+        Ok(())
+    }
+
+    fn taproot_script_spend_signature<K: KeyStore>(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
+        // internal_key: &XOnlyPublicKey,
+        spending_scripts: &Vec<ProtocolScript>,
+        sighash_type: &TapSighashType,
+        id: &str,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let mut signatures = vec![];
+        let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?[input_index].hashed_messages().clone();
+
+        // There must be an extra hashed message for the key spend path.
+        assert!(spending_scripts.len() + 1 == hashed_messages.len());
+
+        for (index, _) in spending_scripts.iter().enumerate() {
+            let message_id = MessageId::new_string_id(transaction_name, input_index as u32, index as u32);
+            let schnorr_signature = key_manager.get_aggregated_signature(id, &message_id)?;
+
+            // let schnorr_signature = key_manager
+            //     .sign_schnorr_message(&hashed_messages[index], &spending_script.get_verifying_key())?;
+            let signature = Signature::Taproot(bitcoin::taproot::Signature {
+                signature: schnorr_signature,
+                sighash_type: *sighash_type,
+            });
+
+            signatures.push(signature);
+        }
+
+        // Compute the signature for the key spend path.
+
+        // 1. Reconstruct the bitcoin::PublicKey from the XOnlyPublicKey to sign the message using the KeyManager.
+        // Taproot internal keys always have an Even parity.
+        // let full_public_key: PublicKey = internal_key.public_key(Parity::Even).into();
+
+        // // 2. Get the message hash for the key spend signature.
+        // let key_spend_hashed_message = hashed_messages.last().unwrap().clone();
+
+        // 3. Compute and push the key spend signature.
+        let message_id = MessageId::new_string_id(transaction_name, input_index as u32, spending_scripts.len() as u32);
+        let schnorr_signature = key_manager.get_aggregated_signature(id, &message_id)?;
+        
+        let key_spend_signature = Signature::Taproot(bitcoin::taproot::Signature {
+            signature: schnorr_signature,
+            sighash_type: *sighash_type,
+        });
+
+        // let (schnorr_signature, output_key) = key_manager
+        //     .sign_schnorr_message_with_tap_tweak(&key_spend_hashed_message, &full_public_key, merkle_root)?;
+
+        // let key_spend_signature = Signature::Taproot(bitcoin::taproot::Signature {
+        //     signature: schnorr_signature,
+        //     sighash_type: *sighash_type,
+        // });
+
+        // 4. Verify the signature:
+        // if !SignatureVerifier::new().verify_schnorr_signature(&schnorr_signature, &key_spend_hashed_message, output_key) {
+        //     return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed);
+        // }
+
+        signatures.push(key_spend_signature);
+
+        // 5. Update signatures for the input
+        self.graph
+            .update_input_signatures(transaction_name, input_index as u32, signatures)?;
+        Ok(())
+    }
+
+    fn segwit_key_spend_signature<K: KeyStore>(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
+        public_key: &PublicKey,
+        sighash_type: &EcdsaSighashType,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?[input_index].hashed_messages().clone();
+        
+        // There must be only one hashed message for the key spend path
+        assert!(hashed_messages.len() == 1);
+
+
+        let ecdsa_signature = key_manager.sign_ecdsa_message(&hashed_messages[0].clone(), public_key)?;
+        let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
+            signature: ecdsa_signature,
+            sighash_type: *sighash_type,
+        });
+
+        self.graph.update_input_signatures(
+            transaction_name,
+            input_index as u32,
+            vec![signature],
+        )?;
+        Ok(())
+    }
+
+    fn segwit_script_spend_signature<K: KeyStore>(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
+        script: &ProtocolScript,
+        sighash_type: &EcdsaSighashType,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?[input_index].hashed_messages().clone();
+        
+        // There must be only one hashed message for the key spend path
+        assert!(hashed_messages.len() == 1);
+
+        let ecdsa_signature =
+            key_manager.sign_ecdsa_message(&hashed_messages[0].clone(), &script.get_verifying_key())?;
+        let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
+            signature: ecdsa_signature,
+            sighash_type: *sighash_type,
+        });
+
+        self.graph.update_input_signatures(
+            transaction_name,
+            input_index as u32,
+            vec![signature],
+        )?;
+        Ok(())
+    }
+
+
+
+    fn taproot_key_spend_sighash_and_signature<K: KeyStore>(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
         key: &PublicKey,
         tweak: Option<&Scalar>,
+        prevouts: &Vec<TxOut>,
         sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
         let transaction = self.transaction(transaction_name)?.clone();
-        let prevouts = self.graph.get_prevouts(transaction_name)?;
+
+        let prevouts = if prevouts.is_empty() {
+            self.graph.get_prevouts(transaction_name)?
+        } else {
+            prevouts.clone()
+        };
+
+        //let prevouts = self.graph.get_prevouts(transaction_name)?;
+
         let mut sighasher = SighashCache::new(transaction);
 
         let hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
@@ -1394,7 +1736,7 @@ impl Protocol {
         Ok(())
     }
 
-    fn taproot_script_spend_signature<K: KeyStore>(
+    fn taproot_script_spend_sighash_and_signature<K: KeyStore>(
         &mut self,
         transaction_name: &str,
         input_index: usize,
@@ -1468,7 +1810,7 @@ impl Protocol {
         Ok(())
     }
 
-    fn segwit_key_spend_signature<K: KeyStore>(
+    fn segwit_key_spend_sighash_and_signature<K: KeyStore>(
         &mut self,
         transaction_name: &str,
         input_index: usize,
@@ -1509,7 +1851,7 @@ impl Protocol {
         Ok(())
     }
 
-    fn segwit_script_spend_signature<K: KeyStore>(
+    fn segwit_script_spend_sighash_and_signature<K: KeyStore>(
         &mut self,
         transaction_name: &str,
         input_index: usize,

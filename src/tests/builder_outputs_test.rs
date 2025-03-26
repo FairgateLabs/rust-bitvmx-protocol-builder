@@ -1,69 +1,21 @@
 #[cfg(test)]
 mod tests {
-    use anyhow::Error;
     use bitcoin::{
         hashes::Hash,
-        key::rand::RngCore,
         opcodes::all::{OP_PUSHNUM_1, OP_RETURN},
-        secp256k1::{self},
-        Amount, Network, PublicKey, ScriptBuf, Sequence,
+        Amount, PublicKey, ScriptBuf, Sequence,
     };
-    use key_manager::{
-        errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
-    };
-    use std::{env, path::PathBuf, rc::Rc};
+
+    use std::rc::Rc;
     use storage_backend::storage::Storage;
 
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
-        scripts::ProtocolScript,
+        graph::output::OutputSpendingType,
+        scripts::ProtocolScript, tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, temp_storage},
     };
-    fn temp_storage() -> PathBuf {
-        let dir = env::temp_dir();
-        let mut rng = secp256k1::rand::thread_rng();
-        let index = rng.next_u32();
-        dir.join(format!("storage_{}.db", index))
-    }
 
-    pub fn new_key_manager() -> Result<KeyManager<DatabaseKeyStore>, Error> {
-        let network = Network::Regtest;
-        let key_derivation_path = "m/101/1/0/0/";
-        let keystore_path = "/tmp/storage.db";
-        let keystore_password = "secret_password".as_bytes().to_vec();
-
-        let bytes =
-            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-        let key_derivation_seed: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
-
-        let bytes =
-            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-        let winternitz_seed: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
-
-        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
-        let key_manager = KeyManager::new(
-            network,
-            key_derivation_path,
-            key_derivation_seed,
-            winternitz_seed,
-            database_keystore,
-        )?;
-
-        Ok(key_manager)
-    }
-
-    pub fn ecdsa_sighash_type() -> SighashType {
-        SighashType::ecdsa_all()
-    }
-
-    pub fn taproot_sighash_type() -> SighashType {
-        SighashType::taproot_all()
-    }
 
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
@@ -78,6 +30,8 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
 
         // Arrange
         let number: u64 = 0;
@@ -109,7 +63,7 @@ mod tests {
                 &ecdsa_sighash_type,
             )?
             .add_op_return_output("op_return", data.clone())?
-            .build()?;
+            .build(id, &key_manager)?;
         let tx = protocol.transaction("op_return")?;
 
         // Assert

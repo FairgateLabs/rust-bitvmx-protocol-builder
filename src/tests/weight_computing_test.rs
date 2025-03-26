@@ -10,7 +10,7 @@ mod tests {
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, helpers::weight_computing::{get_transaction_hex, get_transaction_total_size, get_transaction_vsize}, scripts::ProtocolScript, unspendable::unspendable_key
+        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, helpers::weight_computing::{get_transaction_hex, get_transaction_vsize}, scripts::ProtocolScript, tests::utils::new_key_manager, unspendable::unspendable_key
     };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
@@ -48,6 +48,9 @@ mod tests {
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
+
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
 
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
@@ -97,7 +100,7 @@ mod tests {
                 blocks,
                 &sighash_type,
             )?
-            .build()?;
+            .build(id, &key_manager)?;
 
         let challenge_spending_args = &[
             SpendingArgs::new_taproot_args(script_a.get_script()),

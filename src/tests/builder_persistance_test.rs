@@ -2,7 +2,7 @@
 mod tests {
     use bitcoin::{
         hashes::Hash,
-        key::rand::RngCore,
+        key::{self, rand::RngCore},
         secp256k1::{self, Scalar},
         Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey,
     };
@@ -10,11 +10,7 @@ mod tests {
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::ProtocolBuilder,
-        errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
-        scripts::ProtocolScript,
-        unspendable::unspendable_key,
+        builder::ProtocolBuilder, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, tests::utils::new_key_manager, unspendable::unspendable_key
     };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
@@ -49,8 +45,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         let tx = protocol.transaction("A")?;
         assert_eq!(tx.input.len(), 1);
@@ -84,8 +83,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -118,8 +120,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -152,8 +157,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -190,8 +198,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -231,8 +242,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 3);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 2);
@@ -266,8 +280,11 @@ mod tests {
 
         drop(builder);
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);

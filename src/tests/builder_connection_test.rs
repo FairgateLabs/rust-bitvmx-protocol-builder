@@ -2,7 +2,7 @@
 mod tests {
     use bitcoin::{
         hashes::Hash,
-        key::rand::RngCore,
+        key::{self, rand::RngCore},
         secp256k1::{self},
         Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey,
     };
@@ -10,11 +10,7 @@ mod tests {
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs},
-        errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
-        scripts::ProtocolScript,
-        unspendable::unspendable_key,
+        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, tests::utils::new_key_manager, unspendable::unspendable_key
     };
     fn temp_storage() -> PathBuf {
         let dir = env::temp_dir();
@@ -52,6 +48,9 @@ mod tests {
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
+
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
 
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
@@ -101,7 +100,7 @@ mod tests {
                 blocks,
                 &sighash_type,
             )?
-            .build()?;
+            .build(id, &key_manager)?;
 
         let challenge_spending_args = &[
             SpendingArgs::new_taproot_args(script_a.get_script()),
@@ -148,6 +147,9 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let spending_scripts = vec![script.clone(), script.clone()];
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
         builder.add_taproot_script_spend_connection(
@@ -160,7 +162,7 @@ mod tests {
             &sighash_type,
         )?;
 
-        let result = builder.build();
+        let result = builder.build(id, &key_manager);
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -195,6 +197,9 @@ mod tests {
 
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
+
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
 
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
@@ -233,7 +238,7 @@ mod tests {
                 "A",
                 &sighash_type,
             )?
-            .build();
+            .build(id, &key_manager);
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -262,6 +267,9 @@ mod tests {
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
@@ -272,7 +280,7 @@ mod tests {
                 "start",
                 &ecdsa_sighash_type,
             )?
-            .build()?;
+            .build(id, &key_manager)?;
 
         let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
 
@@ -304,6 +312,9 @@ mod tests {
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
+
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         let (from_rounds, _) = builder.connect_rounds(
@@ -334,7 +345,7 @@ mod tests {
                 &from_rounds,
                 &sighash_type,
             )?
-            .build()?;
+            .build(id, &key_manager)?;
 
         let spending_args = [
             SpendingArgs::new_taproot_args(script.get_script()),
@@ -431,6 +442,9 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+
+        let key_manager = new_key_manager().unwrap();
+        let id = "id_1";
 
         let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
@@ -538,7 +552,7 @@ mod tests {
             )?
             .add_p2wsh_output(&to_rounds, value, &script)?;
 
-        let protocol = builder.build()?;
+        let protocol = builder.build(id, &key_manager)?;
         let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 
