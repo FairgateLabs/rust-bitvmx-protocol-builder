@@ -818,6 +818,10 @@ impl Protocol {
         self.graph.get_transaction_names()
     }
 
+    pub fn get_transaction_ids(&self) -> Vec<Txid> {
+        self.graph.get_transaction_ids()
+    }
+
     pub fn transaction_with_id(&self, txid: Txid) -> Result<&Transaction, ProtocolBuilderError> {
         self.graph
             .get_transaction_with_id(txid)

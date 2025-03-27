@@ -527,6 +527,13 @@ impl TransactionGraph {
             .collect()
     }
 
+    pub fn get_transaction_ids(&self) -> Vec<Txid> {
+        self.graph
+            .node_weights()
+            .map(|node| node.transaction.compute_txid())
+            .collect()
+    }
+
     pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, GraphError> {
         let mut all_signatures = HashMap::new();
 
