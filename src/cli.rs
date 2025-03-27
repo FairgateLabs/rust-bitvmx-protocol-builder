@@ -443,7 +443,7 @@ impl Cli {
         )?;
 
         // TODO read from config
-        let path = PathBuf::from(format!("/tmp/store"));
+        let path = PathBuf::from("/tmp/store".to_string());
         let store = Rc::new(Storage::new_with_path(&path).unwrap());
 
         Ok(create_key_manager_from_config(

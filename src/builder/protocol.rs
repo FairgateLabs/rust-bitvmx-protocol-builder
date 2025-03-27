@@ -1,5 +1,5 @@
 use bitcoin::{
-    hashes::Hash, key::{Parity, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Address, Amount, EcdsaSighashType, OutPoint, PublicKey, Script, ScriptBuf, Sequence, TapLeafHash, TapNodeHash, TapSighashType, Transaction, TxIn, TxOut, Txid, WScriptHash, Witness, XOnlyPublicKey
+    hashes::Hash, key::{Parity, TweakedPublicKey, UntweakedPublicKey}, locktime, secp256k1::{self, Message, Scalar}, sighash::{self, SighashCache}, taproot::{LeafVersion, TaprootSpendInfo}, transaction, Address, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, TapLeafHash, TapNodeHash, TapSighashType, Transaction, TxIn, TxOut, Txid, WScriptHash, Witness, XOnlyPublicKey
 };
 use key_manager::{
     key_manager::KeyManager, keystorage::keystore::KeyStore, verifier::SignatureVerifier, winternitz::WinternitzSignature
@@ -684,15 +684,6 @@ impl Protocol {
         }
 
         Ok(transaction)
-    }
-
-    pub fn consume_expired_timelock_transaction<K: KeyStore>(
-        expired_timelock_utxo: Utxo,
-        change_address: Address,
-        speedup_fee: u64,
-        key_manager: &KeyManager<K>,
-    ) {
-
     }
 
     pub fn speedup_transaction<K: KeyStore>(
@@ -1682,8 +1673,6 @@ impl Protocol {
         Ok(())
     }
 
-
-
     fn taproot_key_spend_sighash_and_signature<K: KeyStore>(
         &mut self,
         transaction_name: &str,
@@ -1736,6 +1725,7 @@ impl Protocol {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn taproot_script_spend_sighash_and_signature<K: KeyStore>(
         &mut self,
         transaction_name: &str,

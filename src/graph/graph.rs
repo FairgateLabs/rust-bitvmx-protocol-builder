@@ -447,7 +447,7 @@ impl TransactionGraph {
             for (input_index, spending_info) in input_spending_infos.iter().enumerate() {
                 for (script_index, message) in spending_info.hashed_messages().iter().enumerate() {
                     let message_id = MessageId::new(name.clone(), input_index as u32, script_index as u32);
-                    all_sighashes.push((message_id, message.clone()));
+                    all_sighashes.push((message_id, *message));
                 }
             }
         }

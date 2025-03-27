@@ -24,7 +24,7 @@ pub fn new_key_manager() -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
     let key_derivation_path = "m/101/1/0/0/";
     let keystore_path = "/tmp/storage.db";
     let keystore_password = "secret_password".as_bytes().to_vec();
-    let path = PathBuf::from(format!("/tmp/store"));
+    let path = PathBuf::from("/tmp/store".to_string());
     let store = Rc::new(Storage::new_with_path(&path).unwrap());
 
     let bytes =
