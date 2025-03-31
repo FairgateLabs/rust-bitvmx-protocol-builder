@@ -1,10 +1,7 @@
 use std::{cmp, collections::HashMap};
 
 use bitcoin::{
-    key::{Secp256k1, UntweakedPublicKey},
-    secp256k1::All,
-    taproot::{TaprootBuilder, TaprootSpendInfo},
-    PublicKey, ScriptBuf, XOnlyPublicKey,
+    key::{Secp256k1, UntweakedPublicKey}, opcodes::all::{OP_CHECKSIGVERIFY, OP_SHA256}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
 };
 
 use bitcoin_scriptexec::treepp::*;
@@ -439,6 +436,19 @@ pub fn ots_checksig(
 
     Ok(verify)
 }
+
+pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScript {
+    let script = script!(
+        OP_SHA256
+        { hashed_secret }
+        OP_EQUALVERIFY
+        { XOnlyPublicKey::from(*pub_key).serialize().to_vec() }
+        OP_CHECKSIG
+    );
+
+    ProtocolScript::new(script, pub_key)
+}
+
 
 pub fn build_taproot_spend_info(
     secp: &Secp256k1<All>,
