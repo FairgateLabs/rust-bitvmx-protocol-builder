@@ -201,7 +201,7 @@ impl Protocol {
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
 
         let spending_type =
-            OutputSpendingType::new_taproot_script_spend(spending_scripts, &spend_info);
+            OutputSpendingType::new_taproot_script_spend(spending_scripts, &spend_info, vec![]);
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
         Ok(self)
@@ -561,6 +561,7 @@ impl Protocol {
         from: &str,
         to: &str,
         value: u64,
+        internal_key: &XOnlyPublicKey,
         spending_scripts_from: &[ProtocolScript],
         spending_scripts_to: &[ProtocolScript],
         sighash_type: &SighashType,
@@ -582,7 +583,7 @@ impl Protocol {
                 connection_name,
                 &from_round,
                 value,
-                &Self::create_unspendable_key()?,
+                internal_key,
                 spending_scripts_from,
                 &to_round,
                 sighash_type,
@@ -597,7 +598,7 @@ impl Protocol {
                 connection_name,
                 &to_round,
                 value,
-                &Self::create_unspendable_key()?,
+                internal_key,
                 spending_scripts_to,
                 &from_round,
                 sighash_type,
@@ -614,7 +615,7 @@ impl Protocol {
             connection_name,
             &from_round,
             value,
-            &Self::create_unspendable_key()?,
+            internal_key,
             spending_scripts_from,
             &to_round,
             sighash_type,
@@ -1227,6 +1228,7 @@ impl Protocol {
                                 ref spending_scripts,
                                 ref internal_key,
                                 ref spend_info,
+                                ref prevouts,
                             } => {
                                 self.taproot_script_spend_sighash_and_signature(
                                     &transaction_name,
@@ -1234,6 +1236,7 @@ impl Protocol {
                                     internal_key,
                                     spend_info.merkle_root(),
                                     spending_scripts,
+                                    prevouts,
                                     tap_sighash_type,
                                     key_manager,
                                 )?;
@@ -1695,8 +1698,6 @@ impl Protocol {
             prevouts.clone()
         };
 
-        //let prevouts = self.graph.get_prevouts(transaction_name)?;
-
         let mut sighasher = SighashCache::new(transaction);
 
         let hashed_message = Message::from(sighasher.taproot_key_spend_signature_hash(
@@ -1737,11 +1738,16 @@ impl Protocol {
         internal_key: &XOnlyPublicKey,
         merkle_root: Option<TapNodeHash>,
         spending_scripts: &Vec<ProtocolScript>,
+        prevouts: &Vec<TxOut>,
         sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
         let transaction = self.transaction(transaction_name)?.clone();
-        let prevouts = self.graph.get_prevouts(transaction_name)?;
+        let prevouts = if prevouts.is_empty() {
+            self.graph.get_prevouts(transaction_name)?
+        } else {
+            prevouts.clone()
+        };
         let mut sighasher = SighashCache::new(transaction);
 
         let mut hashed_messages = vec![];

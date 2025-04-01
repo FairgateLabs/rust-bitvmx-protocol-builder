@@ -7,7 +7,7 @@ use bitcoin::{
 use key_manager::{
     errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
 };
-use std::{env, path::PathBuf, rc::Rc};
+use std::{env, fs, path::PathBuf, rc::Rc};
 use storage_backend::storage::Storage;
 
 use crate::graph::input::SighashType;
@@ -20,6 +20,11 @@ pub fn temp_storage() -> PathBuf {
 }
 
 pub fn new_key_manager() -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
+    let dir = env::temp_dir();
+    let mut rng = secp256k1::rand::thread_rng();
+    let index = rng.next_u32();
+    let keystore_path = dir.join(format!("key_manager_{}", index));
+
     let network = Network::Regtest;
     let key_derivation_path = "m/101/1/0/0/";
     let keystore_path = "/tmp/storage.db";
@@ -52,10 +57,50 @@ pub fn new_key_manager() -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
     Ok(Rc::new(key_manager))
 }
 
+pub fn clear_test_directories() {
+    let temp_base = env::temp_dir();
+    let root_dir = temp_base.join("key_manager");
+
+    if root_dir.exists() {
+        let _ = fs::remove_dir_all(&root_dir);
+    }
+}
+
 pub fn ecdsa_sighash_type() -> SighashType {
     SighashType::ecdsa_all()
 }
 
 pub fn taproot_sighash_type() -> SighashType {
     SighashType::taproot_all()
+}
+pub struct TemporaryDir {
+    pub path: PathBuf,
+}
+
+impl TemporaryDir {
+    /// Create a new test directory structure
+    pub fn new(test_prefix: &str) -> Self {
+        let temp_base = env::temp_dir();
+        let mut rng = secp256k1::rand::thread_rng();
+        let random_id = rng.next_u32();
+        let temp_path = temp_base.join(format!("{}_{}", test_prefix, random_id));
+        fs::create_dir_all(&temp_path).expect("Failed to create temp directory");
+
+        Self { path: temp_path }
+    }
+
+    /// Get a path inside the test subdir
+    pub fn path(&self, relative: &str) -> PathBuf {
+        self.path.join(relative)
+    }
+} 
+
+// Optional: clean up root directory when done (after all tests)
+impl Drop for TemporaryDir {
+    fn drop(&mut self) {
+        // Clean up the entire root dir, including all test subdirs
+        if self.path.exists() {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 }

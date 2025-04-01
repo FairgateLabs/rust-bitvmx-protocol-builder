@@ -28,6 +28,7 @@ pub enum OutputSpendingType {
         spending_scripts: Vec<ProtocolScript>,
         spend_info: TaprootSpendInfo,
         internal_key: XOnlyPublicKey,
+        prevouts: Vec<TxOut>,
     },
     SegwitPublicKey {
         public_key: PublicKey,
@@ -65,11 +66,13 @@ impl Serialize for OutputSpendingType {
                 spending_scripts,
                 spend_info: _,
                 internal_key,
+                prevouts,
             } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
                 state.serialize_field("type", "taproot_script")?;
                 state.serialize_field("spending_scripts", spending_scripts)?;
                 state.serialize_field("internal_key", internal_key)?;
+                state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
             OutputSpendingType::SegwitPublicKey { public_key, value } => {
@@ -222,6 +225,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             .ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
                         let internal_key = internal_key
                             .ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
+                        let prevouts = prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
                         let secp = Secp256k1::new();
                         let spend_info = scripts::build_taproot_spend_info(
                             &secp,
@@ -236,6 +240,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             spending_scripts,
                             spend_info,
                             internal_key,
+                            prevouts,
                         })
                     }
                     "segwit_public_key" => {
@@ -296,11 +301,13 @@ impl OutputSpendingType {
     pub fn new_taproot_script_spend(
         spending_scripts: &[ProtocolScript],
         spend_info: &TaprootSpendInfo,
+        prevouts: Vec<TxOut>,
     ) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
             internal_key: spend_info.internal_key(),
+            prevouts,
         }
     }
 

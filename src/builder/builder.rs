@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, TxOut, Txid};
+use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, TxOut, Txid, XOnlyPublicKey};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use storage_backend::storage::Storage;
 
@@ -420,6 +420,7 @@ impl ProtocolBuilder {
         from: &str,
         to: &str,
         value: u64,
+        internal_key: &XOnlyPublicKey,
         spending_scripts_from: &[ProtocolScript],
         spending_scripts_to: &[ProtocolScript],
         sighash_type: &SighashType,
@@ -430,6 +431,7 @@ impl ProtocolBuilder {
             from,
             to,
             value,
+            internal_key,
             spending_scripts_from,
             spending_scripts_to,
             sighash_type,

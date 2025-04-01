@@ -424,6 +424,7 @@ impl Cli {
             from,
             to,
             value,
+            &XOnlyPublicKey::from(public_key),
             &[script.clone()],
             &[script.clone()],
             &sighash_type,
