@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, TxOut, Txid};
+use bitcoin::{key::UntweakedPublicKey, secp256k1::Scalar, PublicKey, TxOut, Txid, XOnlyPublicKey};
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use storage_backend::storage::Storage;
 
@@ -420,6 +420,7 @@ impl ProtocolBuilder {
         from: &str,
         to: &str,
         value: u64,
+        internal_key: &XOnlyPublicKey,
         spending_scripts_from: &[ProtocolScript],
         spending_scripts_to: &[ProtocolScript],
         sighash_type: &SighashType,
@@ -430,6 +431,7 @@ impl ProtocolBuilder {
             from,
             to,
             value,
+            internal_key,
             spending_scripts_from,
             spending_scripts_to,
             sighash_type,
@@ -451,13 +453,14 @@ impl ProtocolBuilder {
         timelock_renew: &ProtocolScript,
         speedup_value: u64,
         speedup_key: &PublicKey,
+        internal_key: &XOnlyPublicKey,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_connection(
             "linked_messages",
             from,
             protocol_value,
-            &Protocol::create_unspendable_key()?,
+            internal_key,
             protocol_scripts,
             to,
             sighash_type,
@@ -465,7 +468,7 @@ impl ProtocolBuilder {
         self.add_timelock_connection(
             from,
             timelock_value,
-            &Protocol::create_unspendable_key()?,
+            internal_key,
             timelock_expired,
             timelock_renew,
             to,

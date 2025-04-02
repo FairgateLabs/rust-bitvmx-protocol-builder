@@ -1,5 +1,6 @@
 use bitcoin::{
-    key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, TxOut, XOnlyPublicKey
+    key::Secp256k1, secp256k1::Scalar, taproot::TaprootSpendInfo, Amount, PublicKey, TxOut,
+    XOnlyPublicKey,
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
@@ -17,17 +18,18 @@ const ALL_OUTPUT_TYPES: &[&str] = &[
 pub enum OutputSpendingType {
     TaprootUntweakedKey {
         key: PublicKey,
-        prevouts: Vec<TxOut>, 
+        prevouts: Vec<TxOut>,
     },
     TaprootTweakedKey {
         key: PublicKey,
         tweak: Scalar,
-        prevouts: Vec<TxOut>, 
+        prevouts: Vec<TxOut>,
     },
     TaprootScript {
         spending_scripts: Vec<ProtocolScript>,
         spend_info: TaprootSpendInfo,
         internal_key: XOnlyPublicKey,
+        prevouts: Vec<TxOut>,
     },
     SegwitPublicKey {
         public_key: PublicKey,
@@ -53,7 +55,11 @@ impl Serialize for OutputSpendingType {
                 state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
-            OutputSpendingType::TaprootTweakedKey { key, tweak, prevouts } => {
+            OutputSpendingType::TaprootTweakedKey {
+                key,
+                tweak,
+                prevouts,
+            } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
                 state.serialize_field("type", "taproot_tweaked_key")?;
                 state.serialize_field("key", key)?;
@@ -65,11 +71,13 @@ impl Serialize for OutputSpendingType {
                 spending_scripts,
                 spend_info: _,
                 internal_key,
+                prevouts,
             } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
                 state.serialize_field("type", "taproot_script")?;
                 state.serialize_field("spending_scripts", spending_scripts)?;
                 state.serialize_field("internal_key", internal_key)?;
+                state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
             OutputSpendingType::SegwitPublicKey { public_key, value } => {
@@ -202,19 +210,21 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                 match output_type.as_str() {
                     "taproot_untweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
-                        let prevouts = prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
+                        let prevouts =
+                            prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
                         Ok(OutputSpendingType::TaprootUntweakedKey { key, prevouts })
                     }
                     "taproot_tweaked_key" => {
                         let key = key.ok_or_else(|| serde::de::Error::missing_field("key"))?;
                         let tweak =
                             tweak.ok_or_else(|| serde::de::Error::missing_field("tweak"))?;
-                        let prevouts = prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
+                        let prevouts =
+                            prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
                         Ok(OutputSpendingType::TaprootTweakedKey {
                             key,
                             tweak: Scalar::from_be_bytes(tweak)
                                 .map_err(|e| serde::de::Error::custom(e.to_string()))?,
-                            prevouts
+                            prevouts,
                         })
                     }
                     "taproot_script" => {
@@ -222,6 +232,8 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             .ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
                         let internal_key = internal_key
                             .ok_or_else(|| serde::de::Error::missing_field("internal_key"))?;
+                        let prevouts =
+                            prevouts.ok_or_else(|| serde::de::Error::missing_field("prevouts"))?;
                         let secp = Secp256k1::new();
                         let spend_info = scripts::build_taproot_spend_info(
                             &secp,
@@ -236,6 +248,7 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
                             spending_scripts,
                             spend_info,
                             internal_key,
+                            prevouts,
                         })
                     }
                     "segwit_public_key" => {
@@ -278,10 +291,12 @@ impl<'de> Deserialize<'de> for OutputSpendingType {
     }
 }
 
-
-
 impl OutputSpendingType {
-    pub fn new_taproot_tweaked_key_spend(public_key: &PublicKey, tweak: &Scalar, prevouts: Vec<TxOut>) -> Self {
+    pub fn new_taproot_tweaked_key_spend(
+        public_key: &PublicKey,
+        tweak: &Scalar,
+        prevouts: Vec<TxOut>,
+    ) -> Self {
         OutputSpendingType::TaprootTweakedKey {
             key: *public_key,
             tweak: *tweak,
@@ -290,17 +305,22 @@ impl OutputSpendingType {
     }
 
     pub fn new_taproot_key_spend(public_key: &PublicKey, prevouts: Vec<TxOut>) -> Self {
-        OutputSpendingType::TaprootUntweakedKey { key: *public_key, prevouts }
+        OutputSpendingType::TaprootUntweakedKey {
+            key: *public_key,
+            prevouts,
+        }
     }
 
     pub fn new_taproot_script_spend(
         spending_scripts: &[ProtocolScript],
         spend_info: &TaprootSpendInfo,
+        prevouts: Vec<TxOut>,
     ) -> OutputSpendingType {
         OutputSpendingType::TaprootScript {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
             internal_key: spend_info.internal_key(),
+            prevouts,
         }
     }
 
@@ -350,7 +370,11 @@ mod tests {
             OutputSpendingType::new_taproot_tweaked_key_spend(&public_key.into(), &tweak, vec![]);
 
         match spending_type {
-            OutputSpendingType::TaprootTweakedKey { key, tweak: t, prevouts } => {
+            OutputSpendingType::TaprootTweakedKey {
+                key,
+                tweak: t,
+                prevouts,
+            } => {
                 assert_eq!(key, public_key.into());
                 assert_eq!(t, tweak);
                 assert!(prevouts.is_empty());
@@ -367,7 +391,7 @@ mod tests {
         let spending_type = OutputSpendingType::new_taproot_key_spend(&public_key.into(), vec![]);
 
         match spending_type {
-            OutputSpendingType::TaprootUntweakedKey { key, prevouts} => {
+            OutputSpendingType::TaprootUntweakedKey { key, prevouts } => {
                 assert_eq!(key, public_key.into());
                 assert!(prevouts.is_empty());
             }

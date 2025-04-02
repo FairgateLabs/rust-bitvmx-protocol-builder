@@ -1,39 +1,34 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        hashes::Hash,
-        key::{self, rand::RngCore},
-        secp256k1::{self},
-        Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey,
+        hashes::Hash, Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey,
     };
-    use std::{env, path::PathBuf, rc::Rc};
+    use std::rc::Rc;
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, tests::utils::new_key_manager, unspendable::unspendable_key
+        builder::{ProtocolBuilder, SpendingArgs},
+        errors::ProtocolBuilderError,
+        graph::{input::SighashType, output::OutputSpendingType},
+        scripts::ProtocolScript,
+        tests::utils::{new_key_manager, TemporaryDir},
     };
-    fn temp_storage() -> PathBuf {
-        let dir = env::temp_dir();
-        let mut rng = secp256k1::rand::thread_rng();
-        let index = rng.next_u32();
-        dir.join(format!("storage_{}.db", index))
-    }
 
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
-        let mut rng = secp256k1::rand::thread_rng();
+        let test_dir = TemporaryDir::new("test_single_connection");
+
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
 
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
 
         let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
@@ -49,10 +44,7 @@ mod tests {
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -100,7 +92,7 @@ mod tests {
                 blocks,
                 &sighash_type,
             )?
-            .build(id, &key_manager)?;
+            .build_and_sign(&key_manager)?;
 
         let challenge_spending_args = &[
             SpendingArgs::new_taproot_args(script_a.get_script()),
@@ -136,21 +128,19 @@ mod tests {
 
     #[test]
     fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let mut rng = secp256k1::rand::thread_rng();
+        let test_dir = TemporaryDir::new("test_single_cyclic_connection");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
+
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let spending_scripts = vec![script.clone(), script.clone()];
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
         builder.add_taproot_script_spend_connection(
             "cycle",
@@ -162,7 +152,7 @@ mod tests {
             &sighash_type,
         )?;
 
-        let result = builder.build(id, &key_manager);
+        let result = builder.build_and_sign(&key_manager);
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -179,15 +169,17 @@ mod tests {
 
     #[test]
     fn test_multiple_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let mut rng = secp256k1::rand::thread_rng();
+        let test_dir = TemporaryDir::new("test_multiple_cyclic_connection");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
+
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
@@ -198,10 +190,7 @@ mod tests {
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
         let result = builder
             .connect_with_external_transaction(
@@ -238,7 +227,7 @@ mod tests {
                 "A",
                 &sighash_type,
             )?
-            .build(id, &key_manager);
+            .build_and_sign(&key_manager);
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -255,22 +244,21 @@ mod tests {
 
     #[test]
     fn test_single_node_no_connections() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_single_node_no_connections");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -280,7 +268,7 @@ mod tests {
                 "start",
                 &ecdsa_sighash_type,
             )?
-            .build(id, &key_manager)?;
+            .build_and_sign(&key_manager)?;
 
         let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
 
@@ -296,26 +284,24 @@ mod tests {
 
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_rounds");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
+
         let rounds = 3;
-        let mut rng = secp256k1::rand::thread_rng();
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         let (from_rounds, _) = builder.connect_rounds(
             "rounds",
@@ -323,6 +309,7 @@ mod tests {
             "B",
             "C",
             value,
+            &internal_key,
             &[script.clone()],
             &[script.clone()],
             &sighash_type,
@@ -345,7 +332,7 @@ mod tests {
                 &from_rounds,
                 &sighash_type,
             )?
-            .build(id, &key_manager)?;
+            .build_and_sign(&key_manager)?;
 
         let spending_args = [
             SpendingArgs::new_taproot_args(script.get_script()),
@@ -391,16 +378,19 @@ mod tests {
 
     #[test]
     fn test_zero_rounds() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_zero_rounds");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
+
         let rounds = 0;
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         let result = builder.connect_rounds(
             "rounds",
@@ -408,6 +398,7 @@ mod tests {
             "B",
             "C",
             value,
+            &internal_key,
             &[script.clone()],
             &[script.clone()],
             &sighash_type,
@@ -427,26 +418,24 @@ mod tests {
 
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_multiple_connections");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let public_key = key_manager.derive_keypair(0).unwrap();
+        let internal_key = XOnlyPublicKey::from(public_key);
+
         let rounds = 3;
-        let mut rng = secp256k1::rand::thread_rng();
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let key_manager = new_key_manager().unwrap();
-        let id = "id_1";
-
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         builder
             .connect_with_external_transaction(
@@ -535,6 +524,7 @@ mod tests {
             "H",
             "I",
             value,
+            &internal_key,
             &[script.clone()],
             &[script.clone()],
             &sighash_type,
@@ -552,7 +542,7 @@ mod tests {
             )?
             .add_p2wsh_output(&to_rounds, value, &script)?;
 
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build_and_sign(&key_manager)?;
         let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 
