@@ -21,7 +21,7 @@ use crate::{
     errors::ProtocolBuilderError,
     graph::{
         graph::{MessageId, TransactionGraph},
-        input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
+        input::{self, InputSignatures, InputSpendingInfo, SighashType, Signature},
         output::OutputSpendingType,
     },
     scripts::{self, ProtocolScript},
@@ -922,26 +922,27 @@ impl Protocol {
         input_index: u32,
         script_index: u32,
     ) -> Result<ProtocolScript, ProtocolBuilderError> {
-        let output = self
+        let input_spending_info = self
             .graph
-            .get_output_for_input(transaction_name, input_index)?;
+            .get_input_spending_info(transaction_name, input_index as usize)?;
 
-        match output {
-            OutputSpendingType::TaprootScript {
-                ref spending_scripts,
-                ..
-            } => {
-                let script = spending_scripts[script_index as usize].clone();
-                Ok(script)
+        let script = match input_spending_info.spending_type()? {
+            OutputSpendingType::TaprootScript { spending_scripts, .. } => {
+                spending_scripts[script_index as usize].clone()
             }
-            OutputSpendingType::SegwitScript { ref script, .. } => Ok(script.clone()),
-            _ => Err(ProtocolBuilderError::InvalidSpendingTypeForScript(
-                transaction_name.to_string(),
-                input_index,
-                script_index,
-                output.get_name().to_string(),
-            )),
-        }
+            // TODO complete this for all other spending types and remove the "Unknown output type".to_string() value in the error
+            OutputSpendingType::SegwitScript { script, .. } => script.clone(),
+            _ => {
+                return Err(ProtocolBuilderError::InvalidSpendingTypeForScript(
+                    transaction_name.to_string(),
+                    input_index,
+                    script_index,
+                    "Unknown output type".to_string(),
+                ))
+            }
+        };
+
+        Ok(script)
     }
 
     pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {

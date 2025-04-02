@@ -556,6 +556,20 @@ impl TransactionGraph {
         Ok(all_signatures)
     }
 
+    pub fn get_input_spending_info(
+        &self,
+        name: &str,
+        input_index: usize,
+    ) -> Result<InputSpendingInfo, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+        Ok(node.get_input_spending_info(input_index)?.clone())
+    }
+
     pub fn get_input_ecdsa_signature(
         &self,
         name: &str,
