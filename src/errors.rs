@@ -5,7 +5,10 @@ use bitcoin::{
     taproot::TaprootBuilderError,
     transaction,
 };
-use key_manager::{errors::{KeyManagerError, WinternitzError}, musig2::errors::Musig2SignerError};
+use key_manager::{
+    errors::{KeyManagerError, WinternitzError},
+    musig2::errors::Musig2SignerError,
+};
 use thiserror::Error;
 
 use config as settings;

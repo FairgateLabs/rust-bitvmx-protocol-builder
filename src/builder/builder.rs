@@ -453,13 +453,14 @@ impl ProtocolBuilder {
         timelock_renew: &ProtocolScript,
         speedup_value: u64,
         speedup_key: &PublicKey,
+        internal_key: &XOnlyPublicKey,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_taproot_script_spend_connection(
             "linked_messages",
             from,
             protocol_value,
-            &Protocol::create_unspendable_key()?,
+            internal_key,
             protocol_scripts,
             to,
             sighash_type,
@@ -467,7 +468,7 @@ impl ProtocolBuilder {
         self.add_timelock_connection(
             from,
             timelock_value,
-            &Protocol::create_unspendable_key()?,
+            internal_key,
             timelock_expired,
             timelock_renew,
             to,

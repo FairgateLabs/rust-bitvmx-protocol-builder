@@ -1,26 +1,23 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        hashes::Hash,
-        key::rand::RngCore,
-        secp256k1::{self},
-        Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey,
+        hashes::Hash, Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey,
     };
-    use std::{env, path::PathBuf, rc::Rc};
+    use std::rc::Rc;
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, scripts::ProtocolScript, tests::utils::new_key_manager,
+        builder::{ProtocolBuilder, SpendingArgs},
+        errors::ProtocolBuilderError,
+        graph::{input::SighashType, output::OutputSpendingType},
+        scripts::ProtocolScript,
+        tests::utils::{new_key_manager, TemporaryDir},
     };
-    fn temp_storage() -> PathBuf {
-        let dir = env::temp_dir();
-        let mut rng = secp256k1::rand::thread_rng();
-        let index = rng.next_u32();
-        dir.join(format!("storage_{}.db", index))
-    }
 
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_single_connection");
+
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
@@ -28,7 +25,8 @@ mod tests {
         let output_index = 0;
         let blocks = 100;
 
-        let key_manager = new_key_manager().unwrap();
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
 
@@ -46,7 +44,7 @@ mod tests {
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -130,7 +128,10 @@ mod tests {
 
     #[test]
     fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_single_cyclic_connection");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
 
@@ -139,7 +140,7 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let spending_scripts = vec![script.clone(), script.clone()];
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
         builder.add_taproot_script_spend_connection(
             "cycle",
@@ -168,7 +169,10 @@ mod tests {
 
     #[test]
     fn test_multiple_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_multiple_cyclic_connection");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
 
@@ -186,7 +190,7 @@ mod tests {
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("cycle", storage)?;
         let result = builder
             .connect_with_external_transaction(
@@ -240,7 +244,10 @@ mod tests {
 
     #[test]
     fn test_single_node_no_connections() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_single_node_no_connections");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
 
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
@@ -251,7 +258,7 @@ mod tests {
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -277,7 +284,10 @@ mod tests {
 
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_rounds");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
 
@@ -291,7 +301,7 @@ mod tests {
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         let (from_rounds, _) = builder.connect_rounds(
             "rounds",
@@ -368,16 +378,19 @@ mod tests {
 
     #[test]
     fn test_zero_rounds() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_zero_rounds");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
-        
+
         let rounds = 0;
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         let result = builder.connect_rounds(
             "rounds",
@@ -405,7 +418,10 @@ mod tests {
 
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
-        let key_manager = new_key_manager().unwrap();
+        let test_dir = TemporaryDir::new("test_multiple_connections");
+
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let public_key = key_manager.derive_keypair(0).unwrap();
         let internal_key = XOnlyPublicKey::from(public_key);
 
@@ -419,7 +435,7 @@ mod tests {
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
         builder
             .connect_with_external_transaction(

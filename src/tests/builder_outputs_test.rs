@@ -13,12 +13,14 @@ mod tests {
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
         graph::output::OutputSpendingType,
-        scripts::ProtocolScript, tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, temp_storage},
+        scripts::ProtocolScript,
+        tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
     };
-
 
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_op_return_output_script");
+
         let ecdsa_sighash_type = ecdsa_sighash_type();
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -30,7 +32,8 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
-        let key_manager = new_key_manager().unwrap();
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let id = "id_1";
 
         // Arrange
@@ -52,7 +55,7 @@ mod tests {
         .concat();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("op_return", storage.clone())?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -94,7 +97,9 @@ mod tests {
     #[test]
     fn test_taproot_keypath_and_signature() -> Result<(), anyhow::Error> {
         // Arrange
-        let key_manager = new_key_manager()?;
+        let test_dir = TemporaryDir::new("test_taproot_keypath_and_signature");
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let ecdsa_sighash_type = ecdsa_sighash_type();
         let taproot_sighash_type = taproot_sighash_type();
         let value = 1000;
@@ -109,7 +114,7 @@ mod tests {
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("tap_keypath", storage.clone())?;
         let protocol = builder
             .connect_with_external_transaction(

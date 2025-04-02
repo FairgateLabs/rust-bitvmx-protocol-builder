@@ -12,34 +12,21 @@ use storage_backend::storage::Storage;
 
 use crate::graph::input::SighashType;
 
-pub fn temp_storage() -> PathBuf {
-    let dir = env::temp_dir();
-    let mut rng = secp256k1::rand::thread_rng();
-    let index = rng.next_u32();
-    dir.join(format!("storage_{}.db", index))
-}
-
-pub fn new_key_manager() -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
-    let dir = env::temp_dir();
-    let mut rng = secp256k1::rand::thread_rng();
-    let index = rng.next_u32();
-    let keystore_path = dir.join(format!("key_manager_{}", index));
-
+pub fn new_key_manager(
+    keystore_path: PathBuf,
+    musig2_path: PathBuf,
+) -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
     let network = Network::Regtest;
     let key_derivation_path = "m/101/1/0/0/";
-    let keystore_path = "/tmp/storage.db";
     let keystore_password = "secret_password".as_bytes().to_vec();
-    let path = PathBuf::from("/tmp/store".to_string());
-    let store = Rc::new(Storage::new_with_path(&path).unwrap());
+    let store = Rc::new(Storage::new_with_path(&musig2_path).unwrap());
 
-    let bytes =
-        hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+    let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
     let key_derivation_seed: [u8; 32] = bytes
         .try_into()
         .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
 
-    let bytes =
-        hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
+    let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
     let winternitz_seed: [u8; 32] = bytes
         .try_into()
         .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
@@ -93,9 +80,9 @@ impl TemporaryDir {
     pub fn path(&self, relative: &str) -> PathBuf {
         self.path.join(relative)
     }
-} 
+}
 
-// Optional: clean up root directory when done (after all tests)
+// Optional: clean up the temporary directory when done (after all tests)
 impl Drop for TemporaryDir {
     fn drop(&mut self) {
         // Clean up the entire root dir, including all test subdirs
