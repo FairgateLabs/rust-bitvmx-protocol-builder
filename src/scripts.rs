@@ -1,7 +1,7 @@
-use std::{cmp, collections::HashMap};
+use std::{collections::HashMap};
 
 use bitcoin::{
-    key::{Secp256k1, UntweakedPublicKey}, opcodes::all::{OP_CHECKSIGVERIFY, OP_SHA256}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
+    hex::{Case, DisplayHex}, key::{Secp256k1, UntweakedPublicKey}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
 };
 
 use bitcoin_scriptexec::treepp::*;
@@ -456,11 +456,13 @@ pub fn build_taproot_spend_info(
     taproot_spending_scripts: &[ProtocolScript],
 ) -> Result<TaprootSpendInfo, ScriptError> {
     let scripts_count = taproot_spending_scripts.len();
-
+    let mut depth = 0;
     // To build a taproot tree, we need to calculate the depth of the tree.
-    // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth
+    // If the list of scripts only contains 1 element, the depth is 0, otherwise we compute the depth
     // as the log2 of the number of scripts rounded up to the nearest integer.
-    let depth = cmp::max(1, (scripts_count as f32).log2().ceil() as u8);
+    if scripts_count > 1 {
+        depth = (scripts_count as f32).log2().ceil() as u8;
+    }
 
     let mut tr_builder = TaprootBuilder::new();
     for script in taproot_spending_scripts.iter() {
@@ -468,7 +470,7 @@ pub fn build_taproot_spend_info(
     }
 
     // If the number of spend conditions is odd, add the last one again
-    if scripts_count % 2 != 0 {
+    if  scripts_count > 1 && scripts_count % 2 != 0 {
         tr_builder = tr_builder.add_leaf(
             depth,
             taproot_spending_scripts[scripts_count - 1]

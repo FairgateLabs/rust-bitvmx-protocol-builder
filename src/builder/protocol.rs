@@ -21,7 +21,7 @@ use crate::{
     errors::ProtocolBuilderError,
     graph::{
         graph::{MessageId, TransactionGraph},
-        input::{self, InputSignatures, InputSpendingInfo, SighashType, Signature},
+        input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
         output::OutputSpendingType,
     },
     scripts::{self, ProtocolScript},
