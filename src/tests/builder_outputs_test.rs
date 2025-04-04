@@ -1,72 +1,26 @@
 #[cfg(test)]
 mod tests {
-    use anyhow::Error;
     use bitcoin::{
         hashes::Hash,
-        key::rand::RngCore,
         opcodes::all::{OP_PUSHNUM_1, OP_RETURN},
-        secp256k1::{self},
-        Amount, Network, PublicKey, ScriptBuf, Sequence,
+        Amount, PublicKey, ScriptBuf, Sequence,
     };
-    use key_manager::{
-        errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
-    };
-    use std::{env, path::PathBuf, rc::Rc};
+
+    use std::rc::Rc;
     use storage_backend::storage::Storage;
 
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
+        graph::output::OutputSpendingType,
         scripts::ProtocolScript,
+        tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
     };
-    fn temp_storage() -> PathBuf {
-        let dir = env::temp_dir();
-        let mut rng = secp256k1::rand::thread_rng();
-        let index = rng.next_u32();
-        dir.join(format!("storage_{}.db", index))
-    }
-
-    pub fn new_key_manager() -> Result<KeyManager<DatabaseKeyStore>, Error> {
-        let network = Network::Regtest;
-        let key_derivation_path = "m/101/1/0/0/";
-        let keystore_path = "/tmp/storage.db";
-        let keystore_password = "secret_password".as_bytes().to_vec();
-
-        let bytes =
-            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-        let key_derivation_seed: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
-
-        let bytes =
-            hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-        let winternitz_seed: [u8; 32] = bytes
-            .try_into()
-            .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
-
-        let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
-        let key_manager = KeyManager::new(
-            network,
-            key_derivation_path,
-            key_derivation_seed,
-            winternitz_seed,
-            database_keystore,
-        )?;
-
-        Ok(key_manager)
-    }
-
-    pub fn ecdsa_sighash_type() -> SighashType {
-        SighashType::ecdsa_all()
-    }
-
-    pub fn taproot_sighash_type() -> SighashType {
-        SighashType::taproot_all()
-    }
 
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
+        let test_dir = TemporaryDir::new("test_op_return_output_script");
+
         let ecdsa_sighash_type = ecdsa_sighash_type();
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -78,6 +32,9 @@ mod tests {
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
+        let id = "id_1";
 
         // Arrange
         let number: u64 = 0;
@@ -98,7 +55,7 @@ mod tests {
         .concat();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("op_return", storage.clone())?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -109,7 +66,7 @@ mod tests {
                 &ecdsa_sighash_type,
             )?
             .add_op_return_output("op_return", data.clone())?
-            .build()?;
+            .build(id, &key_manager)?;
         let tx = protocol.transaction("op_return")?;
 
         // Assert
@@ -140,7 +97,9 @@ mod tests {
     #[test]
     fn test_taproot_keypath_and_signature() -> Result<(), anyhow::Error> {
         // Arrange
-        let key_manager = new_key_manager()?;
+        let test_dir = TemporaryDir::new("test_taproot_keypath_and_signature");
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let ecdsa_sighash_type = ecdsa_sighash_type();
         let taproot_sighash_type = taproot_sighash_type();
         let value = 1000;
@@ -155,7 +114,7 @@ mod tests {
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("tap_keypath", storage.clone())?;
         let protocol = builder
             .connect_with_external_transaction(

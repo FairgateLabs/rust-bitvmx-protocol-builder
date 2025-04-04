@@ -80,6 +80,10 @@ impl MessageId {
             script_index,
         }
     }
+
+    pub fn new_string_id(transaction: &str, input_index: u32, script_index: u32) -> String {
+        format!("tx:{}_ix:{}_sx:{}", transaction, input_index, script_index)
+    }
 }
 
 impl fmt::Display for MessageId {
@@ -311,7 +315,6 @@ impl TransactionGraph {
             .graph
             .node_weight_mut(node_index)
             .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
-
         Ok(
             node.input_spending_infos[input_index as usize].hashed_messages()
                 [message_index as usize],
@@ -447,7 +450,7 @@ impl TransactionGraph {
                 for (script_index, message) in spending_info.hashed_messages().iter().enumerate() {
                     let message_id =
                         MessageId::new(name.clone(), input_index as u32, script_index as u32);
-                    all_sighashes.push((message_id, message.clone()));
+                    all_sighashes.push((message_id, *message));
                 }
             }
         }
@@ -531,6 +534,13 @@ impl TransactionGraph {
             .collect()
     }
 
+    pub fn get_transaction_ids(&self) -> Vec<Txid> {
+        self.graph
+            .node_weights()
+            .map(|node| node.transaction.compute_txid())
+            .collect()
+    }
+
     pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, GraphError> {
         let mut all_signatures = HashMap::new();
 
@@ -543,6 +553,20 @@ impl TransactionGraph {
         }
 
         Ok(all_signatures)
+    }
+
+    pub fn get_input_spending_info(
+        &self,
+        name: &str,
+        input_index: usize,
+    ) -> Result<InputSpendingInfo, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+        Ok(node.get_input_spending_info(input_index)?.clone())
     }
 
     pub fn get_input_ecdsa_signature(

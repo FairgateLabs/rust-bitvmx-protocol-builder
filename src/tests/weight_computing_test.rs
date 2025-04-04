@@ -1,39 +1,33 @@
 #[cfg(test)]
 mod tests {
     use bitcoin::{
-        hashes::Hash,
-        key::rand::RngCore,
-        secp256k1::{self},
-        Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType, XOnlyPublicKey,
+        hashes::Hash, Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey,
     };
-    use std::{env, path::PathBuf, rc::Rc};
+    use std::rc::Rc;
     use storage_backend::storage::Storage;
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs}, errors::ProtocolBuilderError, graph::{input::SighashType, output::OutputSpendingType}, helpers::weight_computing::{get_transaction_hex, get_transaction_total_size, get_transaction_vsize}, scripts::ProtocolScript, unspendable::unspendable_key
+        builder::{ProtocolBuilder, SpendingArgs},
+        errors::ProtocolBuilderError,
+        graph::{input::SighashType, output::OutputSpendingType},
+        helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
+        scripts::ProtocolScript,
+        tests::utils::{new_key_manager, TemporaryDir},
     };
-    fn temp_storage() -> PathBuf {
-        let dir = env::temp_dir();
-        let mut rng = secp256k1::rand::thread_rng();
-        let index = rng.next_u32();
-        dir.join(format!("storage_{}.db", index))
-    }
 
     #[test]
     fn test_weights_for_single_connection() -> Result<(), ProtocolBuilderError> {
-        let mut rng = secp256k1::rand::thread_rng();
+        let test_dir = TemporaryDir::new("test_weights_for_single_connection");
+        let key_manager =
+            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let public_key = key_manager.derive_keypair(0)?;
+        let internal_key = XOnlyPublicKey::from(key_manager.derive_keypair(1)?);
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
-
-        let pubkey_bytes =
-            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
-                .expect("Decoding failed");
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
         let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
@@ -49,7 +43,7 @@ mod tests {
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
 
-        let storage = Rc::new(Storage::new_with_path(&temp_storage())?);
+        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("single_connection", storage)?;
         let protocol = builder
             .connect_with_external_transaction(
@@ -97,7 +91,7 @@ mod tests {
                 blocks,
                 &sighash_type,
             )?
-            .build()?;
+            .build_and_sign(&key_manager)?;
 
         let challenge_spending_args = &[
             SpendingArgs::new_taproot_args(script_a.get_script()),
@@ -114,15 +108,27 @@ mod tests {
 
         // Taproot transaction (SegWit)
         let start_weight = get_transaction_vsize(&start);
-        println!("Taproot Start transaction has a weight of: {}\n Transaction bytes are:\n{}\n", start_weight, get_transaction_hex(&start),);
+        println!(
+            "Taproot Start transaction has a weight of: {}\n Transaction bytes are:\n{}\n",
+            start_weight,
+            get_transaction_hex(&start),
+        );
 
         // Taproot transaction (SegWit)
         let challenge_weight = get_transaction_vsize(&challenge);
-        println!("Taproot Challenge transaction has a weight of: {}\n Transaction bytes are:\n{}\n", challenge_weight, get_transaction_hex(&challenge),);
+        println!(
+            "Taproot Challenge transaction has a weight of: {}\n Transaction bytes are:\n{}\n",
+            challenge_weight,
+            get_transaction_hex(&challenge),
+        );
 
         // Taproot transaction (SegWit)
         let response_weight = get_transaction_vsize(&response);
-        println!("Taproot Response transaction has a weight of: {}\n Transaction bytes are:\n{}\n", response_weight, get_transaction_hex(&response));
+        println!(
+            "Taproot Response transaction has a weight of: {}\n Transaction bytes are:\n{}\n",
+            response_weight,
+            get_transaction_hex(&response)
+        );
 
         assert_eq!(start.input.len(), 1);
         assert_eq!(challenge.input.len(), 2);

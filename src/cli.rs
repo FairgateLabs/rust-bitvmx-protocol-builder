@@ -244,7 +244,8 @@ impl Cli {
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
         let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
-        builder.build()?;
+        let key_manager = Rc::new(self.key_manager()?);
+        builder.build(protocol_name, &key_manager)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
@@ -253,7 +254,7 @@ impl Cli {
     fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
         let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
-        let key_manager = self.key_manager()?;
+        let key_manager = Rc::new(self.key_manager()?);
         builder.build_and_sign(&key_manager)?;
 
         info!("Protocol {} built and signed", protocol_name);
@@ -423,6 +424,7 @@ impl Cli {
             from,
             to,
             value,
+            &XOnlyPublicKey::from(public_key),
             &[script.clone()],
             &[script.clone()],
             &sighash_type,
@@ -440,9 +442,15 @@ impl Cli {
             &self.config.key_storage,
             &self.config.key_manager.network,
         )?;
+
+        // TODO read from config
+        let path = PathBuf::from("/tmp/store".to_string());
+        let store = Rc::new(Storage::new_with_path(&path).unwrap());
+
         Ok(create_key_manager_from_config(
             &self.config.key_manager,
             keystore,
+            store,
         )?)
     }
 }
