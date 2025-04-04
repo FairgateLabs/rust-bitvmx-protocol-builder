@@ -458,7 +458,7 @@ pub fn build_taproot_spend_info(
     
     // For empty scripts, return error
     if scripts_count == 0 {
-        return Err(ScriptError::TapTreeFinalizeError);
+        return Err(ScriptError::NoScriptsProvided);
     }
     
     let mut tr_builder = TaprootBuilder::new();
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_timelock_output_script() {
-        // Arrenge
+        // Arrange
         let blocks = 587;
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -759,7 +759,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_one_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -778,7 +778,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_two_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_three_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_four_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_five_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -865,7 +865,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_six_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -891,7 +891,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_seven_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -918,7 +918,7 @@ mod tests {
 
     #[test]
     fn test_build_taproot_spend_info_ten_leaf() {
-        // Arrenge
+        // Arrange
         let secp = Secp256k1::new();
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
