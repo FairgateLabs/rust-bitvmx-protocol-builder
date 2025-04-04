@@ -47,7 +47,7 @@ impl Config {
     }
 
     fn parse_config(env: String) -> Result<Config, ConfigError> {
-        let config_path = format!("{}/{}.json", CONFIG_PATH, env);
+        let config_path = format!("{}/config/{}.json", env!("CARGO_MANIFEST_DIR"), env);
 
         let settings = settings::Config::builder()
             .add_source(config::File::with_name(&config_path))

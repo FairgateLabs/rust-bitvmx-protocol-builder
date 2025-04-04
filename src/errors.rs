@@ -126,6 +126,9 @@ pub enum ProtocolBuilderError {
     #[error("Invalid spending script for input {0}")]
     InvalidSpendingScript(usize),
 
+    #[error("Invalid spending type {0}")]
+    InvalidSpendingType(String),
+
     #[error("Missing taproot leaf for input {0}")]
     MissingTaprootLeaf(usize),
 

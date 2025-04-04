@@ -312,7 +312,10 @@ impl TransactionGraph {
             .node_weight_mut(node_index)
             .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
 
-        Ok(node.input_spending_infos[input_index as usize].hashed_messages()[message_index as usize])
+        Ok(
+            node.input_spending_infos[input_index as usize].hashed_messages()
+                [message_index as usize],
+        )
     }
 
     pub fn get_transaction(&self, name: &str) -> Result<&Transaction, GraphError> {
@@ -442,7 +445,8 @@ impl TransactionGraph {
         for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
             for (input_index, spending_info) in input_spending_infos.iter().enumerate() {
                 for (script_index, message) in spending_info.hashed_messages().iter().enumerate() {
-                    let message_id = MessageId::new(name.clone(), input_index as u32, script_index as u32);
+                    let message_id =
+                        MessageId::new(name.clone(), input_index as u32, script_index as u32);
                     all_sighashes.push((message_id, message.clone()));
                 }
             }
@@ -451,7 +455,11 @@ impl TransactionGraph {
         Ok(all_sighashes)
     }
 
-    pub fn get_output_for_input(&self, name: &str, input_index: u32) -> Result<OutputSpendingType, GraphError> {
+    pub fn get_output_for_input(
+        &self,
+        name: &str,
+        input_index: u32,
+    ) -> Result<OutputSpendingType, GraphError> {
         let node_index = self.get_node_index(name)?;
 
         for edge in self.find_incoming_edges(node_index) {
@@ -502,7 +510,7 @@ impl TransactionGraph {
         Ok(&from.transaction)
     }
 
-    fn get_output_spending_type(
+    pub fn get_output_spending_type(
         &self,
         transaction_name: &str,
         output_index: u32,
@@ -604,7 +612,11 @@ impl TransactionGraph {
             .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
-        let signature = match spending_info.signatures().last().ok_or(GraphError::MissingSignature)? {
+        let signature = match spending_info
+            .signatures()
+            .last()
+            .ok_or(GraphError::MissingSignature)?
+        {
             Signature::Taproot(signature) => signature,
             _ => {
                 return Err(GraphError::InvalidSignatureType(
@@ -618,8 +630,6 @@ impl TransactionGraph {
 
         Ok(*signature)
     }
-
-
 
     pub fn contains_transaction(&self, name: &str) -> bool {
         self.node_indexes.contains_key(name)
