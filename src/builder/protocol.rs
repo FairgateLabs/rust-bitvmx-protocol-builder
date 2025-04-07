@@ -6,7 +6,7 @@ use key_manager::{
     winternitz::WinternitzSignature,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, rc::Rc, str::FromStr, vec};
+use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::Storage;
 
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
     scripts::{self, ProtocolScript},
     unspendable::unspendable_key,
 };
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Utxo {
     pub txname: String,
     pub txid: Txid,
