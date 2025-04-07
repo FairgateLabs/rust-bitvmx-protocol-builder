@@ -1,7 +1,7 @@
-use std::{cmp, collections::HashMap};
+use std::collections::HashMap;
 
 use bitcoin::{
-    key::{Secp256k1, UntweakedPublicKey}, opcodes::all::{OP_CHECKSIGVERIFY, OP_SHA256}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
+    key::{Secp256k1, UntweakedPublicKey}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
 };
 
 use bitcoin_scriptexec::treepp::*;
@@ -449,39 +449,62 @@ pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScr
     ProtocolScript::new(script, pub_key)
 }
 
-
 pub fn build_taproot_spend_info(
     secp: &Secp256k1<All>,
     internal_key: &UntweakedPublicKey,
     taproot_spending_scripts: &[ProtocolScript],
 ) -> Result<TaprootSpendInfo, ScriptError> {
     let scripts_count = taproot_spending_scripts.len();
-
-    // To build a taproot tree, we need to calculate the depth of the tree.
-    // If the list of scripts only contains 1 element, the depth is 1, otherwise we compute the depth
-    // as the log2 of the number of scripts rounded up to the nearest integer.
-    let depth = cmp::max(1, (scripts_count as f32).log2().ceil() as u8);
-
+    
+    // For empty scripts, return error
+    if scripts_count == 0 {
+        return Err(ScriptError::NoScriptsProvided);
+    }
+    
     let mut tr_builder = TaprootBuilder::new();
-    for script in taproot_spending_scripts.iter() {
-        tr_builder = tr_builder.add_leaf(depth, script.get_script().clone())?;
+    
+    // For a single script, add it at depth 0
+    if scripts_count == 1 {
+        tr_builder = tr_builder.add_leaf(0, taproot_spending_scripts[0].get_script().clone())?;
+        return tr_builder
+            .finalize(secp, *internal_key)
+            .map_err(|_| ScriptError::TapTreeFinalizeError);
     }
-
-    // If the number of spend conditions is odd, add the last one again
-    if scripts_count % 2 != 0 {
-        tr_builder = tr_builder.add_leaf(
-            depth,
-            taproot_spending_scripts[scripts_count - 1]
-                .get_script()
-                .clone(),
-        )?;
+    
+    // For multiple scripts, build a balanced tree
+    // 
+    // Example tree structure for 7 scripts:
+    //
+    //           [Root]
+    //          /      \
+    //      [1-3]      [4-7]
+    //     /     \     /    \
+    //   [1-2]  [3]  [4-5] [6-7]
+    //   /  \         /  \   /  \
+    // [1] [2]     [4] [5] [6] [7]
+    //
+    // The algorithm calculates the minimum depth needed to hold all scripts
+    // and then distributes the scripts between that depth and the next one
+    // to maintain a balanced tree structure.
+    
+    // Calculate the minimum depth needed to hold all scripts
+    let min_depth = (scripts_count as f32 - 1.0).log2().floor() as u8;
+    // Calculate how many nodes go at the minimum depth vs minimum depth + 1
+    let total_slots = 1 << (min_depth + 1); // 2^(min_depth + 1)
+    let nodes_at_min_depth = total_slots - scripts_count;
+    // Add leaves at minimum depth
+    for i in 0..nodes_at_min_depth {
+        tr_builder = tr_builder.add_leaf(min_depth, taproot_spending_scripts[i].get_script().clone())?;
     }
-
-    let tr_spend_info = tr_builder
+    
+    // Add remaining leaves at minimum depth + 1
+    for i in nodes_at_min_depth..scripts_count {
+        tr_builder = tr_builder.add_leaf(min_depth + 1, taproot_spending_scripts[i].get_script().clone())?;
+    }
+    
+    tr_builder
         .finalize(secp, *internal_key)
-        .map_err(|_| ScriptError::TapTreeFinalizeError)?;
-
-    Ok(tr_spend_info)
+        .map_err(|_| ScriptError::TapTreeFinalizeError)
 }
 
 #[cfg(test)]
@@ -490,6 +513,7 @@ mod tests {
         hex::FromHex,
         opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP, OP_RETURN},
         PublicKey,
+        XOnlyPublicKey
     };
     use std::str::FromStr;
 
@@ -645,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_timelock_output_script() {
-        // Arrenge
+        // Arrange
         let blocks = 587;
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
@@ -731,5 +755,194 @@ mod tests {
             script_bytes_hex,
             "6a1c000000000000024b7ac5496aee77c1ba1f0854206a26dda82a81d6d8"
         );
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_one_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[timelock(1, &public_key)]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_two_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[timelock(1, &public_key), timelock(2, &public_key)]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_three_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[timelock(1, &public_key), timelock(2, &public_key), timelock(3, &public_key)]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_four_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[
+                timelock(1, &public_key), 
+                timelock(2, &public_key), 
+                timelock(3, &public_key), 
+                timelock(4, &public_key)
+            ]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_five_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[
+                timelock(1, &public_key), 
+                timelock(2, &public_key), 
+                timelock(3, &public_key), 
+                timelock(4, &public_key),
+                timelock(5, &public_key)
+            ]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_six_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[
+                timelock(1, &public_key), 
+                timelock(2, &public_key), 
+                timelock(3, &public_key), 
+                timelock(4, &public_key),
+                timelock(5, &public_key),
+                timelock(6, &public_key)
+            ]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_seven_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        //
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[
+                timelock(1, &public_key), 
+                timelock(2, &public_key), 
+                timelock(3, &public_key), 
+                timelock(4, &public_key),
+                timelock(5, &public_key),
+                timelock(6, &public_key),
+                timelock(7, &public_key)
+            ]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_ten_leaf() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+            &[
+                timelock(1, &public_key), 
+                timelock(2, &public_key), 
+                timelock(3, &public_key), 
+                timelock(4, &public_key),
+                timelock(5, &public_key),
+                timelock(6, &public_key),
+                timelock(7, &public_key),
+                timelock(8, &public_key),
+                timelock(9, &public_key),
+                timelock(10, &public_key)
+            ]
+        ).expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.internal_key(), internal_key);
     }
 }
