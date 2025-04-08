@@ -844,9 +844,7 @@ impl Protocol {
     }
 
     pub fn transaction_with_id(&self, txid: Txid) -> Result<&Transaction, ProtocolBuilderError> {
-        self.graph
-            .get_transaction_with_id(txid)
-            .map_err(ProtocolBuilderError::from)
+        Ok(self.graph.get_transaction_with_id(txid)?)
     }
 
     pub fn transaction_without_witness(
@@ -861,9 +859,7 @@ impl Protocol {
         &self,
         transaction_name: &str,
     ) -> Result<&Transaction, ProtocolBuilderError> {
-        self.graph
-            .get_transaction(transaction_name)
-            .map_err(ProtocolBuilderError::from)
+        Ok(self.graph.get_transaction(transaction_name)?)
     }
 
     pub fn signatures(
@@ -1020,9 +1016,7 @@ impl Protocol {
         &self,
         transaction_name: &str,
     ) -> Result<Vec<(String, u32)>, ProtocolBuilderError> {
-        self.graph
-            .get_dependencies(transaction_name)
-            .map_err(ProtocolBuilderError::from)
+        Ok(self.graph.get_dependencies(transaction_name)?)
     }
 
     /// Updates the txids of each transaction in the DAG in topological order.
