@@ -144,16 +144,7 @@ impl TransactionGraph {
         name: &str,
         transaction: Transaction,
     ) -> Result<(), GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
+        let node = self.get_node_mut(name)?;
         node.transaction = transaction;
         Ok(())
     }
@@ -164,16 +155,7 @@ impl TransactionGraph {
         transaction: Transaction,
         sighash_type: &SighashType,
     ) -> Result<(), GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
+        let node = self.get_node_mut(name)?;
         node.transaction = transaction;
         node.input_spending_infos
             .push(InputSpendingInfo::new(sighash_type));
@@ -186,16 +168,7 @@ impl TransactionGraph {
         transaction: Transaction,
         spending_type: OutputSpendingType,
     ) -> Result<(), GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
+        let node = self.get_node_mut(name)?;
         node.transaction = transaction;
         node.output_spending_types.push(spending_type);
         Ok(())
@@ -209,14 +182,6 @@ impl TransactionGraph {
         to: &str,
         input_index: u32,
     ) -> Result<(), GraphError> {
-        if from.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        if to.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
         let from_node_index = self.get_node_index(from)?;
         let to_node_index = self.get_node_index(to)?;
         let output_spending_type = self.get_output_spending_type(from, output_index)?;
@@ -226,10 +191,7 @@ impl TransactionGraph {
         self.graph
             .add_edge(from_node_index, to_node_index, connection.clone());
 
-        let to_node = self
-            .graph
-            .node_weight_mut(to_node_index)
-            .ok_or(GraphError::MissingTransaction(to.to_string()))?;
+        let to_node = self.get_node_mut(to)?;
 
         to_node.input_spending_infos[input_index as usize]
             .set_spending_type(output_spending_type)?;
@@ -242,16 +204,7 @@ impl TransactionGraph {
         output_spending_type: OutputSpendingType,
         to: &str,
     ) -> Result<(), GraphError> {
-        if to.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let to_node_index = self.get_node_index(to)?;
-
-        let to_node = self
-            .graph
-            .node_weight_mut(to_node_index)
-            .ok_or(GraphError::MissingTransaction(to.to_string()))?;
+        let to_node = self.get_node_mut(to)?;
 
         to_node.input_spending_infos[to_node.transaction.input.len() - 1]
             .set_spending_type(output_spending_type)?;
@@ -265,15 +218,7 @@ impl TransactionGraph {
         input_index: u32,
         message_hashes: Vec<Message>,
     ) -> Result<(), GraphError> {
-        if transaction_name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(transaction_name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
+        let node = self.get_node_mut(transaction_name)?;
 
         node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
@@ -285,16 +230,7 @@ impl TransactionGraph {
         input_index: u32,
         signatures: Vec<Signature>,
     ) -> Result<(), GraphError> {
-        if transaction_name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(transaction_name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
-
+        let node = self.get_node_mut(transaction_name)?;
         node.input_spending_infos[input_index as usize].set_signatures(signatures);
 
         Ok(())
@@ -306,15 +242,7 @@ impl TransactionGraph {
         input_index: u32,
         message_index: u32,
     ) -> Result<Message, GraphError> {
-        if transaction_name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(transaction_name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
+        let node = self.get_node_mut(transaction_name)?;
 
         Ok(
             node.input_spending_infos[input_index as usize].hashed_messages()
@@ -323,17 +251,7 @@ impl TransactionGraph {
     }
 
     pub fn get_transaction(&self, name: &str) -> Result<&Transaction, GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        self.node_indexes
-            .get(name)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))
-            .map(|node_index| {
-                let node = self.graph.node_weight(*node_index).unwrap();
-                &node.transaction
-            })
+        Ok(&self.get_node(name)?.transaction)
     }
 
     pub fn get_transaction_with_id(&self, txid: Txid) -> Result<&Transaction, GraphError> {
@@ -360,10 +278,6 @@ impl TransactionGraph {
     }
 
     pub fn get_dependencies(&self, name: &str) -> Result<Vec<(String, u32)>, GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
         let node_index = self.get_node_index(name)?;
 
         let dependencies = self
@@ -381,10 +295,6 @@ impl TransactionGraph {
     }
 
     pub fn get_prevouts(&self, name: &str) -> Result<Vec<TxOut>, GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
         let node_index = self.get_node_index(name)?;
         let transaction = self.get_transaction(name)?;
 
@@ -413,17 +323,7 @@ impl TransactionGraph {
         &self,
         name: &str,
     ) -> Result<Vec<InputSpendingInfo>, GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
-        Ok(node.input_spending_infos.clone())
+        Ok(self.get_node(name)?.input_spending_infos.clone())
     }
 
     pub fn get_transaction_spending_infos(
@@ -477,7 +377,29 @@ impl TransactionGraph {
         Err(GraphError::MissingConnection)
     }
 
+    fn get_node_mut(&mut self, name: &str) -> Result<&mut Node, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        Ok(node)
+    }
+
+    fn get_node(&self, name: &str) -> Result<&Node, GraphError> {
+        let node_index = self.get_node_index(name)?;
+
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        Ok(node)
+    }
+
     fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
+        }
         self.node_indexes
             .get(name)
             .cloned()
@@ -519,13 +441,7 @@ impl TransactionGraph {
         transaction_name: &str,
         output_index: u32,
     ) -> Result<OutputSpendingType, GraphError> {
-        let node_index = self.get_node_index(transaction_name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(transaction_name.to_string()))?;
-
-        Ok(node.output_spending_types[output_index as usize].clone())
+        Ok(self.get_node(transaction_name)?.output_spending_types[output_index as usize].clone())
     }
 
     pub fn get_transaction_names(&self) -> Vec<String> {
@@ -561,13 +477,10 @@ impl TransactionGraph {
         name: &str,
         input_index: usize,
     ) -> Result<InputSpendingInfo, GraphError> {
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
-        Ok(node.get_input_spending_info(input_index)?.clone())
+        Ok(self
+            .get_node(name)?
+            .get_input_spending_info(input_index)?
+            .clone())
     }
 
     pub fn get_input_ecdsa_signature(
@@ -575,11 +488,7 @@ impl TransactionGraph {
         name: &str,
         input_index: usize,
     ) -> Result<bitcoin::ecdsa::Signature, GraphError> {
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(0)? {
@@ -603,11 +512,7 @@ impl TransactionGraph {
         input_index: usize,
         leaf_index: usize,
     ) -> Result<bitcoin::taproot::Signature, GraphError> {
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(leaf_index)? {
@@ -630,11 +535,7 @@ impl TransactionGraph {
         name: &str,
         input_index: usize,
     ) -> Result<bitcoin::taproot::Signature, GraphError> {
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info
