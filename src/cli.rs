@@ -17,7 +17,7 @@ use tracing::info;
 use crate::{
     builder::ProtocolBuilder,
     config::Config,
-    graph::{input::SighashType, output::OutputSpendingType},
+    graph::{input::SighashType, output::OutputType},
     scripts::ProtocolScript,
     unspendable::unspendable_key,
 };
@@ -279,7 +279,7 @@ impl Cli {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         builder.connect_with_external_transaction(
             txid,

@@ -14,14 +14,14 @@ use crate::errors::GraphError;
 
 use super::{
     input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
-    output::OutputSpendingType,
+    output::OutputType,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Node {
     name: String,
     transaction: Transaction,
-    output_spending_types: Vec<OutputSpendingType>,
+    output_spending_types: Vec<OutputType>,
     input_spending_infos: Vec<InputSpendingInfo>,
 }
 
@@ -166,7 +166,7 @@ impl TransactionGraph {
         &mut self,
         name: &str,
         transaction: Transaction,
-        spending_type: OutputSpendingType,
+        spending_type: OutputType,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
@@ -201,7 +201,7 @@ impl TransactionGraph {
 
     pub fn connect_with_external_transaction(
         &mut self,
-        output_spending_type: OutputSpendingType,
+        output_spending_type: OutputType,
         to: &str,
     ) -> Result<(), GraphError> {
         let to_node = self.get_node_mut(to)?;
@@ -363,7 +363,7 @@ impl TransactionGraph {
         &self,
         name: &str,
         input_index: u32,
-    ) -> Result<OutputSpendingType, GraphError> {
+    ) -> Result<OutputType, GraphError> {
         let node_index = self.get_node_index(name)?;
 
         for edge in self.find_incoming_edges(node_index) {
@@ -440,7 +440,7 @@ impl TransactionGraph {
         &self,
         transaction_name: &str,
         output_index: u32,
-    ) -> Result<OutputSpendingType, GraphError> {
+    ) -> Result<OutputType, GraphError> {
         Ok(self.get_node(transaction_name)?.output_spending_types[output_index as usize].clone())
     }
 

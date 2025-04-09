@@ -6,7 +6,7 @@ use storage_backend::storage::Storage;
 
 use crate::{
     errors::ProtocolBuilderError,
-    graph::{input::SighashType, output::OutputSpendingType},
+    graph::{input::SighashType, output::OutputType},
     scripts::ProtocolScript,
 };
 
@@ -381,7 +381,7 @@ impl ProtocolBuilder {
         &mut self,
         txid: Txid,
         output_index: u32,
-        output_spending_type: OutputSpendingType,
+        output_spending_type: OutputType,
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {

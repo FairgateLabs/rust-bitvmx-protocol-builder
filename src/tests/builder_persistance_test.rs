@@ -10,7 +10,7 @@ mod tests {
     use crate::{
         builder::ProtocolBuilder,
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
+        graph::{input::SighashType, output::OutputType},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
     };
@@ -28,7 +28,7 @@ mod tests {
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage.clone())?;

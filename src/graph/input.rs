@@ -3,7 +3,7 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize};
 
 use crate::{
     errors::{GraphError, ProtocolBuilderError},
-    graph::output::OutputSpendingType,
+    graph::output::OutputType,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +67,7 @@ impl SighashType {
 
 #[derive(Debug, Clone)]
 pub struct InputSpendingInfo {
-    spending_type: Option<OutputSpendingType>,
+    spending_type: Option<OutputType>,
     sighash_type: SighashType,
     hashed_messages: Vec<Message>,
     signatures: Vec<Signature>,
@@ -118,7 +118,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
             where
                 V: serde::de::MapAccess<'de>,
             {
-                let mut spending_type: Option<OutputSpendingType> = None;
+                let mut spending_type: Option<OutputType> = None;
                 let mut sighash_type: Option<SighashType> = None;
                 let mut hashed_messages: Option<Vec<[u8; 32]>> = None;
                 let mut signatures: Option<Vec<Signature>> = None;
@@ -197,18 +197,19 @@ impl InputSpendingInfo {
 
     pub(crate) fn set_spending_type(
         &mut self,
-        spending_type: OutputSpendingType,
+        spending_type: OutputType,
     ) -> Result<(), GraphError> {
         match self.sighash_type {
             SighashType::Taproot(_) => match spending_type {
-                OutputSpendingType::TaprootTweakedKey { .. } => {}
-                OutputSpendingType::TaprootUntweakedKey { .. } => {}
-                OutputSpendingType::TaprootScript { .. } => {}
+                OutputType::TaprootTweakedKey { .. } => {}
+                OutputType::TaprootUntweakedKey { .. } => {}
+                OutputType::TaprootScriptOnly { .. } => {}
+                OutputType::TaprootScriptAndKey { .. } => {}
                 _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
             },
             SighashType::Ecdsa(_) => match spending_type {
-                OutputSpendingType::SegwitPublicKey { .. } => {}
-                OutputSpendingType::SegwitScript { .. } => {}
+                OutputType::SegwitPublicKey { .. } => {}
+                OutputType::SegwitScript { .. } => {}
                 _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
             },
         }
@@ -231,24 +232,30 @@ impl InputSpendingInfo {
 
     pub fn input_keys(&self) -> Vec<PublicKey> {
         match &self.spending_type {
-            Some(OutputSpendingType::TaprootTweakedKey { key, .. }) => vec![*key],
-            Some(OutputSpendingType::TaprootUntweakedKey { key, .. }) => vec![*key],
-            Some(OutputSpendingType::TaprootScript {
+            Some(OutputType::TaprootTweakedKey { key, .. }) => vec![*key],
+            Some(OutputType::TaprootUntweakedKey { key, .. }) => vec![*key],
+            Some(OutputType::TaprootScriptOnly {
                 spending_scripts, ..
             }) => spending_scripts
                 .iter()
                 .map(|script| script.get_verifying_key())
                 .collect(),
-            Some(OutputSpendingType::SegwitPublicKey { public_key, .. }) => vec![*public_key],
-            Some(OutputSpendingType::SegwitScript { script, .. }) => {
+            Some(OutputType::TaprootScriptAndKey {
+                spending_scripts, ..
+            }) => spending_scripts
+                .iter()
+                .map(|script| script.get_verifying_key())
+                .collect(),
+            Some(OutputType::SegwitPublicKey { public_key, .. }) => vec![*public_key],
+            Some(OutputType::SegwitScript { script, .. }) => {
                 vec![script.get_verifying_key()]
             }
-            Some(OutputSpendingType::SegwitUnspendable {}) => vec![],
+            Some(OutputType::SegwitUnspendable {}) => vec![],
             None => vec![],
         }
     }
 
-    pub fn spending_type(&self) -> Result<&OutputSpendingType, GraphError> {
+    pub fn spending_type(&self) -> Result<&OutputType, GraphError> {
         self.spending_type.as_ref().ok_or(
             GraphError::MissingOutputSpendingTypeForInputSpendingInfo(format!(
                 "{:?}",
