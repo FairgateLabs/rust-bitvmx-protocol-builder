@@ -194,7 +194,33 @@ impl Protocol {
         Ok(self)
     }
 
+    /// This function is used to add a taproot script and key spend output to the transaction.
     pub fn add_taproot_script_spend_output(
+        &mut self,
+        transaction_name: &str,
+        value: u64,
+        internal_key: &UntweakedPublicKey,
+        spending_scripts: &[ProtocolScript],
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        Self::check_empty_scripts(spending_scripts)?;
+
+        let secp = secp256k1::Secp256k1::new();
+        let value = Amount::from_sat(value);
+        let spend_info = scripts::build_taproot_spend_info(&secp, internal_key, spending_scripts)?;
+
+        let script_pubkey =
+            ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
+
+        let spending_type =
+            OutputType::new_taproot_script_and_key_spend(spending_scripts, &spend_info, vec![]);
+        self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
+
+        Ok(self)
+    }
+
+    /// This function is used to add a taproot script spend output without the key spend path transaction.
+    /// The internal key must be unspendable.
+    pub fn add_taproot_script_spend_only_output(
         &mut self,
         transaction_name: &str,
         value: u64,
