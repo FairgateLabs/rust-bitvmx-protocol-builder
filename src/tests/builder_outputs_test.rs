@@ -6,15 +6,12 @@ mod tests {
         Amount, PublicKey, ScriptBuf, Sequence,
     };
 
-    use std::rc::Rc;
-    use storage_backend::storage::Storage;
-
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs},
+        builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
-        graph::output::OutputType,
         scripts::ProtocolScript,
         tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
+        types::{output::OutputType, SpendingArgs},
     };
 
     #[test]
@@ -30,8 +27,7 @@ mod tests {
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type =
-            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type = OutputType::segwit_script(value, &script)?;
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
 
@@ -54,19 +50,22 @@ mod tests {
         .concat();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
-        let mut builder = ProtocolBuilder::new("op_return", storage.clone())?;
-        let protocol = builder
-            .connect_with_external_transaction(
+        let mut protocol = Protocol::new("op_return");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
                 txid,
                 output_index,
                 output_spending_type,
                 "op_return",
                 &ecdsa_sighash_type,
             )?
-            .add_op_return_output("op_return", data.clone())?
-            .build(&key_manager)?;
-        let tx = protocol.transaction("op_return")?;
+            .add_op_return_output(&mut protocol, "op_return", data.clone())?;
+
+        protocol.build(false, &key_manager)?;
+        let tx = protocol.transaction_by_name("op_return")?;
 
         // Assert
         let script_op_return = tx.output[0].script_pubkey.clone();
@@ -106,17 +105,18 @@ mod tests {
         let output_index = 0;
         let public_key = key_manager.derive_keypair(0).unwrap();
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type =
-            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
 
         // Act
-        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
-        let mut builder = ProtocolBuilder::new("tap_keypath", storage.clone())?;
-        let protocol = builder
-            .connect_with_external_transaction(
+        let mut protocol = Protocol::new("tap_keypath");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
                 txid,
                 output_index,
                 output_spending_type,
@@ -125,16 +125,24 @@ mod tests {
             )?
             // This connection creates the output and input scripts for the taprootkeypath spend
             .add_taproot_key_spend_connection(
+                &mut protocol,
                 "connection",
                 "keypath_origin",
                 value,
                 &public_key,
+                None,
                 "keypath_spend",
                 &taproot_sighash_type,
             )?
-            .add_speedup_output("keypath_origin", speedup_value, &pubkey_alice)?
-            .add_p2wpkh_output("keypath_spend", value, &pubkey_alice)?
-            .build_and_sign(&key_manager)?;
+            .add_speedup_output(
+                &mut protocol,
+                "keypath_origin",
+                speedup_value,
+                &pubkey_alice,
+            )?
+            .add_p2wpkh_output(&mut protocol, "keypath_spend", value, &pubkey_alice)?;
+
+        protocol.build_and_sign(&key_manager)?;
 
         let signature = protocol
             .input_taproot_script_spend_signature("keypath_spend", 0, 0)
@@ -145,8 +153,8 @@ mod tests {
         // This methods adds the witness and other impiortant information to the transaction
         let transaction = protocol.transaction_to_send("keypath_spend", &[spending_args])?;
 
-        let tx_origin = protocol.transaction("keypath_origin")?;
-        let tx_spend = protocol.transaction("keypath_spend")?;
+        let tx_origin = protocol.transaction_by_name("keypath_origin")?;
+        let tx_spend = protocol.transaction_by_name("keypath_spend")?;
 
         // Assert
         assert_eq!(

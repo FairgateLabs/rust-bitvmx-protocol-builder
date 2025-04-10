@@ -1,18 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{
-        hashes::Hash, Amount, EcdsaSighashType, ScriptBuf, TapSighashType, XOnlyPublicKey,
-    };
-    use std::rc::Rc;
-    use storage_backend::storage::Storage;
+    use bitcoin::{hashes::Hash, EcdsaSighashType, ScriptBuf, TapSighashType};
 
     use crate::{
-        builder::{ProtocolBuilder, SpendingArgs},
+        builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputType},
         helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
+        types::{input::SighashType, output::OutputType, SpendingArgs},
     };
 
     #[test]
@@ -24,7 +20,7 @@ mod tests {
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let public_key = key_manager.derive_keypair(0)?;
-        let internal_key = XOnlyPublicKey::from(key_manager.derive_keypair(1)?);
+        let internal_key = key_manager.derive_keypair(1)?;
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
@@ -37,16 +33,17 @@ mod tests {
         let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key);
         let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
 
-        let output_spending_type =
-            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type = OutputType::segwit_script(value, &script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
 
-        let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
-        let mut builder = ProtocolBuilder::new("single_connection", storage)?;
-        let protocol = builder
-            .connect_with_external_transaction(
+        let mut protocol = Protocol::new("single_connection");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
                 txid,
                 output_index,
                 output_spending_type,
@@ -54,44 +51,57 @@ mod tests {
                 &ecdsa_sighash_type,
             )?
             .add_taproot_script_spend_connection(
+                &mut protocol,
                 "protocol",
                 "start",
                 value,
                 &internal_key,
                 &scripts_from,
+                true,
+                vec![],
                 "challenge",
                 &sighash_type,
             )?
             .add_timelock_connection(
+                &mut protocol,
                 "start",
                 value,
                 &internal_key,
                 &expired_from,
                 &renew_from,
+                true,
+                vec![],
                 "challenge",
                 blocks,
                 &sighash_type,
             )?
             .add_taproot_script_spend_connection(
+                &mut protocol,
                 "protocol",
                 "challenge",
                 value,
                 &internal_key,
                 &scripts_to,
+                true,
+                vec![],
                 "response",
                 &sighash_type,
             )?
             .add_timelock_connection(
+                &mut protocol,
                 "challenge",
                 value,
                 &internal_key,
                 &expired_to,
                 &renew_to,
+                true,
+                vec![],
                 "response",
                 blocks,
                 &sighash_type,
-            )?
-            .build_and_sign(&key_manager)?;
+            )?;
+
+        protocol.build_and_sign(&key_manager)?;
 
         let challenge_spending_args = &[
             SpendingArgs::new_taproot_args(script_a.get_script()),

@@ -1,6 +1,7 @@
 use bitcoin::{
     key::{ParsePublicKeyError, UncompressedPublicKeyError},
     script::PushBytesError,
+    secp256k1::scalar::OutOfRangeError,
     sighash::{P2wpkhError, SighashTypeParseError, TaprootError},
     taproot::TaprootBuilderError,
     transaction,
@@ -196,6 +197,15 @@ pub enum ProtocolBuilderError {
 
     #[error("Insufficient funds for transaction, cannot cover fees. Total amount: {0}, Fees: {1}")]
     InsufficientFunds(u64, u64),
+
+    #[error("Only {0} outputs can be signed with {0} sighash type. Output type is {1}")]
+    InvalidOutputType(String, String),
+
+    #[error("Failed to tweak public key, scalar out of range")]
+    TweakScalarOutOfRange(#[from] OutOfRangeError),
+
+    #[error("Failed to tweak public key, invalid tweak length. Expected 32 bytes, got {0} bytes")]
+    InvalidTweakLength(usize),
 }
 
 #[derive(Error, Debug)]

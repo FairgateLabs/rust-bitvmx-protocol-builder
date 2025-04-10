@@ -10,7 +10,7 @@ use key_manager::{
 use std::{env, fs, path::PathBuf, rc::Rc};
 use storage_backend::storage::Storage;
 
-use crate::graph::input::SighashType;
+use crate::types::input::SighashType;
 
 pub fn new_key_manager(
     keystore_path: PathBuf,

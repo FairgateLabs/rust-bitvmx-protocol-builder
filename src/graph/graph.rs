@@ -10,32 +10,33 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::errors::GraphError;
-
-use super::{
-    input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
-    output::OutputType,
+use crate::{
+    errors::GraphError,
+    types::{
+        input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
+        output::OutputType,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Node {
-    name: String,
-    transaction: Transaction,
-    output_spending_types: Vec<OutputType>,
-    input_spending_infos: Vec<InputSpendingInfo>,
+pub(crate) struct Node {
+    pub(crate) name: String,
+    pub(crate) transaction: Transaction,
+    pub(crate) output_types: Vec<OutputType>,
+    pub(crate) input_spending_infos: Vec<InputSpendingInfo>,
 }
 
 impl Node {
-    fn new(name: &str, transaction: Transaction) -> Self {
+    pub(crate) fn new(name: &str, transaction: Transaction) -> Self {
         Node {
             name: name.to_string(),
             transaction,
-            output_spending_types: vec![],
+            output_types: vec![],
             input_spending_infos: vec![],
         }
     }
 
-    fn get_input_spending_info(
+    pub(crate) fn get_input_spending_info(
         &self,
         input_index: usize,
     ) -> Result<&InputSpendingInfo, GraphError> {
@@ -49,14 +50,14 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct Connection {
-    name: String,
-    input_index: u32,
-    output_index: u32,
+pub(crate) struct Connection {
+    pub(crate) name: String,
+    pub(crate) input_index: u32,
+    pub(crate) output_index: u32,
 }
 
 impl Connection {
-    fn new(name: String, input_index: u32, output_index: u32) -> Self {
+    pub(crate) fn new(name: String, input_index: u32, output_index: u32) -> Self {
         Connection {
             name,
             input_index,
@@ -166,11 +167,11 @@ impl TransactionGraph {
         &mut self,
         name: &str,
         transaction: Transaction,
-        spending_type: OutputType,
+        output_type: OutputType,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
-        node.output_spending_types.push(spending_type);
+        node.output_types.push(output_type);
         Ok(())
     }
 
@@ -184,7 +185,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let from_node_index = self.get_node_index(from)?;
         let to_node_index = self.get_node_index(to)?;
-        let output_spending_type = self.get_output_spending_type(from, output_index)?;
+        let output_type = self.get_output_type(from, output_index)?;
 
         let connection = Connection::new(connection_name.to_string(), input_index, output_index);
 
@@ -193,21 +194,20 @@ impl TransactionGraph {
 
         let to_node = self.get_node_mut(to)?;
 
-        to_node.input_spending_infos[input_index as usize]
-            .set_spending_type(output_spending_type)?;
+        to_node.input_spending_infos[input_index as usize].set_output_type(output_type)?;
 
         Ok(())
     }
 
     pub fn connect_with_external_transaction(
         &mut self,
-        output_spending_type: OutputType,
+        output_type: OutputType,
         to: &str,
     ) -> Result<(), GraphError> {
         let to_node = self.get_node_mut(to)?;
 
         to_node.input_spending_infos[to_node.transaction.input.len() - 1]
-            .set_spending_type(output_spending_type)?;
+            .set_output_type(output_type)?;
 
         Ok(())
     }
@@ -250,23 +250,23 @@ impl TransactionGraph {
         )
     }
 
-    pub fn get_transaction(&self, name: &str) -> Result<&Transaction, GraphError> {
+    pub fn get_transaction_by_name(&self, name: &str) -> Result<&Transaction, GraphError> {
         Ok(&self.get_node(name)?.transaction)
+    }
+
+    pub fn get_transaction_by_id(&self, txid: &Txid) -> Result<&Transaction, GraphError> {
+        for node in self.graph.node_weights() {
+            if node.transaction.compute_txid() == *txid {
+                return Ok(&node.transaction);
+            }
+        }
+        Err(GraphError::TransactionNotFound(txid.to_string()))
     }
 
     pub fn get_transaction_name_by_id(&self, txid: Txid) -> Result<&String, GraphError> {
         for node in self.graph.node_weights() {
             if node.transaction.compute_txid() == txid {
                 return Ok(&node.name);
-            }
-        }
-        Err(GraphError::TransactionNotFound(txid.to_string()))
-    }
-
-    pub fn get_transaction_with_id(&self, txid: Txid) -> Result<&Transaction, GraphError> {
-        for node in self.graph.node_weights() {
-            if node.transaction.compute_txid() == txid {
-                return Ok(&node.transaction);
             }
         }
         Err(GraphError::TransactionNotFound(txid.to_string()))
@@ -280,7 +280,7 @@ impl TransactionGraph {
         let dependencies = self.get_dependencies(name)?;
         let next_transactions = dependencies
             .iter()
-            .map(|(name, _)| self.get_transaction(name))
+            .map(|(name, _)| self.get_transaction_by_name(name))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(next_transactions)
@@ -305,7 +305,7 @@ impl TransactionGraph {
 
     pub fn get_prevouts(&self, name: &str) -> Result<Vec<TxOut>, GraphError> {
         let node_index = self.get_node_index(name)?;
-        let transaction = self.get_transaction(name)?;
+        let transaction = self.get_transaction_by_name(name)?;
 
         let mut prevouts = vec![None; transaction.input.len()];
 
@@ -328,10 +328,7 @@ impl TransactionGraph {
         result
     }
 
-    pub fn get_transaction_spending_info(
-        &self,
-        name: &str,
-    ) -> Result<Vec<InputSpendingInfo>, GraphError> {
+    pub fn get_inputs(&self, name: &str) -> Result<Vec<InputSpendingInfo>, GraphError> {
         Ok(self.get_node(name)?.input_spending_infos.clone())
     }
 
@@ -363,78 +360,11 @@ impl TransactionGraph {
             let connection = self.get_connection(edge)?;
             if connection.input_index == input_index {
                 let from = self.get_from_node(edge)?;
-                return Ok(from.output_spending_types[connection.output_index as usize].clone());
+                return Ok(from.output_types[connection.output_index as usize].clone());
             }
         }
 
         Err(GraphError::MissingConnection)
-    }
-
-    fn get_node_mut(&mut self, name: &str) -> Result<&mut Node, GraphError> {
-        let node_index = self.get_node_index(name)?;
-        let node = self
-            .graph
-            .node_weight_mut(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-        Ok(node)
-    }
-
-    fn get_node(&self, name: &str) -> Result<&Node, GraphError> {
-        let node_index = self.get_node_index(name)?;
-
-        let node = self
-            .graph
-            .node_weight(node_index)
-            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-        Ok(node)
-    }
-
-    fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
-        if name.trim().is_empty() {
-            return Err(GraphError::EmptyTransactionName);
-        }
-        self.node_indexes
-            .get(name)
-            .cloned()
-            .ok_or(GraphError::MissingTransaction(name.to_string()))
-    }
-
-    fn get_connection(&self, edge: EdgeIndex) -> Result<&Connection, GraphError> {
-        self.graph
-            .edge_weight(edge)
-            .ok_or(GraphError::MissingConnection)
-    }
-
-    fn find_incoming_edges(&self, node_index: NodeIndex) -> Vec<EdgeIndex> {
-        self.graph
-            .edges_directed(node_index, petgraph::Direction::Incoming)
-            .map(|edge| edge.id())
-            .collect()
-    }
-
-    fn get_from_node(&self, edge: EdgeIndex) -> Result<&Node, GraphError> {
-        let (from_index, _) = self
-            .graph
-            .edge_endpoints(edge)
-            .ok_or(GraphError::MissingConnection)?;
-        let from = self
-            .graph
-            .node_weight(from_index)
-            .ok_or(GraphError::MissingTransaction("".to_string()))?;
-        Ok(from)
-    }
-
-    fn get_from_transaction(&self, edge: EdgeIndex) -> Result<&Transaction, GraphError> {
-        let from = self.get_from_node(edge)?;
-        Ok(&from.transaction)
-    }
-
-    fn get_output_spending_type(
-        &self,
-        transaction_name: &str,
-        output_index: u32,
-    ) -> Result<OutputType, GraphError> {
-        Ok(self.get_node(transaction_name)?.output_spending_types[output_index as usize].clone())
     }
 
     pub fn get_transaction_names(&self) -> Vec<String> {
@@ -570,6 +500,19 @@ impl TransactionGraph {
         Ok(result)
     }
 
+    pub fn sorted_transactions(&self) -> Result<(Vec<Transaction>, Vec<String>), GraphError> {
+        let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
+        let result = sorted
+            .iter()
+            .map(|node_index| {
+                let node = self.graph.node_weight(*node_index).unwrap();
+                (node.transaction.clone(), node.name.clone())
+            })
+            .collect();
+
+        Ok(result)
+    }
+
     pub fn visualize(&self) -> Result<String, GraphError> {
         let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=Record]\n".to_owned();
 
@@ -590,114 +533,84 @@ impl TransactionGraph {
 
         Ok(result)
     }
-}
 
-#[cfg(test)]
-mod test {
-    use super::Node;
-    use bitcoin::hex::test_hex_unwrap as hex;
-    use bitcoin::{consensus::Decodable, Transaction};
-
-    const SOME_TX: &str = "0100000001a15d57094aa7a21a28cb20b59aab8fc7d1149a3bdbcddba9c622e4f5f6a99ece010000006c493046022100f93bb0e7d8db7bd46e40132d1f8242026e045f03a0efe71bbb8e3f475e970d790221009337cd7f1f929f00cc6ff01f03729b069a7c21b59b1736ddfee5db5946c5da8c0121033b9b137ee87d5a812d6f506efdd37f0affa7ffc310711c06c7f3e097c9447c52ffffffff0100e1f505000000001976a9140389035a9225b3839e2bbf32d826a1e222031fd888ac00000000";
-
-    #[test]
-    fn create_node() {
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx);
-
-        assert_eq!(node.name, "test_tx");
-        assert_eq!(node.output_spending_types.len(), 0);
-        assert_eq!(node.input_spending_infos.len(), 0);
+    fn get_node_mut(&mut self, name: &str) -> Result<&mut Node, GraphError> {
+        let node_index = self.get_node_index(name)?;
+        let node = self
+            .graph
+            .node_weight_mut(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        Ok(node)
     }
 
-    #[test]
-    fn create_connection() {
-        use super::Connection;
+    fn get_node(&self, name: &str) -> Result<&Node, GraphError> {
+        let node_index = self.get_node_index(name)?;
 
-        let connection = Connection::new("test_connection".to_string(), 1, 2);
-
-        assert_eq!(connection.name, "test_connection");
-        assert_eq!(connection.input_index, 1);
-        assert_eq!(connection.output_index, 2);
+        let node = self
+            .graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+        Ok(node)
     }
 
-    #[test]
-    fn create_empty_graph() {
-        let graph = super::TransactionGraph::default();
-
-        assert!(graph.node_indexes.is_empty());
-        assert_eq!(graph.graph.node_count(), 0);
-        assert_eq!(graph.graph.edge_count(), 0);
-    }
-
-    #[test]
-    fn add_transaction_to_graph() {
-        let mut graph = super::TransactionGraph::default();
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-
-        graph.add_transaction("tx1", tx.clone()).unwrap();
-
-        assert!(graph.contains_transaction("tx1"));
-        assert_eq!(graph.graph.node_count(), 1);
-    }
-
-    #[test]
-    fn add_transaction_to_graph_with_empty_name() {
-        let mut graph = super::TransactionGraph::default();
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-
-        assert!(graph.add_transaction("", tx.clone()).is_err());
-    }
-
-    #[test]
-    fn add_duplicated_transaction_to_graph() {
-        let mut graph = super::TransactionGraph::default();
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        graph.add_transaction("tx1", tx.clone()).unwrap();
-        assert!(graph.add_transaction("tx1", tx.clone()).is_err());
-
-        assert!(graph.contains_transaction("tx1"));
-        assert!(!graph.contains_transaction("tx2"));
-        assert_eq!(graph.graph.node_count(), 1);
-    }
-
-    #[test]
-    fn test_graph_sort() {
-        let mut graph = super::TransactionGraph::default();
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-
-        graph.add_transaction("tx1", tx.clone()).unwrap();
-        graph.add_transaction("tx2", tx).unwrap();
-
-        let sorted = graph.sort().unwrap();
-        assert_eq!(sorted.len(), 2);
-
-        // The order is deterministic but either tx1->tx2 or tx2->tx1 is valid
-        assert!(
-            (sorted[0] == "tx1" && sorted[1] == "tx2")
-                || (sorted[0] == "tx2" && sorted[1] == "tx1")
-        );
-    }
-
-    #[test]
-    fn test_missing_input_spending_info() {
-        let raw_tx = hex!(SOME_TX);
-        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx);
-
-        let result = node.get_input_spending_info(0);
-        assert!(result.is_err());
-
-        if let Err(super::GraphError::MissingInputSpendingInfo(name, index)) = result {
-            assert_eq!(name, "test_tx");
-            assert_eq!(index, 0);
-        } else {
-            panic!("Expected MissingInputSpendingInfo error");
+    fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {
+        if name.trim().is_empty() {
+            return Err(GraphError::EmptyTransactionName);
         }
+        self.node_indexes
+            .get(name)
+            .cloned()
+            .ok_or(GraphError::MissingTransaction(name.to_string()))
+    }
+
+    fn get_connection(&self, edge: EdgeIndex) -> Result<&Connection, GraphError> {
+        self.graph
+            .edge_weight(edge)
+            .ok_or(GraphError::MissingConnection)
+    }
+
+    fn find_incoming_edges(&self, node_index: NodeIndex) -> Vec<EdgeIndex> {
+        self.graph
+            .edges_directed(node_index, petgraph::Direction::Incoming)
+            .map(|edge| edge.id())
+            .collect()
+    }
+
+    fn get_from_node(&self, edge: EdgeIndex) -> Result<&Node, GraphError> {
+        let (from_index, _) = self
+            .graph
+            .edge_endpoints(edge)
+            .ok_or(GraphError::MissingConnection)?;
+        let from = self
+            .graph
+            .node_weight(from_index)
+            .ok_or(GraphError::MissingTransaction("".to_string()))?;
+        Ok(from)
+    }
+
+    fn get_from_transaction(&self, edge: EdgeIndex) -> Result<&Transaction, GraphError> {
+        let from = self.get_from_node(edge)?;
+        Ok(&from.transaction)
+    }
+
+    fn get_output_type(
+        &self,
+        transaction_name: &str,
+        output_index: u32,
+    ) -> Result<OutputType, GraphError> {
+        Ok(self.get_node(transaction_name)?.output_types[output_index as usize].clone())
+    }
+
+    // Getters for testing purposes
+    pub(crate) fn _get_node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    pub(crate) fn _get_edge_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    pub(crate) fn _get_node_indexes(&self) -> HashMap<String, petgraph::graph::NodeIndex> {
+        self.node_indexes.clone()
     }
 }
