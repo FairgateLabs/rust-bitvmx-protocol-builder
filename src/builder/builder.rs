@@ -88,6 +88,24 @@ impl ProtocolBuilder {
         Ok(self)
     }
 
+    pub fn add_taproot_script_unspendable_key_spend_output(
+        &mut self,
+        transaction_name: &str,
+        value: u64,
+        internal_key: &UntweakedPublicKey,
+        spending_scripts: &[ProtocolScript],
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_script_unspendable_key_spend_output(
+            transaction_name,
+            value,
+            internal_key,
+            spending_scripts,
+        )?;
+        self.save_protocol()?;
+
+        Ok(self)
+    }
+
     pub fn add_p2wpkh_output(
         &mut self,
         transaction_name: &str,
