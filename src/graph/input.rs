@@ -14,21 +14,22 @@ pub enum Signature {
 
 #[derive(Clone, Debug)]
 pub struct InputSignatures {
-    signatures: Vec<Signature>,
+    signatures: Vec<Option<Signature>>,
 }
 
 impl InputSignatures {
-    pub fn new(signatures: Vec<Signature>) -> Self {
+    pub fn new(signatures: Vec<Option<Signature>>) -> Self {
         InputSignatures { signatures }
     }
 
     pub fn get_taproot_signature(
         &self,
         index: usize,
-    ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+    ) -> Result<Option<bitcoin::taproot::Signature>, ProtocolBuilderError> {
         match self.signatures.get(index) {
-            Some(Signature::Ecdsa(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
-            Some(Signature::Taproot(signature)) => Ok(*signature),
+            Some(Some(Signature::Ecdsa(_))) => Err(ProtocolBuilderError::InvalidSignatureType),
+            Some(Some(Signature::Taproot(signature))) => Ok(Some(*signature)),
+            Some(None) => Ok(None),
             None => Err(ProtocolBuilderError::MissingSignature),
         }
     }
@@ -36,15 +37,16 @@ impl InputSignatures {
     pub fn get_ecdsa_signature(
         &self,
         index: usize,
-    ) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+    ) -> Result<Option<bitcoin::ecdsa::Signature>, ProtocolBuilderError> {
         match self.signatures.get(index) {
-            Some(Signature::Ecdsa(signature)) => Ok(*signature),
-            Some(Signature::Taproot(_)) => Err(ProtocolBuilderError::InvalidSignatureType),
+            Some(Some(Signature::Ecdsa(signature))) => Ok(Some(*signature)),
+            Some(Some(Signature::Taproot(_))) => Err(ProtocolBuilderError::InvalidSignatureType),
+            Some(None) => Ok(None),
             None => Err(ProtocolBuilderError::MissingSignature),
         }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, Signature> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Option<Signature>> {
         self.signatures.iter()
     }
 }
@@ -69,8 +71,8 @@ impl SighashType {
 pub struct InputSpendingInfo {
     spending_type: Option<OutputType>,
     sighash_type: SighashType,
-    hashed_messages: Vec<Message>,
-    signatures: Vec<Signature>,
+    hashed_messages: Vec<Option<Message>>,
+    signatures: Vec<Option<Signature>>,
 }
 
 impl Serialize for InputSpendingInfo {
@@ -78,9 +80,12 @@ impl Serialize for InputSpendingInfo {
     where
         S: serde::Serializer,
     {
-        let mut messages: Vec<&[u8; 32]> = vec![];
+        let mut messages: Vec<Vec<u8>> = vec![];
         for message in &self.hashed_messages {
-            messages.push(message.as_ref());
+            match message {
+                Some(msg) => messages.push(msg.as_ref().to_vec()),
+                None => messages.push(vec![]),
+            }
         }
         let mut state = serializer.serialize_struct("InputSpendingInfo", 4)?;
         state.serialize_field("spending_type", &self.spending_type)?;
@@ -121,7 +126,7 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                 let mut spending_type: Option<OutputType> = None;
                 let mut sighash_type: Option<SighashType> = None;
                 let mut hashed_messages: Option<Vec<[u8; 32]>> = None;
-                let mut signatures: Option<Vec<Signature>> = None;
+                let mut signatures: Option<Vec<Option<Signature>>> = None;
 
                 while let Some(key_field) = map.next_key()? {
                     match key_field {
@@ -159,10 +164,20 @@ impl<'de> Deserialize<'de> for InputSpendingInfo {
                         for message in hashed_messages
                             .ok_or_else(|| serde::de::Error::missing_field("hashed_messages"))?
                         {
-                            messages.push(
+                            if message.len() != 32 {
+                                return Err(serde::de::Error::custom(
+                                    "hashed_messages must be 32 bytes",
+                                ));
+                            }
+                            if message.is_empty() {
+                                messages.push(None);
+                                continue;
+                            }
+
+                            messages.push(Some(
                                 Message::from_digest_slice(&message)
                                     .map_err(|e| serde::de::Error::custom(e.to_string()))?,
-                            );
+                            ));
                         }
                         messages
                     },
@@ -191,7 +206,7 @@ impl InputSpendingInfo {
         }
     }
 
-    pub(crate) fn set_hashed_messages(&mut self, messages: Vec<Message>) {
+    pub(crate) fn set_hashed_messages(&mut self, messages: Vec<Option<Message>>) {
         self.hashed_messages = messages;
     }
 
@@ -203,7 +218,7 @@ impl InputSpendingInfo {
             SighashType::Taproot(_) => match spending_type {
                 OutputType::TaprootTweakedKey { .. } => {}
                 OutputType::TaprootUntweakedKey { .. } => {}
-                OutputType::TaprootScriptOnly { .. } => {}
+                OutputType::TaprootScriptUnspendableKey { .. } => {}
                 OutputType::TaprootScriptAndKey { .. } => {}
                 _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
             },
@@ -218,7 +233,7 @@ impl InputSpendingInfo {
         Ok(())
     }
 
-    pub fn set_signatures(&mut self, signatures: Vec<Signature>) {
+    pub fn set_signatures(&mut self, signatures: Vec<Option<Signature>>) {
         self.signatures = signatures;
     }
 
@@ -226,7 +241,7 @@ impl InputSpendingInfo {
         &self.sighash_type
     }
 
-    pub fn hashed_messages(&self) -> &Vec<Message> {
+    pub fn hashed_messages(&self) -> &Vec<Option<Message>> {
         &self.hashed_messages
     }
 
@@ -234,7 +249,7 @@ impl InputSpendingInfo {
         match &self.spending_type {
             Some(OutputType::TaprootTweakedKey { key, .. }) => vec![*key],
             Some(OutputType::TaprootUntweakedKey { key, .. }) => vec![*key],
-            Some(OutputType::TaprootScriptOnly {
+            Some(OutputType::TaprootScriptUnspendableKey {
                 spending_scripts, ..
             }) => spending_scripts
                 .iter()
@@ -264,11 +279,11 @@ impl InputSpendingInfo {
         )
     }
 
-    pub fn signatures(&self) -> &Vec<Signature> {
+    pub fn signatures(&self) -> &Vec<Option<Signature>> {
         &self.signatures
     }
 
-    pub fn get_signature(&self, index: usize) -> Result<&Signature, GraphError> {
+    pub fn get_signature(&self, index: usize) -> Result<&Option<Signature>, GraphError> {
         self.signatures
             .get(index)
             .ok_or(GraphError::MissingSignature)
@@ -293,7 +308,7 @@ mod test {
     fn test_taproot_signature() {
         let _msg = Message::from_digest_slice(&[0; 32]).unwrap();
         let tap_sig = taproot::Signature::from_slice(&[1; 64]).unwrap();
-        let sigs = InputSignatures::new(vec![Signature::Taproot(tap_sig)]);
+        let sigs = InputSignatures::new(vec![Some(Signature::Taproot(tap_sig))]);
 
         assert!(sigs.get_taproot_signature(0).is_ok());
         assert!(sigs.get_ecdsa_signature(0).is_err());
@@ -306,9 +321,9 @@ mod test {
         let msg = Message::from_digest_slice(&[0; 32]).unwrap();
         let (secret_key, _) = secp.generate_keypair(&mut rand::thread_rng());
         let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);
-        let sigs = InputSignatures::new(vec![Signature::Ecdsa(
+        let sigs = InputSignatures::new(vec![Some(Signature::Ecdsa(
             bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig),
-        )]);
+        ))]);
 
         assert!(sigs.get_ecdsa_signature(0).is_ok());
         assert!(sigs.get_taproot_signature(0).is_err());
@@ -322,8 +337,10 @@ mod test {
         let (secret_key, _) = secp.generate_keypair(&mut rand::thread_rng());
         let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);
         let sigs = InputSignatures::new(vec![
-            Signature::Taproot(tap_sig),
-            Signature::Ecdsa(bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig)),
+            Some(Signature::Taproot(tap_sig)),
+            Some(Signature::Ecdsa(bitcoin::ecdsa::Signature::sighash_all(
+                ecdsa_sig,
+            ))),
         ]);
 
         assert_eq!(sigs.iter().count(), 2);

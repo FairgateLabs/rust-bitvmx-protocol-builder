@@ -220,7 +220,7 @@ impl Protocol {
 
     /// This function is used to add a taproot script spend output without the key spend path transaction.
     /// The internal key must be unspendable.
-    pub fn add_taproot_script_spend_only_output(
+    pub fn add_taproot_script_unspendable_key_spend_output(
         &mut self,
         transaction_name: &str,
         value: u64,
@@ -236,8 +236,11 @@ impl Protocol {
         let script_pubkey =
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
 
-        let spending_type =
-            OutputType::new_taproot_script_only_spend(spending_scripts, &spend_info, vec![]);
+        let spending_type = OutputType::new_taproot_script_unspendable_key_spend(
+            spending_scripts,
+            &spend_info,
+            vec![],
+        );
         self.add_transaction_output(transaction_name, value, script_pubkey, spending_type)?;
 
         Ok(self)
@@ -692,7 +695,7 @@ impl Protocol {
         &mut self,
         transaction_name: &str,
         input_index: u32,
-        signatures: Vec<Signature>,
+        signatures: Vec<Option<Signature>>,
     ) -> Result<(), ProtocolBuilderError> {
         self.graph
             .update_input_signatures(transaction_name, input_index, signatures)?;
@@ -861,10 +864,6 @@ impl Protocol {
         Ok(self.graph.get_transaction_spending_infos()?)
     }
 
-    pub fn get_all_sighashes(&self) -> Result<Vec<(MessageId, Message)>, ProtocolBuilderError> {
-        Ok(self.graph.get_all_sighashes()?)
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -906,7 +905,7 @@ impl Protocol {
         &self,
         transaction_name: &str,
         input_index: usize,
-    ) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
+    ) -> Result<Option<bitcoin::ecdsa::Signature>, ProtocolBuilderError> {
         let input_signature = self
             .graph
             .get_input_ecdsa_signature(transaction_name, input_index)?;
@@ -918,7 +917,7 @@ impl Protocol {
         transaction_name: &str,
         input_index: usize,
         leaf_index: usize,
-    ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+    ) -> Result<Option<bitcoin::taproot::Signature>, ProtocolBuilderError> {
         let input_signature = self.graph.get_input_taproot_script_spend_signature(
             transaction_name,
             input_index,
@@ -931,7 +930,7 @@ impl Protocol {
         &self,
         transaction_name: &str,
         input_index: usize,
-    ) -> Result<bitcoin::taproot::Signature, ProtocolBuilderError> {
+    ) -> Result<Option<bitcoin::taproot::Signature>, ProtocolBuilderError> {
         let input_signature = self
             .graph
             .get_input_taproot_key_spend_signature(transaction_name, input_index)?;
@@ -949,7 +948,7 @@ impl Protocol {
             .get_input_spending_info(transaction_name, input_index as usize)?;
 
         let script = match input_spending_info.spending_type()? {
-            OutputType::TaprootScriptOnly {
+            OutputType::TaprootScriptUnspendableKey {
                 spending_scripts, ..
             } => spending_scripts[script_index as usize].clone(),
             OutputType::TaprootScriptAndKey {
@@ -1114,7 +1113,7 @@ impl Protocol {
                                     key_manager,
                                 )?;
                             }
-                            OutputType::TaprootScriptOnly {
+                            OutputType::TaprootScriptUnspendableKey {
                                 ref spending_scripts,
                                 ref spend_info,
                                 ref internal_key,
@@ -1224,7 +1223,7 @@ impl Protocol {
                                     key_manager,
                                 )?;
                             }
-                            OutputType::TaprootScriptOnly {
+                            OutputType::TaprootScriptUnspendableKey {
                                 ref spending_scripts,
                                 ..
                             } => {
@@ -1331,7 +1330,7 @@ impl Protocol {
                                     key_manager,
                                 )?;
                             }
-                            OutputType::TaprootScriptOnly {
+                            OutputType::TaprootScriptUnspendableKey {
                                 ref spending_scripts,
                                 ref internal_key,
                                 ref spend_info,
@@ -1421,7 +1420,7 @@ impl Protocol {
                 OutputType::TaprootUntweakedKey { .. } => {
                     self.taproot_key_spend_witness(spending_args)?
                 }
-                OutputType::TaprootScriptOnly { ref spend_info, .. } => {
+                OutputType::TaprootScriptUnspendableKey { ref spend_info, .. } => {
                     match spending_args.get_taproot_leaf() {
                         Some(taproot_leaf) => self.taproot_script_spend_witness(
                             input_index,
@@ -1508,7 +1507,7 @@ impl Protocol {
         self.graph.update_hashed_messages(
             transaction_name,
             input_index as u32,
-            vec![hashed_message],
+            vec![Some(hashed_message)],
         )?;
 
         Ok(())
@@ -1541,6 +1540,11 @@ impl Protocol {
 
         let mut hashed_messages = vec![];
         for (script_index, spending_script) in spending_scripts.iter().enumerate() {
+            if spending_script.skip_signing() {
+                hashed_messages.push(None);
+                continue;
+            }
+
             let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
                 input_index,
                 &sighash::Prevouts::All(&prevouts),
@@ -1557,7 +1561,7 @@ impl Protocol {
                 None,
             )?;
 
-            hashed_messages.push(hashed_message);
+            hashed_messages.push(Some(hashed_message));
         }
 
         if compute_key_path {
@@ -1586,7 +1590,7 @@ impl Protocol {
                 Some(musig2_tweak),
             )?;
 
-            hashed_messages.push(key_spend_hashed_message);
+            hashed_messages.push(Some(key_spend_hashed_message));
 
             self.graph.update_hashed_messages(
                 transaction_name,
@@ -1622,7 +1626,7 @@ impl Protocol {
         self.graph.update_hashed_messages(
             transaction_name,
             input_index as u32,
-            vec![hashed_message],
+            vec![Some(hashed_message)],
         )?;
         Ok(())
     }
@@ -1635,24 +1639,27 @@ impl Protocol {
         value: &Amount,
         sighash_type: &EcdsaSighashType,
     ) -> Result<(), ProtocolBuilderError> {
-        let transaction = self.transaction(transaction_name)?.clone();
-        let script_hash = WScriptHash::from(script.get_script().clone());
-        let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
+        let hashed_messages = if script.skip_signing() {
+            vec![None]
+        } else {
+            let transaction = self.transaction(transaction_name)?.clone();
+            let script_hash = WScriptHash::from(script.get_script().clone());
+            let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
 
-        let mut sighasher = SighashCache::new(transaction);
+            let mut sighasher = SighashCache::new(transaction);
 
-        let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
-            input_index,
-            &script_pubkey,
-            *value,
-            *sighash_type,
-        )?);
+            let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
+                input_index,
+                &script_pubkey,
+                *value,
+                *sighash_type,
+            )?);
 
-        self.graph.update_hashed_messages(
-            transaction_name,
-            input_index as u32,
-            vec![hashed_message],
-        )?;
+            vec![Some(hashed_message)]
+        };
+
+        self.graph
+            .update_hashed_messages(transaction_name, input_index as u32, hashed_messages)?;
         Ok(())
     }
 
@@ -1683,7 +1690,7 @@ impl Protocol {
         self.graph.update_input_signatures(
             transaction_name,
             input_index as u32,
-            vec![signature],
+            vec![Some(signature)],
         )?;
 
         Ok(())
@@ -1709,7 +1716,12 @@ impl Protocol {
         // There must be an extra hashed message for the key spend path.
         assert!(spending_scripts.len() + 1 == hashed_messages.len());
 
-        for (index, _) in spending_scripts.iter().enumerate() {
+        for (index, script) in spending_scripts.iter().enumerate() {
+            if script.skip_signing() {
+                signatures.push(None);
+                continue;
+            }
+
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, index as u32);
             let schnorr_signature = key_manager.get_aggregated_signature(id, &message_id)?;
@@ -1719,7 +1731,7 @@ impl Protocol {
                 sighash_type: *sighash_type,
             });
 
-            signatures.push(signature);
+            signatures.push(Some(signature));
         }
 
         if compute_key_path {
@@ -1736,7 +1748,7 @@ impl Protocol {
                 sighash_type: *sighash_type,
             });
 
-            signatures.push(key_spend_signature);
+            signatures.push(Some(key_spend_signature));
 
             // Update signatures for the input
             self.graph
@@ -1762,8 +1774,17 @@ impl Protocol {
         // There must be only one hashed message for the key spend path
         assert!(hashed_messages.len() == 1);
 
-        let ecdsa_signature =
-            key_manager.sign_ecdsa_message(&hashed_messages[0].clone(), public_key)?;
+        let message = match hashed_messages[0] {
+            Some(ref message) => message,
+            None => {
+                return Err(ProtocolBuilderError::MissingMessage(
+                    transaction_name.to_string(),
+                    input_index as u32,
+                ))
+            }
+        };
+
+        let ecdsa_signature = key_manager.sign_ecdsa_message(message, public_key)?;
         let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
             signature: ecdsa_signature,
             sighash_type: *sighash_type,
@@ -1772,7 +1793,7 @@ impl Protocol {
         self.graph.update_input_signatures(
             transaction_name,
             input_index as u32,
-            vec![signature],
+            vec![Some(signature)],
         )?;
         Ok(())
     }
@@ -1785,26 +1806,37 @@ impl Protocol {
         sighash_type: &EcdsaSighashType,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
-        let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?
+        let signatures = if script.skip_signing() {
+            vec![None]
+        } else {
+            let hashed_messages = self.graph.get_transaction_spending_info(transaction_name)?
             [input_index]
             .hashed_messages()
             .clone();
 
-        // There must be only one hashed message for the key spend path
-        assert!(hashed_messages.len() == 1);
+            // There must be only one hashed message for the script spend path
+            assert!(hashed_messages.len() == 1);
 
-        let ecdsa_signature = key_manager
-            .sign_ecdsa_message(&hashed_messages[0].clone(), &script.get_verifying_key())?;
-        let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
-            signature: ecdsa_signature,
-            sighash_type: *sighash_type,
-        });
+            let message = match hashed_messages[0] {
+                Some(ref message) => message,
+                None => {
+                    return Err(ProtocolBuilderError::MissingMessage(
+                        transaction_name.to_string(),
+                        input_index as u32,
+                    ))
+                }
+            };
 
-        self.graph.update_input_signatures(
-            transaction_name,
-            input_index as u32,
-            vec![signature],
-        )?;
+            let ecdsa_signature =
+                key_manager.sign_ecdsa_message(message, &script.get_verifying_key())?;
+            vec![Some(Signature::Ecdsa(bitcoin::ecdsa::Signature {
+                signature: ecdsa_signature,
+                sighash_type: *sighash_type,
+            }))]
+        };
+
+        self.graph
+            .update_input_signatures(transaction_name, input_index as u32, signatures)?;
         Ok(())
     }
 
@@ -1848,12 +1880,12 @@ impl Protocol {
         self.graph.update_hashed_messages(
             transaction_name,
             input_index as u32,
-            vec![hashed_message],
+            vec![Some(hashed_message)],
         )?;
         self.graph.update_input_signatures(
             transaction_name,
             input_index as u32,
-            vec![signature],
+            vec![Some(signature)],
         )?;
 
         Ok(())
@@ -1878,11 +1910,18 @@ impl Protocol {
         } else {
             prevouts.to_vec()
         };
+
         let mut sighasher = SighashCache::new(transaction);
 
         let mut hashed_messages = vec![];
         let mut signatures = vec![];
         for spending_script in spending_scripts {
+            if spending_script.skip_signing() {
+                hashed_messages.push(None);
+                signatures.push(None);
+                continue;
+            }
+
             let hashed_message = Message::from(sighasher.taproot_script_spend_signature_hash(
                 input_index,
                 &sighash::Prevouts::All(&prevouts),
@@ -1897,8 +1936,8 @@ impl Protocol {
                 sighash_type: *sighash_type,
             });
 
-            hashed_messages.push(hashed_message);
-            signatures.push(signature);
+            hashed_messages.push(Some(hashed_message));
+            signatures.push(Some(signature));
         }
 
         if compute_key_path {
@@ -1916,7 +1955,7 @@ impl Protocol {
                     *sighash_type,
                 )?);
 
-            hashed_messages.push(key_spend_hashed_message);
+            hashed_messages.push(Some(key_spend_hashed_message));
 
             // 3. Compute and push the key spend signature.
             let (schnorr_signature, output_key) = key_manager.sign_schnorr_message_with_tap_tweak(
@@ -1939,7 +1978,7 @@ impl Protocol {
                 return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed);
             }
 
-            signatures.push(key_spend_signature);
+            signatures.push(Some(key_spend_signature));
 
             // 5. Update hashes and signatures for the input
             self.graph.update_hashed_messages(
@@ -1985,12 +2024,12 @@ impl Protocol {
         self.graph.update_hashed_messages(
             transaction_name,
             input_index as u32,
-            vec![hashed_message],
+            vec![Some(hashed_message)],
         )?;
         self.graph.update_input_signatures(
             transaction_name,
             input_index as u32,
-            vec![signature],
+            vec![Some(signature)],
         )?;
         Ok(())
     }
@@ -2004,36 +2043,37 @@ impl Protocol {
         sighash_type: &EcdsaSighashType,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
-        let transaction = self.transaction(transaction_name)?.clone();
-        let script_hash = WScriptHash::from(script.get_script().clone());
-        let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
+        let (hashed_messages, signatures) = if script.skip_signing() {
+            (vec![None], vec![None])
+        } else {
+            let transaction = self.transaction(transaction_name)?.clone();
+            let script_hash = WScriptHash::from(script.get_script().clone());
+            let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
+            
+            let mut sighasher = SighashCache::new(transaction);
 
-        let mut sighasher = SighashCache::new(transaction);
+            let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
+                input_index,
+                &script_pubkey,
+                *value,
+                *sighash_type,
+            )?);
 
-        let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
-            input_index,
-            &script_pubkey,
-            *value,
-            *sighash_type,
-        )?);
+            let ecdsa_signature =
+                key_manager.sign_ecdsa_message(&hashed_message, &script.get_verifying_key())?;
+            let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
+                signature: ecdsa_signature,
+                sighash_type: *sighash_type,
+            });
 
-        let ecdsa_signature =
-            key_manager.sign_ecdsa_message(&hashed_message, &script.get_verifying_key())?;
-        let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
-            signature: ecdsa_signature,
-            sighash_type: *sighash_type,
-        });
+            (vec![Some(hashed_message)], vec![Some(signature)])
+        };
 
-        self.graph.update_hashed_messages(
-            transaction_name,
-            input_index as u32,
-            vec![hashed_message],
-        )?;
-        self.graph.update_input_signatures(
-            transaction_name,
-            input_index as u32,
-            vec![signature],
-        )?;
+        self.graph
+            .update_hashed_messages(transaction_name, input_index as u32, hashed_messages)?;
+        self.graph
+            .update_input_signatures(transaction_name, input_index as u32, signatures)?;
+
         Ok(())
     }
 

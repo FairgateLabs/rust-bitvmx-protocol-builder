@@ -139,6 +139,7 @@ mod tests {
 
         let signature = protocol
             .input_taproot_script_spend_signature("keypath_spend", 0, 0)
+            .unwrap()
             .unwrap();
         let mut spending_args = SpendingArgs::new_args();
         spending_args.push_taproot_signature(signature);

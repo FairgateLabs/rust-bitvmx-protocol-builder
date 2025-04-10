@@ -61,6 +61,7 @@ pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: PublicKey,
+    skip_signing: bool,
 }
 
 impl ProtocolScript {
@@ -69,6 +70,18 @@ impl ProtocolScript {
             script,
             keys: HashMap::new(),
             verifying_key: *verifying_key,
+            skip_signing: false,
+        }
+    }
+
+    // This constructor is used to flag scripts that will not required signing in the protocol builder.
+    // TODO: remove this. It is introduced temporarily to not break any current code that relays on the semantic of ProtocoslScript::new().
+    pub fn new_unsigned_script(script: ScriptBuf, verifying_key: &PublicKey) -> Self {
+        Self {
+            script,
+            keys: HashMap::new(),
+            verifying_key: *verifying_key,
+            skip_signing: true,
         }
     }
 
@@ -107,6 +120,10 @@ impl ProtocolScript {
 
     pub fn get_verifying_key(&self) -> PublicKey {
         self.verifying_key
+    }
+
+    pub fn skip_signing(&self) -> bool {
+        self.skip_signing
     }
 }
 

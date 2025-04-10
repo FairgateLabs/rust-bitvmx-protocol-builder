@@ -9,10 +9,11 @@ use crate::scripts::{self, ProtocolScript};
 const ALL_OUTPUT_TYPES: &[&str] = &[
     "taproot_untweaked_key",
     "taproot_tweaked_key",
-    "taproot_script_only",
+    "taproot_script_unspendable_key",
     "taproot_script_and_key",
     "segwit_public_key",
     "segwit_script",
+    "segwit_unspendable",
 ];
 
 // Alias for the OutputType enum to minimized changes outside this crate. Eventually we will remove it.
@@ -29,7 +30,7 @@ pub enum OutputType {
         tweak: Scalar,
         prevouts: Vec<TxOut>,
     },
-    TaprootScriptOnly {
+    TaprootScriptUnspendableKey {
         spending_scripts: Vec<ProtocolScript>,
         spend_info: TaprootSpendInfo,
         internal_key: XOnlyPublicKey,
@@ -77,14 +78,14 @@ impl Serialize for OutputType {
                 state.serialize_field("prevouts", prevouts)?;
                 state.end()
             }
-            OutputType::TaprootScriptOnly {
+            OutputType::TaprootScriptUnspendableKey {
                 spending_scripts,
                 spend_info: _,
                 internal_key,
                 prevouts,
             } => {
                 let mut state = serializer.serialize_struct("OutputSpendingType", 3)?;
-                state.serialize_field("type", "taproot_script_only")?;
+                state.serialize_field("type", "taproot_script_unspendable_key")?;
                 state.serialize_field("spending_scripts", spending_scripts)?;
                 state.serialize_field("internal_key", internal_key)?;
                 state.serialize_field("prevouts", prevouts)?;
@@ -250,7 +251,7 @@ impl<'de> Deserialize<'de> for OutputType {
                             prevouts,
                         })
                     }
-                    "taproot_script_only" => {
+                    "taproot_script_unspendable_key" => {
                         let spending_scripts = spending_scripts
                             .ok_or_else(|| serde::de::Error::missing_field("spending_scripts"))?;
                         let internal_key = internal_key
@@ -267,7 +268,7 @@ impl<'de> Deserialize<'de> for OutputType {
                             eprintln!("Error creating taproot spend info: {:?}", e);
                             serde::de::Error::custom("Error creating taproot spend info")
                         })?;
-                        Ok(OutputType::TaprootScriptOnly {
+                        Ok(OutputType::TaprootScriptUnspendableKey {
                             spending_scripts,
                             spend_info,
                             internal_key,
@@ -358,12 +359,12 @@ impl OutputType {
         }
     }
 
-    pub fn new_taproot_script_only_spend(
+    pub fn new_taproot_script_unspendable_key_spend(
         spending_scripts: &[ProtocolScript],
         spend_info: &TaprootSpendInfo,
         prevouts: Vec<TxOut>,
     ) -> OutputType {
-        OutputType::TaprootScriptOnly {
+        OutputType::TaprootScriptUnspendableKey {
             spending_scripts: spending_scripts.to_vec(),
             spend_info: spend_info.clone(),
             internal_key: spend_info.internal_key(),
@@ -406,7 +407,7 @@ impl OutputType {
         match self {
             OutputType::TaprootUntweakedKey { .. } => "TaprootUntweakedKey",
             OutputType::TaprootTweakedKey { .. } => "TaprootTweakedKey",
-            OutputType::TaprootScriptOnly { .. } => "TaprootScriptOnly",
+            OutputType::TaprootScriptUnspendableKey { .. } => "TaprootScriptOnly",
             OutputType::TaprootScriptAndKey { .. } => "TaprootScriptAndKey",
             OutputType::SegwitPublicKey { .. } => "SegwitPublicKey",
             OutputType::SegwitScript { .. } => "SegwitScript",

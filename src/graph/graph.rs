@@ -216,7 +216,7 @@ impl TransactionGraph {
         &mut self,
         transaction_name: &str,
         input_index: u32,
-        message_hashes: Vec<Message>,
+        message_hashes: Vec<Option<Message>>,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
@@ -228,7 +228,7 @@ impl TransactionGraph {
         &mut self,
         transaction_name: &str,
         input_index: u32,
-        signatures: Vec<Signature>,
+        signatures: Vec<Option<Signature>>,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
         node.input_spending_infos[input_index as usize].set_signatures(signatures);
@@ -241,7 +241,7 @@ impl TransactionGraph {
         transaction_name: &str,
         input_index: u32,
         message_index: u32,
-    ) -> Result<Message, GraphError> {
+    ) -> Result<Option<Message>, GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
         Ok(
@@ -341,22 +341,6 @@ impl TransactionGraph {
                 Ok((name.clone(), node.input_spending_infos.clone()))
             })
             .collect()
-    }
-
-    pub fn get_all_sighashes(&self) -> Result<Vec<(MessageId, Message)>, GraphError> {
-        let mut all_sighashes = Vec::new();
-
-        for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
-            for (input_index, spending_info) in input_spending_infos.iter().enumerate() {
-                for (script_index, message) in spending_info.hashed_messages().iter().enumerate() {
-                    let message_id =
-                        MessageId::new(name.clone(), input_index as u32, script_index as u32);
-                    all_sighashes.push((message_id, *message));
-                }
-            }
-        }
-
-        Ok(all_sighashes)
     }
 
     pub fn get_output_for_input(
@@ -487,12 +471,13 @@ impl TransactionGraph {
         &self,
         name: &str,
         input_index: usize,
-    ) -> Result<bitcoin::ecdsa::Signature, GraphError> {
+    ) -> Result<Option<bitcoin::ecdsa::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(0)? {
-            Signature::Ecdsa(signature) => signature,
+            Some(Signature::Ecdsa(signature)) => Some(*signature),
+            None => None,
             _ => {
                 return Err(GraphError::InvalidSignatureType(
                     name.to_string(),
@@ -503,7 +488,7 @@ impl TransactionGraph {
             }
         };
 
-        Ok(*signature)
+        Ok(signature)
     }
 
     pub fn get_input_taproot_script_spend_signature(
@@ -511,12 +496,13 @@ impl TransactionGraph {
         name: &str,
         input_index: usize,
         leaf_index: usize,
-    ) -> Result<bitcoin::taproot::Signature, GraphError> {
+    ) -> Result<Option<bitcoin::taproot::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
         let signature = match spending_info.get_signature(leaf_index)? {
-            Signature::Taproot(signature) => signature,
+            Some(Signature::Taproot(signature)) => Some(*signature),
+            None => None,
             _ => {
                 return Err(GraphError::InvalidSignatureType(
                     name.to_string(),
@@ -527,14 +513,14 @@ impl TransactionGraph {
             }
         };
 
-        Ok(*signature)
+        Ok(signature)
     }
 
     pub fn get_input_taproot_key_spend_signature(
         &self,
         name: &str,
         input_index: usize,
-    ) -> Result<bitcoin::taproot::Signature, GraphError> {
+    ) -> Result<Option<bitcoin::taproot::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
         let spending_info = node.get_input_spending_info(input_index)?;
@@ -543,7 +529,8 @@ impl TransactionGraph {
             .last()
             .ok_or(GraphError::MissingSignature)?
         {
-            Signature::Taproot(signature) => signature,
+            Some(Signature::Taproot(signature)) => Some(*signature),
+            None => None,
             _ => {
                 return Err(GraphError::InvalidSignatureType(
                     name.to_string(),
@@ -554,7 +541,7 @@ impl TransactionGraph {
             }
         };
 
-        Ok(*signature)
+        Ok(signature)
     }
 
     pub fn contains_transaction(&self, name: &str) -> bool {
