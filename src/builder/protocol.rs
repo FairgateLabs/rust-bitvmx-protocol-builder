@@ -1591,13 +1591,13 @@ impl Protocol {
             )?;
 
             hashed_messages.push(Some(key_spend_hashed_message));
-
-            self.graph.update_hashed_messages(
-                transaction_name,
-                input_index as u32,
-                hashed_messages,
-            )?;
         };
+
+        self.graph.update_hashed_messages(
+            transaction_name,
+            input_index as u32,
+            hashed_messages,
+        )?;
 
         Ok(())
     }
@@ -1749,11 +1749,11 @@ impl Protocol {
             });
 
             signatures.push(Some(key_spend_signature));
-
-            // Update signatures for the input
-            self.graph
-                .update_input_signatures(transaction_name, input_index as u32, signatures)?;
         }
+
+        // Update signatures for the input
+        self.graph
+            .update_input_signatures(transaction_name, input_index as u32, signatures)?;
 
         Ok(())
     }
@@ -1943,11 +1943,11 @@ impl Protocol {
         if compute_key_path {
             // Compute a sighash and its signature for the key spend path.
 
-            // 1. Reconstruct the bitcoin::PublicKey from the XOnlyPublicKey to sign the message using the KeyManager.
+            // Reconstruct the bitcoin::PublicKey from the XOnlyPublicKey to sign the message using the KeyManager.
             // Taproot internal keys always have an Even parity.
             let full_public_key: PublicKey = internal_key.public_key(Parity::Even).into();
 
-            // 2. Compute and push a message hash for the key spend signature.
+            // Compute and push a message hash for the key spend signature.
             let key_spend_hashed_message =
                 Message::from(sighasher.taproot_key_spend_signature_hash(
                     input_index,
@@ -1957,7 +1957,7 @@ impl Protocol {
 
             hashed_messages.push(Some(key_spend_hashed_message));
 
-            // 3. Compute and push the key spend signature.
+            // Compute and push the key spend signature.
             let (schnorr_signature, output_key) = key_manager.sign_schnorr_message_with_tap_tweak(
                 &key_spend_hashed_message,
                 &full_public_key,
@@ -1969,7 +1969,7 @@ impl Protocol {
                 sighash_type: *sighash_type,
             });
 
-            // 4. Verify the signature:
+            // Verify the signature:
             if !SignatureVerifier::new().verify_schnorr_signature(
                 &schnorr_signature,
                 &key_spend_hashed_message,
@@ -1979,16 +1979,17 @@ impl Protocol {
             }
 
             signatures.push(Some(key_spend_signature));
-
-            // 5. Update hashes and signatures for the input
-            self.graph.update_hashed_messages(
-                transaction_name,
-                input_index as u32,
-                hashed_messages,
-            )?;
-            self.graph
-                .update_input_signatures(transaction_name, input_index as u32, signatures)?;
         };
+
+        // Update hashes and signatures for the input
+        self.graph.update_hashed_messages(
+            transaction_name,
+            input_index as u32,
+            hashed_messages,
+        )?;
+        
+        self.graph
+            .update_input_signatures(transaction_name, input_index as u32, signatures)?;
 
         Ok(())
     }
