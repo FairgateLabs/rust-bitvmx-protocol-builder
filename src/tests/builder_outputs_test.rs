@@ -34,7 +34,6 @@ mod tests {
             OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         // Arrange
         let number: u64 = 0;
@@ -66,7 +65,7 @@ mod tests {
                 &ecdsa_sighash_type,
             )?
             .add_op_return_output("op_return", data.clone())?
-            .build(id, &key_manager)?;
+            .build(&key_manager)?;
         let tx = protocol.transaction("op_return")?;
 
         // Assert

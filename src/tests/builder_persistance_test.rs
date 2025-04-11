@@ -44,10 +44,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         let tx = protocol.transaction("A")?;
         assert_eq!(tx.input.len(), 1);
@@ -84,10 +83,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -123,10 +121,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);

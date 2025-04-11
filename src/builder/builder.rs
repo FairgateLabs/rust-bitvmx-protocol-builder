@@ -29,18 +29,16 @@ impl ProtocolBuilder {
 
     pub fn build<K: KeyStore>(
         &mut self,
-        id: &str,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.build(id, key_manager)
+        self.protocol.build(key_manager)
     }
 
     pub fn sign<K: KeyStore>(
         &mut self,
-        id: &str,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.sign(id, key_manager)
+        self.protocol.sign(key_manager)
     }
 
     pub fn build_and_sign<K: KeyStore>(

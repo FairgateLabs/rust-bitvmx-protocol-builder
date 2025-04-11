@@ -245,7 +245,7 @@ impl Cli {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
         let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let key_manager = Rc::new(self.key_manager()?);
-        builder.build(protocol_name, &key_manager)?;
+        builder.build(&key_manager)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
