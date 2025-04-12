@@ -9,7 +9,7 @@ mod tests {
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
+        graph::{input::SighashType, output::OutputType},
         helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
@@ -38,7 +38,7 @@ mod tests {
         let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
 
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();

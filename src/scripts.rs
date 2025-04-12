@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use bitcoin::{
-    key::{Secp256k1, UntweakedPublicKey}, secp256k1::All, taproot::{TaprootBuilder, TaprootSpendInfo}, PublicKey, ScriptBuf, XOnlyPublicKey
+    key::{Secp256k1, UntweakedPublicKey},
+    secp256k1::All,
+    taproot::{TaprootBuilder, TaprootSpendInfo},
+    PublicKey, ScriptBuf, XOnlyPublicKey,
 };
 
 use bitcoin_scriptexec::treepp::*;
@@ -58,6 +61,7 @@ pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: PublicKey,
+    skip_signing: bool,
 }
 
 impl ProtocolScript {
@@ -66,6 +70,18 @@ impl ProtocolScript {
             script,
             keys: HashMap::new(),
             verifying_key: *verifying_key,
+            skip_signing: false,
+        }
+    }
+
+    // This constructor is used to flag scripts that will not required signing in the protocol builder.
+    // TODO: remove this. It is introduced temporarily to not break any current code that relays on the semantic of ProtocoslScript::new().
+    pub fn new_unsigned_script(script: ScriptBuf, verifying_key: &PublicKey) -> Self {
+        Self {
+            script,
+            keys: HashMap::new(),
+            verifying_key: *verifying_key,
+            skip_signing: true,
         }
     }
 
@@ -104,6 +120,10 @@ impl ProtocolScript {
 
     pub fn get_verifying_key(&self) -> PublicKey {
         self.verifying_key
+    }
+
+    pub fn skip_signing(&self) -> bool {
+        self.skip_signing
     }
 }
 
@@ -455,14 +475,14 @@ pub fn build_taproot_spend_info(
     taproot_spending_scripts: &[ProtocolScript],
 ) -> Result<TaprootSpendInfo, ScriptError> {
     let scripts_count = taproot_spending_scripts.len();
-    
+
     // For empty scripts, return error
     if scripts_count == 0 {
         return Err(ScriptError::NoScriptsProvided);
     }
-    
+
     let mut tr_builder = TaprootBuilder::new();
-    
+
     // For a single script, add it at depth 0
     if scripts_count == 1 {
         tr_builder = tr_builder.add_leaf(0, taproot_spending_scripts[0].get_script().clone())?;
@@ -470,9 +490,9 @@ pub fn build_taproot_spend_info(
             .finalize(secp, *internal_key)
             .map_err(|_| ScriptError::TapTreeFinalizeError);
     }
-    
+
     // For multiple scripts, build a balanced tree
-    // 
+    //
     // Example tree structure for 7 scripts:
     //
     //           [Root]
@@ -486,7 +506,7 @@ pub fn build_taproot_spend_info(
     // The algorithm calculates the minimum depth needed to hold all scripts
     // and then distributes the scripts between that depth and the next one
     // to maintain a balanced tree structure.
-    
+
     // Calculate the minimum depth needed to hold all scripts
     let min_depth = (scripts_count as f32 - 1.0).log2().floor() as u8;
     // Calculate how many nodes go at the minimum depth vs minimum depth + 1
@@ -494,14 +514,18 @@ pub fn build_taproot_spend_info(
     let nodes_at_min_depth = total_slots - scripts_count;
     // Add leaves at minimum depth
     for i in 0..nodes_at_min_depth {
-        tr_builder = tr_builder.add_leaf(min_depth, taproot_spending_scripts[i].get_script().clone())?;
+        tr_builder =
+            tr_builder.add_leaf(min_depth, taproot_spending_scripts[i].get_script().clone())?;
     }
-    
+
     // Add remaining leaves at minimum depth + 1
     for i in nodes_at_min_depth..scripts_count {
-        tr_builder = tr_builder.add_leaf(min_depth + 1, taproot_spending_scripts[i].get_script().clone())?;
+        tr_builder = tr_builder.add_leaf(
+            min_depth + 1,
+            taproot_spending_scripts[i].get_script().clone(),
+        )?;
     }
-    
+
     tr_builder
         .finalize(secp, *internal_key)
         .map_err(|_| ScriptError::TapTreeFinalizeError)
@@ -512,8 +536,7 @@ mod tests {
     use bitcoin::{
         hex::FromHex,
         opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP, OP_RETURN},
-        PublicKey,
-        XOnlyPublicKey
+        PublicKey, XOnlyPublicKey,
     };
     use std::str::FromStr;
 
@@ -768,9 +791,9 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
-            &[timelock(1, &public_key)]
-        ).expect("Failed to build taproot spend info");
+        let taproot_spend_info =
+            build_taproot_spend_info(&secp, &internal_key, &[timelock(1, &public_key)])
+                .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -787,9 +810,12 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
-            &[timelock(1, &public_key), timelock(2, &public_key)]
-        ).expect("Failed to build taproot spend info");
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
+            &[timelock(1, &public_key), timelock(2, &public_key)],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -806,9 +832,16 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
-            &[timelock(1, &public_key), timelock(2, &public_key), timelock(3, &public_key)]
-        ).expect("Failed to build taproot spend info");
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
+            &[
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -825,14 +858,17 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
             &[
-                timelock(1, &public_key), 
-                timelock(2, &public_key), 
-                timelock(3, &public_key), 
-                timelock(4, &public_key)
-            ]
-        ).expect("Failed to build taproot spend info");
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
+                timelock(4, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -849,15 +885,18 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
             &[
-                timelock(1, &public_key), 
-                timelock(2, &public_key), 
-                timelock(3, &public_key), 
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
                 timelock(4, &public_key),
-                timelock(5, &public_key)
-            ]
-        ).expect("Failed to build taproot spend info");
+                timelock(5, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -874,16 +913,19 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
             &[
-                timelock(1, &public_key), 
-                timelock(2, &public_key), 
-                timelock(3, &public_key), 
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
                 timelock(4, &public_key),
                 timelock(5, &public_key),
-                timelock(6, &public_key)
-            ]
-        ).expect("Failed to build taproot spend info");
+                timelock(6, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -900,17 +942,20 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         //
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
             &[
-                timelock(1, &public_key), 
-                timelock(2, &public_key), 
-                timelock(3, &public_key), 
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
                 timelock(4, &public_key),
                 timelock(5, &public_key),
                 timelock(6, &public_key),
-                timelock(7, &public_key)
-            ]
-        ).expect("Failed to build taproot spend info");
+                timelock(7, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
@@ -927,20 +972,23 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, 
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
             &[
-                timelock(1, &public_key), 
-                timelock(2, &public_key), 
-                timelock(3, &public_key), 
+                timelock(1, &public_key),
+                timelock(2, &public_key),
+                timelock(3, &public_key),
                 timelock(4, &public_key),
                 timelock(5, &public_key),
                 timelock(6, &public_key),
                 timelock(7, &public_key),
                 timelock(8, &public_key),
                 timelock(9, &public_key),
-                timelock(10, &public_key)
-            ]
-        ).expect("Failed to build taproot spend info");
+                timelock(10, &public_key),
+            ],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);

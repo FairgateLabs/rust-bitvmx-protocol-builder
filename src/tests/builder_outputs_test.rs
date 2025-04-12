@@ -12,7 +12,7 @@ mod tests {
     use crate::{
         builder::{ProtocolBuilder, SpendingArgs},
         errors::ProtocolBuilderError,
-        graph::output::OutputSpendingType,
+        graph::output::OutputType,
         scripts::ProtocolScript,
         tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
     };
@@ -31,10 +31,9 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         // Arrange
         let number: u64 = 0;
@@ -66,7 +65,7 @@ mod tests {
                 &ecdsa_sighash_type,
             )?
             .add_op_return_output("op_return", data.clone())?
-            .build(id, &key_manager)?;
+            .build(&key_manager)?;
         let tx = protocol.transaction("op_return")?;
 
         // Assert
@@ -108,7 +107,7 @@ mod tests {
         let public_key = key_manager.derive_keypair(0).unwrap();
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let speedup_value = 2450000;
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
@@ -139,6 +138,7 @@ mod tests {
 
         let signature = protocol
             .input_taproot_script_spend_signature("keypath_spend", 0, 0)
+            .unwrap()
             .unwrap();
         let mut spending_args = SpendingArgs::new_args();
         spending_args.push_taproot_signature(signature);

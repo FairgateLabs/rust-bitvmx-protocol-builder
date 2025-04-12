@@ -17,7 +17,7 @@ use tracing::info;
 use crate::{
     builder::ProtocolBuilder,
     config::Config,
-    graph::{input::SighashType, output::OutputSpendingType},
+    graph::{input::SighashType, output::OutputType},
     scripts::ProtocolScript,
     unspendable::unspendable_key,
 };
@@ -245,7 +245,7 @@ impl Cli {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
         let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let key_manager = Rc::new(self.key_manager()?);
-        builder.build(protocol_name, &key_manager)?;
+        builder.build(&key_manager)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
@@ -279,7 +279,7 @@ impl Cli {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         builder.connect_with_external_transaction(
             txid,

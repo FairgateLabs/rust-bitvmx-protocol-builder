@@ -6,7 +6,7 @@ use storage_backend::storage::Storage;
 
 use crate::{
     errors::ProtocolBuilderError,
-    graph::{input::SighashType, output::OutputSpendingType},
+    graph::{input::SighashType, output::OutputType},
     scripts::ProtocolScript,
 };
 
@@ -29,18 +29,16 @@ impl ProtocolBuilder {
 
     pub fn build<K: KeyStore>(
         &mut self,
-        id: &str,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.build(id, key_manager)
+        self.protocol.build(key_manager)
     }
 
     pub fn sign<K: KeyStore>(
         &mut self,
-        id: &str,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Protocol, ProtocolBuilderError> {
-        self.protocol.sign(id, key_manager)
+        self.protocol.sign(key_manager)
     }
 
     pub fn build_and_sign<K: KeyStore>(
@@ -78,6 +76,24 @@ impl ProtocolBuilder {
         spending_scripts: &[ProtocolScript],
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.protocol.add_taproot_script_spend_output(
+            transaction_name,
+            value,
+            internal_key,
+            spending_scripts,
+        )?;
+        self.save_protocol()?;
+
+        Ok(self)
+    }
+
+    pub fn add_taproot_script_unspendable_key_spend_output(
+        &mut self,
+        transaction_name: &str,
+        value: u64,
+        internal_key: &UntweakedPublicKey,
+        spending_scripts: &[ProtocolScript],
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.protocol.add_taproot_script_unspendable_key_spend_output(
             transaction_name,
             value,
             internal_key,
@@ -381,7 +397,7 @@ impl ProtocolBuilder {
         &mut self,
         txid: Txid,
         output_index: u32,
-        output_spending_type: OutputSpendingType,
+        output_spending_type: OutputType,
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {

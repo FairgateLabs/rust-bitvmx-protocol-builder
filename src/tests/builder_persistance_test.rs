@@ -10,7 +10,7 @@ mod tests {
     use crate::{
         builder::ProtocolBuilder,
         errors::ProtocolBuilderError,
-        graph::{input::SighashType, output::OutputSpendingType},
+        graph::{input::SighashType, output::OutputType},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
     };
@@ -28,7 +28,7 @@ mod tests {
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
         let output_spending_type =
-            OutputSpendingType::new_segwit_script_spend(&script, Amount::from_sat(value));
+            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
 
         let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         let mut builder = ProtocolBuilder::new("rounds", storage.clone())?;
@@ -44,10 +44,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         let tx = protocol.transaction("A")?;
         assert_eq!(tx.input.len(), 1);
@@ -84,10 +83,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
@@ -123,10 +121,9 @@ mod tests {
 
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let id = "id_1";
 
         let mut builder = ProtocolBuilder::new("rounds", storage)?;
-        let protocol = builder.build(id, &key_manager)?;
+        let protocol = builder.build(&key_manager)?;
 
         assert_eq!(protocol.transaction("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction("B").unwrap().input.len(), 1);
