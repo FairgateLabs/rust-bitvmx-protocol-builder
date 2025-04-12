@@ -254,6 +254,15 @@ impl TransactionGraph {
         Ok(&self.get_node(name)?.transaction)
     }
 
+    pub fn get_transaction_name_by_id(&self, txid: Txid) -> Result<&String, GraphError> {
+        for node in self.graph.node_weights() {
+            if node.transaction.compute_txid() == txid {
+                return Ok(&node.name);
+            }
+        }
+        Err(GraphError::TransactionNotFound(txid.to_string()))
+    }
+
     pub fn get_transaction_with_id(&self, txid: Txid) -> Result<&Transaction, GraphError> {
         for node in self.graph.node_weights() {
             if node.transaction.compute_txid() == txid {

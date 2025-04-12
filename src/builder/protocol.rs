@@ -853,6 +853,10 @@ impl Protocol {
         Ok(self.graph.get_transaction_with_id(txid)?)
     }
 
+    pub fn transaction_name_by_id(&self, txid: Txid) -> Result<&String, ProtocolBuilderError> {
+        Ok(self.graph.get_transaction_name_by_id(txid)?)
+    }
+
     pub fn transaction_without_witness(
         &self,
         transaction_name: &str,
