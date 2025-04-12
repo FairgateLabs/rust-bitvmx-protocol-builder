@@ -105,6 +105,11 @@ pub enum ProtocolBuilderError {
     #[error("Transaction with name {0} does not contained input with index {1}")]
     MissingInput(String, u32),
 
+    #[error(
+        "Transaction with name {0} does not contained message to sign for input with index {1}"
+    )]
+    MissingMessage(String, u32),
+
     #[error("Missing protocol")]
     MissingProtocol,
 
