@@ -10,9 +10,9 @@ repository = "https://github.com/FairgateLabs/rust-bitvmx-protocol-builder"
 name = "protocol_builder"
 
 [dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.98"
 bitcoin = { version = "0.32.4", features = ["std", "rand-std"]}
-clap = {version = "4.5.35", features = ["derive"]}
+clap = {version = "4.5.36", features = ["derive"]}
 config = "0.15.11"
 console = "0.15.8"
 crypto-hash = "0.3"
@@ -25,7 +25,7 @@ serde_json = "1.0.133"
 thiserror = "2.0.12"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-petgraph = {version = "0.7.1", features = ["serde-1"]}
+petgraph = {version = "0.8.1", features = ["serde-1"]}
 
 bitcoincore-rpc = { version = "0.19.0"}
 bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "bitvmx"}

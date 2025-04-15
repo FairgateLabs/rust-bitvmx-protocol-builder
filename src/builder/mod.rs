@@ -1,6 +1,5 @@
 mod builder;
+mod check_params;
 mod protocol;
 
-pub use self::{
-    builder::ProtocolBuilder, protocol::Protocol, protocol::SpendingArgs, protocol::Utxo,
-};
+pub use self::{builder::ProtocolBuilder, protocol::Protocol};

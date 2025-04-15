@@ -2,10 +2,7 @@ use std::{path::PathBuf, rc::Rc};
 
 use anyhow::{Ok, Result};
 
-use bitcoin::{
-    hashes::Hash, secp256k1, Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType,
-    XOnlyPublicKey,
-};
+use bitcoin::{hashes::Hash, secp256k1, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 use clap::{Parser, Subcommand};
 use key_manager::{
     create_database_key_store_from_config, create_key_manager_from_config, key_manager::KeyManager,
@@ -15,10 +12,10 @@ use storage_backend::storage::Storage;
 use tracing::info;
 
 use crate::{
-    builder::ProtocolBuilder,
+    builder::{Protocol, ProtocolBuilder},
     config::Config,
-    graph::{input::SighashType, output::OutputType},
     scripts::ProtocolScript,
+    types::{input::SighashType, output::OutputType},
     unspendable::unspendable_key,
 };
 
@@ -243,9 +240,14 @@ impl Cli {
 
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let key_manager = Rc::new(self.key_manager()?);
-        builder.build(&key_manager)?;
+
+        let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
+            Some(protocol) => protocol,
+            None => panic!("Failed to load protocol"),
+        };
+
+        protocol.build(false, &key_manager)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
@@ -253,9 +255,14 @@ impl Cli {
 
     fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let key_manager = Rc::new(self.key_manager()?);
-        builder.build_and_sign(&key_manager)?;
+
+        let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
+            Some(protocol) => protocol,
+            None => panic!("Failed to load protocol"),
+        };
+
+        protocol.build_and_sign(&key_manager)?;
 
         info!("Protocol {} built and signed", protocol_name);
 
@@ -271,23 +278,27 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
         let txid = Hash::all_zeros();
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let output_index = 0;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type =
-            OutputType::new_segwit_script_spend(&script, Amount::from_sat(value));
+        let output_spending_type = OutputType::segwit_script(value, &script)?;
 
-        builder.connect_with_external_transaction(
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
+        builder.add_external_connection(
+            &mut protocol,
             txid,
             output_index,
             output_spending_type,
             to,
             &ecdsa_sighash_type,
         )?;
+
+        protocol.save(storage)?;
 
         info!(
             "Connected Protocol {} with external transaction '{}'",
@@ -305,10 +316,15 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
+
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        builder.add_p2wpkh_output(transaction_name, value, &public_key)?;
+        builder.add_p2wpkh_output(&mut protocol, transaction_name, value, &public_key)?;
+
+        protocol.save(storage)?;
 
         info!("Added P2WPKH output to Protocol {}", protocol_name);
         Ok(())
@@ -323,10 +339,15 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
+
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        builder.add_speedup_output(transaction_name, value, &public_key)?;
+        builder.add_speedup_output(&mut protocol, transaction_name, value, &public_key)?;
+
+        protocol.save(storage)?;
 
         info!("Added Speedup output to Protocol {}", protocol_name);
         Ok(())
@@ -342,22 +363,31 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
+
         let mut rng = secp256k1::rand::thread_rng();
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
+
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
         builder.add_taproot_script_spend_connection(
+            &mut protocol,
             "protocol",
             from,
             value,
             &internal_key,
             &[script.clone()],
+            true,
+            vec![],
             to,
             &sighash_type,
         )?;
+
+        protocol.save(storage)?;
 
         info!(
             "Added Taproot script spend connection to Protocol {}",
@@ -378,24 +408,33 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
+
         let mut rng = secp256k1::rand::thread_rng();
-        let internal_key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
+        let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
+
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
         builder.add_timelock_connection(
+            &mut protocol,
             from,
             value,
             &internal_key,
             &expired_from,
             &renew_from,
+            true,
+            vec![],
             to,
             blocks,
             &sighash_type,
         )?;
+
+        protocol.save(storage)?;
 
         info!("Added Timelock connection to Protocol {}", protocol_name);
         Ok(())
@@ -413,22 +452,30 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
-        let mut builder = ProtocolBuilder::new(protocol_name, storage)?;
+
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
-        builder.connect_rounds(
+
+        let mut protocol = Protocol::new(protocol_name);
+        let builder = ProtocolBuilder {};
+
+        builder.connect_taproot_script_spend_rounds(
+            &mut protocol,
             "rounds",
             rounds,
             from,
             to,
             value,
-            &XOnlyPublicKey::from(public_key),
+            &public_key,
             &[script.clone()],
             &[script.clone()],
+            true,
             &sighash_type,
         )?;
+
+        protocol.save(storage)?;
 
         info!(
             "Connected rounds from '{}' to '{}' in Protocol {}",

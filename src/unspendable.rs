@@ -1,5 +1,5 @@
 use bitcoin::{
-    key::{rand::Rng, Secp256k1},
+    key::{rand::Rng, Parity, Secp256k1},
     secp256k1::{self, SecretKey},
     PublicKey,
 };
@@ -38,5 +38,14 @@ pub fn unspendable_key<R: Rng + ?Sized>(rng: &mut R) -> Result<PublicKey, Unspen
         }
     })?;
 
-    Ok(PublicKey::new(result))
+    // Adjust result public key parity to be even for Taproot compatibility
+    let (_, parity) = result.x_only_public_key();
+
+    let unspendable_key = if parity == Parity::Odd {
+        PublicKey::new(result.negate(&secp))
+    } else {
+        PublicKey::new(result)
+    };
+
+    Ok(unspendable_key)
 }

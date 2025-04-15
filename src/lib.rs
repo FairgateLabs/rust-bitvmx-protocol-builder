@@ -6,4 +6,5 @@ pub mod graph;
 pub mod helpers;
 pub mod scripts;
 pub mod tests;
+pub mod types;
 pub mod unspendable;
