@@ -42,16 +42,16 @@ impl ProtocolBuilder {
         transaction_name: &str,
         value: u64,
         internal_key: &PublicKey,
-        spending_scripts: &[ProtocolScript],
+        leaves: &[ProtocolScript],
         with_key_path: bool,
         prevouts: Vec<TxOut>,
     ) -> Result<&Self, ProtocolBuilderError> {
-        check_empty_scripts(spending_scripts)?;
+        check_empty_scripts(leaves)?;
 
         let output_type = OutputType::tr_script(
             value,
             internal_key,
-            spending_scripts,
+            leaves,
             with_key_path,
             prevouts,
         )?;
@@ -234,7 +234,7 @@ impl ProtocolBuilder {
         from: &str,
         value: u64,
         internal_key: &PublicKey,
-        spending_scripts: &[ProtocolScript],
+        leaves: &[ProtocolScript],
         with_key_path: bool,
         prevouts: Vec<TxOut>,
         to: &str,
@@ -245,7 +245,7 @@ impl ProtocolBuilder {
             from,
             value,
             internal_key,
-            spending_scripts,
+            leaves,
             with_key_path,
             prevouts,
         )?;
@@ -427,8 +427,8 @@ impl ProtocolBuilder {
         to: &str,
         value: u64,
         internal_key: &PublicKey,
-        spending_scripts_from: &[ProtocolScript],
-        spending_scripts_to: &[ProtocolScript],
+        leaves_from: &[ProtocolScript],
+        leaves_to: &[ProtocolScript],
         with_key_path: bool,
         sighash_type: &SighashType,
     ) -> Result<(String, String), ProtocolBuilderError> {
@@ -444,11 +444,11 @@ impl ProtocolBuilder {
             from_round = format!("{0}_{1}", from, round);
             to_round = format!("{0}_{1}", to, round);
 
-            // Connection between the from and to transactions using the spending_scripts_from.
+            // Connection between the from and to transactions using the leaves_from.
             let output_type = OutputType::tr_script(
                 value,
                 internal_key,
-                spending_scripts_from,
+                leaves_from,
                 with_key_path,
                 vec![],
             )?;
@@ -464,11 +464,11 @@ impl ProtocolBuilder {
             from_round = format!("{0}_{1}", from, round + 1);
             to_round = format!("{0}_{1}", to, round);
 
-            // Reverse connection between the to and from transactions using the spending_scripts_to.
+            // Reverse connection between the to and from transactions using the leaves_to.
             let output_type = OutputType::tr_script(
                 value,
                 internal_key,
-                spending_scripts_to,
+                leaves_to,
                 with_key_path,
                 vec![],
             )?;
@@ -486,11 +486,11 @@ impl ProtocolBuilder {
         from_round = format!("{0}_{1}", from, rounds - 1);
         to_round = format!("{0}_{1}", to, rounds - 1);
 
-        // Last direct connection using spending_scripts_from.
+        // Last direct connection using leaves_from.
         let output_type = OutputType::tr_script(
             value,
             internal_key,
-            spending_scripts_from,
+            leaves_from,
             with_key_path,
             vec![],
         )?;

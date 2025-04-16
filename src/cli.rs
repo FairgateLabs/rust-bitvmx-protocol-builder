@@ -284,7 +284,7 @@ impl Cli {
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
@@ -293,7 +293,7 @@ impl Cli {
             &mut protocol,
             txid,
             output_index,
-            output_spending_type,
+            output_type,
             to,
             &ecdsa_sighash_type,
         )?;

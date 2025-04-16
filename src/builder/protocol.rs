@@ -1,7 +1,7 @@
 use bitcoin::{
     hashes::Hash,
     locktime, secp256k1,
-    taproot::{LeafVersion, TaprootSpendInfo},
+    taproot::LeafVersion,
     transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
     XOnlyPublicKey,
 };
@@ -15,9 +15,8 @@ use crate::{
     graph::graph::TransactionGraph,
     scripts::ProtocolScript,
     types::{
-        input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
+        input::{InputSignatures, InputInfo, SighashType, Signature, InputArgs},
         output::OutputType,
-        SpendingArgs,
     },
     unspendable::unspendable_key,
 };
@@ -230,20 +229,20 @@ impl Protocol {
     pub fn transaction_to_send(
         &self,
         transaction_name: &str,
-        spending_args: &[SpendingArgs],
+        args: &[InputArgs],
     ) -> Result<Transaction, ProtocolBuilderError> {
         let mut transaction = self
             .graph
             .get_transaction_by_name(transaction_name)?
             .clone();
 
-        for (input_index, spending_condition) in
+        for (input_index, input) in
             self.graph.get_inputs(transaction_name)?.iter().enumerate()
         {
             let witness = self.get_witness_for_input(
                 input_index,
-                spending_condition,
-                &spending_args[input_index],
+                input,
+                &args[input_index],
             )?;
             transaction.input[input_index].witness = witness;
         }
@@ -264,10 +263,10 @@ impl Protocol {
         Ok(next_transactions)
     }
 
-    pub fn spending_info(
+    pub fn inputs(
         &self,
         transaction_name: &str,
-    ) -> Result<Vec<InputSpendingInfo>, ProtocolBuilderError> {
+    ) -> Result<Vec<InputInfo>, ProtocolBuilderError> {
         Ok(self.graph.get_inputs(transaction_name)?)
     }
 
@@ -354,18 +353,18 @@ impl Protocol {
         input_index: u32,
         script_index: u32,
     ) -> Result<ProtocolScript, ProtocolBuilderError> {
-        let input_spending_info = self
+        let input = self
             .graph
-            .get_input_spending_info(transaction_name, input_index as usize)?;
+            .get_input(transaction_name, input_index as usize)?;
 
-        let script = match input_spending_info.output_type()? {
+        let script = match input.output_type()? {
             OutputType::TaprootScript {
-                spending_scripts, ..
-            } => spending_scripts[script_index as usize].clone(),
-            // TODO complete this for all other spending types and remove the "Unknown output type".to_string() value in the error
+                leaves, ..
+            } => leaves[script_index as usize].clone(),
+            // TODO complete this for all other output types and remove the "Unknown output type".to_string() value in the error
             OutputType::SegwitScript { script, .. } => script.clone(),
             _ => {
-                return Err(ProtocolBuilderError::InvalidSpendingTypeForScript(
+                return Err(ProtocolBuilderError::CannotGetScriptForOutputType(
                     transaction_name.to_string(),
                     input_index,
                     script_index,
@@ -525,38 +524,42 @@ impl Protocol {
     fn get_witness_for_input(
         &self,
         input_index: usize,
-        spending_condition: &InputSpendingInfo,
-        spending_args: &SpendingArgs,
+        input: &InputInfo,
+        args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
-        let witness = match spending_condition.sighash_type() {
-            SighashType::Taproot(..) => match spending_condition.output_type()? {
-                OutputType::TaprootKey { .. } => self.taproot_key_spend_witness(spending_args)?,
-                OutputType::TaprootScript { .. } => match spending_args.get_taproot_leaf() {
-                    Some(taproot_leaf) => self.taproot_script_spend_witness(
-                        input_index,
-                        &taproot_leaf,
-                        &spending_condition
-                            .output_type()?
-                            .get_taproot_spend_info()?
-                            .unwrap(),
-                        spending_args,
-                    )?,
-                    None => return Err(ProtocolBuilderError::MissingTaprootLeaf(input_index)),
+        let witness = match input.sighash_type() {
+            SighashType::Taproot(..) => match input.output_type()? {
+                OutputType::TaprootKey { .. } => self.taproot_key_spend_witness(args)?,
+                OutputType::TaprootScript { .. } => {
+                    match args {
+                        InputArgs::TaprootScript { leaf_index, .. } => {
+                            self.taproot_script_spend_witness(
+                                input_index,
+                                *leaf_index,
+                                input,
+                                args,
+                            )?
+                        }
+                        InputArgs::TaprootKey { .. } => {
+                            self.taproot_key_spend_witness(args)?
+                        }
+                        _ => return Err(ProtocolBuilderError::InvalidInputArgsType("TaprootScript or TaprootKey".to_string(), "Segwit".to_string())),
+                    }
                 },
-                _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
             },
-            SighashType::Ecdsa(..) => match spending_condition.output_type()? {
+            SighashType::Ecdsa(..) => match input.output_type()? {
                 OutputType::SegwitPublicKey { public_key, .. } => {
-                    self.segwit_key_spend_witness(public_key, spending_args)?
+                    self.segwit_key_spend_witness(public_key, args)?
                 }
                 OutputType::SegwitScript { ref script, .. } => {
-                    self.segwit_script_spend_witness(script, spending_args)?
+                    self.segwit_script_spend_witness(script, args)?
                 }
                 OutputType::SegwitUnspendable { .. } => {
                     // Create an empty witness for unspendable outputs
                     Witness::new()
                 }
-                _ => return Err(ProtocolBuilderError::InvalidSpendingTypeForSighashType),
+                _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
             },
         };
 
@@ -571,10 +574,10 @@ impl Protocol {
 
     fn taproot_key_spend_witness(
         &self,
-        spending_args: &SpendingArgs,
+        args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let mut witness = Witness::default();
-        for value in spending_args.iter() {
+        for value in args.iter() {
             witness.push(value.clone());
             //last element in script_args is the signature
             //witness.push(signature.serialize());
@@ -586,35 +589,47 @@ impl Protocol {
     fn taproot_script_spend_witness(
         &self,
         input_index: usize,
-        taproot_leaf: &ScriptBuf,
-        spend_info: &TaprootSpendInfo,
-        spending_args: &SpendingArgs,
+        leaf_index: usize,
+        input: &InputInfo,
+        args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
+        let spend_info = &input
+            .output_type()?
+            .get_taproot_spend_info()?
+            .unwrap();
+
+        let leaf = match input.output_type()? {
+            OutputType::TaprootScript {
+                leaves,
+                ..
+            } => leaves[leaf_index].get_script().clone(),
+            _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
+        };
 
         let control_block =
-            match spend_info.control_block(&(taproot_leaf.clone(), LeafVersion::TapScript)) {
+            match spend_info.control_block(&(leaf.clone(), LeafVersion::TapScript)) {
                 Some(cb) => cb,
-                None => return Err(ProtocolBuilderError::InvalidSpendingScript(input_index)),
+                None => return Err(ProtocolBuilderError::InvalidLeaf(input_index)),
             };
 
         if !control_block.verify_taproot_commitment(
             &secp,
             spend_info.output_key().to_inner(),
-            taproot_leaf,
+            &leaf,
         ) {
-            return Err(ProtocolBuilderError::InvalidSpendingScript(input_index));
+            return Err(ProtocolBuilderError::InvalidLeaf(input_index));
         }
 
         let mut witness = Witness::default();
 
-        for value in spending_args.iter() {
+        for value in args.iter() {
             witness.push(value.clone());
             //last element in script_args is the signature
             //witness.push(signature.serialize());
         }
 
-        witness.push(taproot_leaf.to_bytes());
+        witness.push(leaf.to_bytes());
         witness.push(control_block.serialize());
 
         Ok(witness)
@@ -623,10 +638,10 @@ impl Protocol {
     fn segwit_key_spend_witness(
         &self,
         public_key: &PublicKey,
-        spending_args: &SpendingArgs,
+        args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let mut witness = Witness::default();
-        for value in spending_args.iter() {
+        for value in args.iter() {
             witness.push(value.clone());
             //last element in script_args is the signature
             //witness.push(signature.serialize());
@@ -639,10 +654,10 @@ impl Protocol {
     fn segwit_script_spend_witness(
         &self,
         script: &ProtocolScript,
-        spending_args: &SpendingArgs,
+        args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let mut witness = Witness::default();
-        for value in spending_args.iter() {
+        for value in args.iter() {
             witness.push(value.clone());
             //last element in script_args is the signature
             //witness.push(signature.serialize());

@@ -15,8 +15,8 @@ mod test {
         let node = Node::new("test_tx", tx);
 
         assert_eq!(node.name, "test_tx");
-        assert_eq!(node.output_types.len(), 0);
-        assert_eq!(node.input_spending_infos.len(), 0);
+        assert_eq!(node.outputs.len(), 0);
+        assert_eq!(node.inputs.len(), 0);
     }
 
     #[test]
@@ -93,19 +93,19 @@ mod test {
     }
 
     #[test]
-    fn test_missing_input_spending_info() {
+    fn test_missing_input_info() {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
         let node = Node::new("test_tx", tx);
 
-        let result = node.get_input_spending_info(0);
+        let result = node.get_input(0);
         assert!(result.is_err());
 
-        if let Err(GraphError::MissingInputSpendingInfo(name, index)) = result {
+        if let Err(GraphError::MissingInputInfo(name, index)) = result {
             assert_eq!(name, "test_tx");
             assert_eq!(index, 0);
         } else {
-            panic!("Expected MissingInputSpendingInfo error");
+            panic!("Expected MissingInputInfo error");
         }
     }
 }

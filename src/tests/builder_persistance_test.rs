@@ -26,7 +26,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let storage = Rc::new(Storage::new_with_path(&test_dir.path("protocol"))?);
         //let mut builder = ProtocolBuilder::new("rounds", storage.clone())?;
@@ -38,7 +38,7 @@ mod tests {
             &mut protocol,
             txid,
             output_index,
-            output_spending_type,
+            output_type,
             "A",
             &ecdsa_sighash_type,
         )?;

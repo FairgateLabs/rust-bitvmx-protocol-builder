@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::GraphError,
     types::{
-        input::{InputSignatures, InputSpendingInfo, SighashType, Signature},
+        input::{InputSignatures, InputInfo, SighashType, Signature},
         output::OutputType,
     },
 };
@@ -22,8 +22,8 @@ use crate::{
 pub(crate) struct Node {
     pub(crate) name: String,
     pub(crate) transaction: Transaction,
-    pub(crate) output_types: Vec<OutputType>,
-    pub(crate) input_spending_infos: Vec<InputSpendingInfo>,
+    pub(crate) outputs: Vec<OutputType>,
+    pub(crate) inputs: Vec<InputInfo>,
 }
 
 impl Node {
@@ -31,18 +31,18 @@ impl Node {
         Node {
             name: name.to_string(),
             transaction,
-            output_types: vec![],
-            input_spending_infos: vec![],
+            outputs: vec![],
+            inputs: vec![],
         }
     }
 
-    pub(crate) fn get_input_spending_info(
+    pub(crate) fn get_input(
         &self,
         input_index: usize,
-    ) -> Result<&InputSpendingInfo, GraphError> {
-        self.input_spending_infos
+    ) -> Result<&InputInfo, GraphError> {
+        self.inputs
             .get(input_index)
-            .ok_or(GraphError::MissingInputSpendingInfo(
+            .ok_or(GraphError::MissingInputInfo(
                 self.name.clone(),
                 input_index,
             ))
@@ -158,8 +158,8 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
-        node.input_spending_infos
-            .push(InputSpendingInfo::new(sighash_type));
+        node.inputs
+            .push(InputInfo::new(sighash_type));
         Ok(())
     }
 
@@ -171,7 +171,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
-        node.output_types.push(output_type);
+        node.outputs.push(output_type);
         Ok(())
     }
 
@@ -194,7 +194,7 @@ impl TransactionGraph {
 
         let to_node = self.get_node_mut(to)?;
 
-        to_node.input_spending_infos[input_index as usize].set_output_type(output_type)?;
+        to_node.inputs[input_index as usize].set_output_type(output_type)?;
 
         Ok(())
     }
@@ -206,7 +206,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let to_node = self.get_node_mut(to)?;
 
-        to_node.input_spending_infos[to_node.transaction.input.len() - 1]
+        to_node.inputs[to_node.transaction.input.len() - 1]
             .set_output_type(output_type)?;
 
         Ok(())
@@ -220,7 +220,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
-        node.input_spending_infos[input_index as usize].set_hashed_messages(message_hashes);
+        node.inputs[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
     }
 
@@ -231,7 +231,7 @@ impl TransactionGraph {
         signatures: Vec<Option<Signature>>,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
-        node.input_spending_infos[input_index as usize].set_signatures(signatures);
+        node.inputs[input_index as usize].set_signatures(signatures);
 
         Ok(())
     }
@@ -245,7 +245,7 @@ impl TransactionGraph {
         let node = self.get_node_mut(transaction_name)?;
 
         Ok(
-            node.input_spending_infos[input_index as usize].hashed_messages()
+            node.inputs[input_index as usize].hashed_messages()
                 [message_index as usize],
         )
     }
@@ -328,13 +328,13 @@ impl TransactionGraph {
         result
     }
 
-    pub fn get_inputs(&self, name: &str) -> Result<Vec<InputSpendingInfo>, GraphError> {
-        Ok(self.get_node(name)?.input_spending_infos.clone())
+    pub fn get_inputs(&self, name: &str) -> Result<Vec<InputInfo>, GraphError> {
+        Ok(self.get_node(name)?.inputs.clone())
     }
 
-    pub fn get_transaction_spending_infos(
+    pub fn get_transaction_inputs(
         &self,
-    ) -> Result<HashMap<String, Vec<InputSpendingInfo>>, GraphError> {
+    ) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
         self.node_indexes
             .keys()
             .map(|name| {
@@ -344,7 +344,7 @@ impl TransactionGraph {
                     .node_weight(node_index)
                     .ok_or(GraphError::MissingTransaction(name.to_string()))?;
 
-                Ok((name.clone(), node.input_spending_infos.clone()))
+                Ok((name.clone(), node.inputs.clone()))
             })
             .collect()
     }
@@ -360,7 +360,7 @@ impl TransactionGraph {
             let connection = self.get_connection(edge)?;
             if connection.input_index == input_index {
                 let from = self.get_from_node(edge)?;
-                return Ok(from.output_types[connection.output_index as usize].clone());
+                return Ok(from.outputs[connection.output_index as usize].clone());
             }
         }
 
@@ -384,8 +384,8 @@ impl TransactionGraph {
     pub fn get_all_signatures(&self) -> Result<HashMap<String, Vec<InputSignatures>>, GraphError> {
         let mut all_signatures = HashMap::new();
 
-        for (name, input_spending_infos) in self.get_transaction_spending_infos()? {
-            let signatures = input_spending_infos
+        for (name, inputs) in self.get_transaction_inputs()? {
+            let signatures = inputs
                 .iter()
                 .map(|info| InputSignatures::new(info.signatures().clone()))
                 .collect();
@@ -395,14 +395,14 @@ impl TransactionGraph {
         Ok(all_signatures)
     }
 
-    pub fn get_input_spending_info(
+    pub fn get_input(
         &self,
         name: &str,
         input_index: usize,
-    ) -> Result<InputSpendingInfo, GraphError> {
+    ) -> Result<InputInfo, GraphError> {
         Ok(self
             .get_node(name)?
-            .get_input_spending_info(input_index)?
+            .get_input(input_index)?
             .clone())
     }
 
@@ -413,8 +413,8 @@ impl TransactionGraph {
     ) -> Result<Option<bitcoin::ecdsa::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
-        let spending_info = node.get_input_spending_info(input_index)?;
-        let signature = match spending_info.get_signature(0)? {
+        let input = node.get_input(input_index)?;
+        let signature = match input.get_signature(0)? {
             Some(Signature::Ecdsa(signature)) => Some(*signature),
             None => None,
             _ => {
@@ -438,8 +438,8 @@ impl TransactionGraph {
     ) -> Result<Option<bitcoin::taproot::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
-        let spending_info = node.get_input_spending_info(input_index)?;
-        let signature = match spending_info.get_signature(leaf_index)? {
+        let input = node.get_input(input_index)?;
+        let signature = match input.get_signature(leaf_index)? {
             Some(Signature::Taproot(signature)) => Some(*signature),
             None => None,
             _ => {
@@ -462,8 +462,8 @@ impl TransactionGraph {
     ) -> Result<Option<bitcoin::taproot::Signature>, GraphError> {
         let node = self.get_node(name)?;
 
-        let spending_info = node.get_input_spending_info(input_index)?;
-        let signature = match spending_info
+        let input = node.get_input(input_index)?;
+        let signature = match input
             .signatures()
             .last()
             .ok_or(GraphError::MissingSignature)?
@@ -598,7 +598,7 @@ impl TransactionGraph {
         transaction_name: &str,
         output_index: u32,
     ) -> Result<OutputType, GraphError> {
-        Ok(self.get_node(transaction_name)?.output_types[output_index as usize].clone())
+        Ok(self.get_node(transaction_name)?.outputs[output_index as usize].clone())
     }
 
     // Getters for testing purposes

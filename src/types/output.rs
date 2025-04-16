@@ -37,9 +37,6 @@ impl Utxo {
     }
 }
 
-// TODO: Alias for OutputType to minimized changes outside this crate. Eventually we will remove it.
-pub type OutputSpendingType = OutputType;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
     TaprootKey {
@@ -53,7 +50,7 @@ pub enum OutputType {
         value: Amount,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
-        spending_scripts: Vec<ProtocolScript>,
+        leaves: Vec<ProtocolScript>,
         with_key_path: bool,
         prevouts: Vec<TxOut>,
     },
@@ -110,12 +107,12 @@ impl OutputType {
     pub fn tr_script(
         value: u64,
         internal_key: &PublicKey,
-        spending_scripts: &[ProtocolScript],
+        leaves: &[ProtocolScript],
         with_key_path: bool,
         prevouts: Vec<TxOut>,
     ) -> Result<Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
-        let spend_info = Self::compute_spend_info(internal_key, spending_scripts)?;
+        let spend_info = Self::compute_spend_info(internal_key, leaves)?;
 
         let script_pubkey =
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
@@ -124,7 +121,7 @@ impl OutputType {
             value: Amount::from_sat(value),
             internal_key: *internal_key,
             script_pubkey,
-            spending_scripts: spending_scripts.to_vec(),
+            leaves: leaves.to_vec(),
             with_key_path,
             prevouts,
         })
@@ -210,12 +207,12 @@ impl OutputType {
     pub fn get_taproot_spend_info(&self) -> Result<Option<TaprootSpendInfo>, ProtocolBuilderError> {
         match self {
             OutputType::TaprootScript {
-                spending_scripts,
+                leaves,
                 internal_key,
                 ..
             } => Ok(Some(Self::compute_spend_info(
                 internal_key,
-                spending_scripts,
+                leaves,
             )?)),
             _ => Ok(None),
         }
@@ -257,15 +254,15 @@ impl OutputType {
             }
             OutputType::TaprootScript {
                 internal_key,
-                spending_scripts,
+                leaves,
                 with_key_path,
                 ..
             } => {
                 let mut hasher = SighashCache::new(transaction);
 
                 let mut hashed_messages = vec![];
-                for (script_index, spending_script) in spending_scripts.iter().enumerate() {
-                    if spending_script.skip_signing() {
+                for (script_index, leaf) in leaves.iter().enumerate() {
+                    if leaf.skip_signing() {
                         hashed_messages.push(None);
                         continue;
                     }
@@ -275,7 +272,7 @@ impl OutputType {
                             input_index,
                             &sighash::Prevouts::All(&prevouts),
                             TapLeafHash::from_script(
-                                spending_script.get_script(),
+                                leaf.get_script(),
                                 LeafVersion::TapScript,
                             ),
                             *tap_sighash_type,
@@ -290,7 +287,7 @@ impl OutputType {
                             )
                             .as_str(),
                             hashed_message.as_ref().to_vec(),
-                            internal_key,
+                            &leaf.get_verifying_key(),
                             None,
                         )?;
                     };
@@ -308,7 +305,7 @@ impl OutputType {
                         )?);
 
                     if musig2 {
-                        let spend_info = Self::compute_spend_info(internal_key, spending_scripts)?;
+                        let spend_info = Self::compute_spend_info(internal_key, leaves)?;
 
                         let tweak = TapTweakHash::from_key_and_tweak(
                             XOnlyPublicKey::from(*internal_key),
@@ -322,7 +319,7 @@ impl OutputType {
                             MessageId::new_string_id(
                                 transaction_name,
                                 input_index as u32,
-                                spending_scripts.len() as u32,
+                                leaves.len() as u32,
                             )
                             .as_str(),
                             key_spend_hashed_message.as_ref().to_vec(),
@@ -459,18 +456,18 @@ impl OutputType {
             }
             OutputType::TaprootScript {
                 internal_key,
-                spending_scripts,
+                leaves,
                 with_key_path,
                 ..
             } => {
                 assert!(
-                    hashed_messages.len() == spending_scripts.len() + 1,
-                    "Expected one message for each spending script and one for the key spend path"
+                    hashed_messages.len() == leaves.len() + 1,
+                    "Expected one message for each script and one for the key spend path"
                 );
 
                 let mut signatures = vec![];
-                for (index, spending_script) in spending_scripts.iter().enumerate() {
-                    if spending_script.skip_signing() {
+                for (index, leaf) in leaves.iter().enumerate() {
+                    if leaf.skip_signing() {
                         signatures.push(None);
                         continue;
                     }
@@ -481,11 +478,11 @@ impl OutputType {
                             input_index as u32,
                             index as u32,
                         );
-                        key_manager.get_aggregated_signature(internal_key, &message_id)?
+                        key_manager.get_aggregated_signature(&leaf.get_verifying_key(), &message_id)?
                     } else {
                         key_manager.sign_schnorr_message(
                             &hashed_messages[index].unwrap(),
-                            &spending_script.get_verifying_key(),
+                            &leaf.get_verifying_key(),
                         )?
                     };
 
@@ -500,18 +497,18 @@ impl OutputType {
                 if *with_key_path {
                     // Compute a signature for the key spend path.
                     let key_spend_hashed_message = hashed_messages.last().unwrap().unwrap();
-                    hashed_messages[spending_scripts.len()].as_ref().unwrap();
+                    hashed_messages[leaves.len()].as_ref().unwrap();
 
                     let schnorr_signature = if musig2 {
                         let message_id = MessageId::new_string_id(
                             transaction_name,
                             input_index as u32,
-                            spending_scripts.len() as u32,
+                            leaves.len() as u32,
                         );
 
                         key_manager.get_aggregated_signature(internal_key, &message_id)?
                     } else {
-                        let spend_info = Self::compute_spend_info(internal_key, spending_scripts)?;
+                        let spend_info = Self::compute_spend_info(internal_key, leaves)?;
 
                         let (schnorr_signature, output_key) = key_manager
                             .sign_schnorr_message_with_tap_tweak(
@@ -615,13 +612,13 @@ impl OutputType {
 
     fn compute_spend_info(
         internal_key: &PublicKey,
-        spending_scripts: &[ProtocolScript],
+        leaves: &[ProtocolScript],
     ) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let spend_info = scripts::build_taproot_spend_info(
             &secp,
             &XOnlyPublicKey::from(*internal_key),
-            spending_scripts,
+            leaves,
         )?;
         Ok(spend_info)
     }

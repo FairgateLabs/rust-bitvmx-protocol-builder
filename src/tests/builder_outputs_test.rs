@@ -11,7 +11,7 @@ mod tests {
         errors::ProtocolBuilderError,
         scripts::ProtocolScript,
         tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
-        types::{output::OutputType, SpendingArgs},
+        types::{input::InputArgs, output::OutputType},
     };
 
     #[test]
@@ -27,7 +27,7 @@ mod tests {
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
         let key_manager =
             new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
 
@@ -58,7 +58,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "op_return",
                 &ecdsa_sighash_type,
             )?
@@ -69,14 +69,12 @@ mod tests {
 
         // Assert
         let script_op_return = tx.output[0].script_pubkey.clone();
-        //println!("script_op_return: {:?}", script_op_return);
         assert_eq!(hex::encode(script_op_return.to_bytes()), "6a4552534b5f504547494e00000000000000007ac5496aee77c1ba1f0854206a26dda82a81d6d8741976f972e9aa5e226eae26289b794aac9bbe702f378aa64c6104f16b79298c");
 
         let instructions = script_op_return
             .instructions()
             .flatten()
             .collect::<Vec<_>>();
-        //println!("instructions: {:?}", instructions);
         assert_eq!(instructions.len(), 2, "Script should have 2 instructions");
         assert_eq!(
             instructions[0].opcode(),
@@ -105,7 +103,7 @@ mod tests {
         let output_index = 0;
         let public_key = key_manager.derive_keypair(0).unwrap();
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
         let pubkey_alice = key_manager.derive_keypair(1).unwrap();
@@ -119,7 +117,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "keypath_origin",
                 &ecdsa_sighash_type,
             )?
@@ -148,10 +146,10 @@ mod tests {
             .input_taproot_script_spend_signature("keypath_spend", 0, 0)
             .unwrap()
             .unwrap();
-        let mut spending_args = SpendingArgs::new_args();
-        spending_args.push_taproot_signature(signature);
+        let mut args = InputArgs::new_taproot_key_args();
+        args.push_taproot_signature(signature)?;
         // This methods adds the witness and other impiortant information to the transaction
-        let transaction = protocol.transaction_to_send("keypath_spend", &[spending_args])?;
+        let transaction = protocol.transaction_to_send("keypath_spend", &[args])?;
 
         let tx_origin = protocol.transaction_by_name("keypath_origin")?;
         let tx_spend = protocol.transaction_by_name("keypath_spend")?;
@@ -163,7 +161,6 @@ mod tests {
             "Origin transaction should have 2 outputs"
         );
         let script_taproot_output = tx_origin.output[0].script_pubkey.clone();
-        //println!("script_taproot_output: {:?}", hex::encode(script_taproot_output.to_bytes()));
         let taproot_output_instructions = script_taproot_output
             .instructions()
             .flatten()

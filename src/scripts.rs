@@ -472,9 +472,9 @@ pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScr
 pub fn build_taproot_spend_info(
     secp: &Secp256k1<All>,
     internal_key: &UntweakedPublicKey,
-    taproot_spending_scripts: &[ProtocolScript],
+    leaves: &[ProtocolScript],
 ) -> Result<TaprootSpendInfo, ScriptError> {
-    let scripts_count = taproot_spending_scripts.len();
+    let scripts_count = leaves.len();
 
     // For empty scripts, return error
     if scripts_count == 0 {
@@ -485,7 +485,7 @@ pub fn build_taproot_spend_info(
 
     // For a single script, add it at depth 0
     if scripts_count == 1 {
-        tr_builder = tr_builder.add_leaf(0, taproot_spending_scripts[0].get_script().clone())?;
+        tr_builder = tr_builder.add_leaf(0, leaves[0].get_script().clone())?;
         return tr_builder
             .finalize(secp, *internal_key)
             .map_err(|_| ScriptError::TapTreeFinalizeError);
@@ -515,14 +515,14 @@ pub fn build_taproot_spend_info(
     // Add leaves at minimum depth
     for i in 0..nodes_at_min_depth {
         tr_builder =
-            tr_builder.add_leaf(min_depth, taproot_spending_scripts[i].get_script().clone())?;
+            tr_builder.add_leaf(min_depth, leaves[i].get_script().clone())?;
     }
 
     // Add remaining leaves at minimum depth + 1
     for i in nodes_at_min_depth..scripts_count {
         tr_builder = tr_builder.add_leaf(
             min_depth + 1,
-            taproot_spending_scripts[i].get_script().clone(),
+            leaves[i].get_script().clone(),
         )?;
     }
 
@@ -708,7 +708,6 @@ mod tests {
             .instructions()
             .flatten()
             .collect::<Vec<_>>();
-        //println!("instructions: {:?}", instructions);
         assert_eq!(instructions.len(), 5, "Script should have 5 instructions");
         assert_eq!(
             instructions[0].script_num(),
@@ -759,7 +758,6 @@ mod tests {
             .instructions()
             .flatten()
             .collect::<Vec<_>>();
-        //println!("instructions: {:?}", instructions);
         assert_eq!(instructions.len(), 2, "Script should have 2 instructions");
         assert_eq!(
             instructions[0].opcode(),
