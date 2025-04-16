@@ -8,7 +8,7 @@ mod tests {
         helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
-        types::{input::SighashType, output::OutputType, SpendingArgs},
+        types::{input::{InputArgs, SighashType}, output::OutputType},
     };
 
     #[test]
@@ -33,7 +33,7 @@ mod tests {
         let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key);
         let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
 
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
@@ -46,7 +46,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "start",
                 &ecdsa_sighash_type,
             )?
@@ -103,18 +103,18 @@ mod tests {
 
         protocol.build_and_sign(&key_manager)?;
 
-        let challenge_spending_args = &[
-            SpendingArgs::new_taproot_args(script_a.get_script()),
-            SpendingArgs::new_taproot_args(renew_from.get_script()),
+        let challenge_args = &[
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
-        let response_spending_args = &[
-            SpendingArgs::new_taproot_args(script_a.get_script()),
-            SpendingArgs::new_taproot_args(renew_to.get_script()),
+        let response_args = &[
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
 
-        let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
-        let challenge = protocol.transaction_to_send("challenge", challenge_spending_args)?;
-        let response = protocol.transaction_to_send("response", response_spending_args)?;
+        let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
+        let challenge = protocol.transaction_to_send("challenge", challenge_args)?;
+        let response = protocol.transaction_to_send("response", response_args)?;
 
         // Taproot transaction (SegWit)
         let start_weight = get_transaction_vsize(&start);
@@ -148,9 +148,9 @@ mod tests {
         assert_eq!(challenge.output.len(), 2);
         assert_eq!(response.output.len(), 0);
 
-        let sighashes_start = protocol.spending_info("start")?;
-        let sighashes_challenge = protocol.spending_info("challenge")?;
-        let sighashes_response = protocol.spending_info("response")?;
+        let sighashes_start = protocol.inputs("start")?;
+        let sighashes_challenge = protocol.inputs("challenge")?;
+        let sighashes_response = protocol.inputs("response")?;
 
         assert_eq!(sighashes_start.len(), 1);
         assert_eq!(sighashes_challenge.len(), 2);

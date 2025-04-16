@@ -7,7 +7,7 @@ mod tests {
         errors::ProtocolBuilderError,
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
-        types::{input::SighashType, output::OutputType, SpendingArgs},
+        types::{input::{InputArgs, SighashType}, output::OutputType},
     };
 
     #[test]
@@ -33,7 +33,7 @@ mod tests {
         let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key);
         let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key);
 
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
@@ -46,7 +46,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "start",
                 &ecdsa_sighash_type,
             )?
@@ -103,20 +103,18 @@ mod tests {
 
         protocol.build_and_sign(&key_manager)?;
 
-        //.build_and_sign(&key_manager)?;
-
-        let challenge_spending_args = &[
-            SpendingArgs::new_taproot_args(script_a.get_script()),
-            SpendingArgs::new_taproot_args(renew_from.get_script()),
+        let challenge_args = &[
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
-        let response_spending_args = &[
-            SpendingArgs::new_taproot_args(script_a.get_script()),
-            SpendingArgs::new_taproot_args(renew_to.get_script()),
+        let response_args = &[
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
 
-        let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
-        let challenge = protocol.transaction_to_send("challenge", challenge_spending_args)?;
-        let response = protocol.transaction_to_send("response", response_spending_args)?;
+        let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
+        let challenge = protocol.transaction_to_send("challenge", challenge_args)?;
+        let response = protocol.transaction_to_send("response", response_args)?;
 
         assert_eq!(start.input.len(), 1);
         assert_eq!(challenge.input.len(), 2);
@@ -126,9 +124,9 @@ mod tests {
         assert_eq!(challenge.output.len(), 2);
         assert_eq!(response.output.len(), 0);
 
-        let sighashes_start = protocol.spending_info("start")?;
-        let sighashes_challenge = protocol.spending_info("challenge")?;
-        let sighashes_response = protocol.spending_info("response")?;
+        let sighashes_start = protocol.inputs("start")?;
+        let sighashes_challenge = protocol.inputs("challenge")?;
+        let sighashes_response = protocol.inputs("response")?;
 
         assert_eq!(sighashes_start.len(), 1);
         assert_eq!(sighashes_challenge.len(), 2);
@@ -148,7 +146,7 @@ mod tests {
         let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
-        let spending_scripts = vec![script.clone(), script.clone()];
+        let scripts = vec![script.clone(), script.clone()];
 
         let mut protocol = Protocol::new("cycle");
         let builder = ProtocolBuilder {};
@@ -159,7 +157,7 @@ mod tests {
             "A",
             value,
             &internal_key,
-            &spending_scripts,
+            &scripts,
             true,
             vec![],
             "A",
@@ -197,7 +195,7 @@ mod tests {
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
 
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
@@ -210,7 +208,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "A",
                 &ecdsa_sighash_type,
             )?
@@ -279,7 +277,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("single_connection");
         let builder = ProtocolBuilder {};
@@ -288,19 +286,19 @@ mod tests {
             &mut protocol,
             txid,
             output_index,
-            output_spending_type,
+            output_type,
             "start",
             &ecdsa_sighash_type,
         )?;
 
         protocol.build_and_sign(&key_manager)?;
 
-        let start = protocol.transaction_to_send("start", &[SpendingArgs::new_args()])?;
+        let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
 
         assert_eq!(start.input.len(), 1);
         assert_eq!(start.output.len(), 0);
 
-        let sighashes_start = protocol.spending_info("start")?;
+        let sighashes_start = protocol.inputs("start")?;
 
         assert_eq!(sighashes_start.len(), 1);
 
@@ -322,7 +320,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -346,7 +344,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "A",
                 &ecdsa_sighash_type,
             )?
@@ -365,18 +363,17 @@ mod tests {
 
         protocol.build_and_sign(&key_manager)?;
 
-        let spending_args = [
-            SpendingArgs::new_taproot_args(script.get_script()),
-            SpendingArgs::new_taproot_args(script.get_script()),
+        let args = [
+            InputArgs::new_taproot_script_args(0),
         ];
 
-        let a = protocol.transaction_to_send("A", &[SpendingArgs::new_args()])?;
-        let b0 = protocol.transaction_to_send("B_0", &spending_args)?;
-        let b1 = protocol.transaction_to_send("B_1", &spending_args)?;
-        let b2 = protocol.transaction_to_send("B_2", &spending_args)?;
-        let c0 = protocol.transaction_to_send("C_0", &spending_args)?;
-        let c1 = protocol.transaction_to_send("C_1", &spending_args)?;
-        let c2 = protocol.transaction_to_send("C_2", &spending_args)?;
+        let a = protocol.transaction_to_send("A", &[InputArgs::new_segwit_args()])?;
+        let b0 = protocol.transaction_to_send("B_0", &args)?;
+        let b1 = protocol.transaction_to_send("B_1", &args)?;
+        let b2 = protocol.transaction_to_send("B_2", &args)?;
+        let c0 = protocol.transaction_to_send("C_0", &args)?;
+        let c1 = protocol.transaction_to_send("C_1", &args)?;
+        let c2 = protocol.transaction_to_send("C_2", &args)?;
 
         assert_eq!(a.input.len(), 1);
         assert_eq!(b0.input.len(), 1);
@@ -388,13 +385,13 @@ mod tests {
         assert_eq!(c1.output.len(), 1);
         assert_eq!(c2.output.len(), 0);
 
-        let sighashes_a = protocol.spending_info("A")?;
-        let sighashes_b0 = protocol.spending_info("B_0")?;
-        let sighashes_b1 = protocol.spending_info("B_1")?;
-        let sighashes_b2 = protocol.spending_info("B_2")?;
-        let sighashes_c0 = protocol.spending_info("C_0")?;
-        let sighashes_c1 = protocol.spending_info("C_1")?;
-        let sighashes_c2 = protocol.spending_info("C_2")?;
+        let sighashes_a = protocol.inputs("A")?;
+        let sighashes_b0 = protocol.inputs("B_0")?;
+        let sighashes_b1 = protocol.inputs("B_1")?;
+        let sighashes_b2 = protocol.inputs("B_2")?;
+        let sighashes_c0 = protocol.inputs("C_0")?;
+        let sighashes_c1 = protocol.inputs("C_1")?;
+        let sighashes_c2 = protocol.inputs("C_2")?;
 
         assert_eq!(sighashes_a.len(), 1);
         assert_eq!(sighashes_b0.len(), 1);
@@ -464,7 +461,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
-        let output_spending_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -474,7 +471,7 @@ mod tests {
                 &mut protocol,
                 txid,
                 output_index,
-                output_spending_type,
+                output_type,
                 "A",
                 &ecdsa_sighash_type,
             )?

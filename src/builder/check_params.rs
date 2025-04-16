@@ -1,10 +1,10 @@
 use crate::{errors::ProtocolBuilderError, scripts::ProtocolScript};
 
 pub(crate) fn check_empty_scripts(
-    spending_scripts: &[ProtocolScript],
+    scripts: &[ProtocolScript],
 ) -> Result<(), ProtocolBuilderError> {
-    if spending_scripts.is_empty() {
-        return Err(ProtocolBuilderError::EmptySpendingScripts);
+    if scripts.is_empty() {
+        return Err(ProtocolBuilderError::EmptyScripts);
     }
 
     Ok(())

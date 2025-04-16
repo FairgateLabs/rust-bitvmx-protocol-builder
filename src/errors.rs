@@ -37,14 +37,14 @@ pub enum GraphError {
     #[error("Signature missing in graph")]
     MissingSignature,
 
-    #[error("Spending type does not match with sighash type")]
-    InvalidSpendingTypeForSighashType,
+    #[error("Output type does not match with sighash type")]
+    InvalidOutputTypeForSighashType,
 
-    #[error("Missing output spending information for {0}")]
-    MissingOutputSpendingTypeForInputSpendingInfo(String),
+    #[error("Missing output type information for {0}")]
+    MissingOutputTypeForInput(String),
 
-    #[error("Missing input spending information in transaction {0} for input {1}")]
-    MissingInputSpendingInfo(String, usize),
+    #[error("Missing input information in transaction {0} for input {1}")]
+    MissingInputInfo(String, usize),
 
     #[error("Invalid signature type in transaction {0} for input {1}. Expected {2}, got {3}")]
     InvalidSignatureType(String, usize, String, String),
@@ -132,11 +132,14 @@ pub enum ProtocolBuilderError {
     #[error("Invalid SighashType")]
     InvalidSighashType,
 
-    #[error("Invalid spending type for sighash type")]
-    InvalidSpendingTypeForSighashType,
+    #[error("Invalid output type for sighash type")]
+    InvalidOutputTypeForSighashType,
+
+    #[error("Invalid spending args type. Expected {0}, got {1}")]
+    InvalidInputArgsType(String, String),
 
     #[error("Invalid spending script for input {0}")]
-    InvalidSpendingScript(usize),
+    InvalidLeaf(usize),
 
     #[error("Missing taproot leaf for input {0}")]
     MissingTaprootLeaf(usize),
@@ -150,8 +153,8 @@ pub enum ProtocolBuilderError {
     #[error("Connection name is empty")]
     MissingConnectionName,
 
-    #[error("Spending scripts cannot be empty")]
-    EmptySpendingScripts,
+    #[error("Scripts cannot be empty")]
+    EmptyScripts,
 
     #[error("Missing verifiying key for input {0}")]
     MissingVerifyingKey(usize),
@@ -189,8 +192,8 @@ pub enum ProtocolBuilderError {
     #[error("Failed to generate signature for key spend path for taproot output with taptree")]
     KeySpendSignatureGenerationFailed,
 
-    #[error("Failed to get spending script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
-    InvalidSpendingTypeForScript(String, u32, u32, String),
+    #[error("Failed to get script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
+    CannotGetScriptForOutputType(String, u32, u32, String),
 
     #[error("Failed to generate nonce for MuSig2 signature aggregation")]
     MuSig2NonceGenerationError(#[from] Musig2SignerError),

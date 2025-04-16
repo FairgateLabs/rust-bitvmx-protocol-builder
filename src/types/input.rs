@@ -1,15 +1,10 @@
-use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
+use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{GraphError, ProtocolBuilderError};
 
 use super::OutputType;
-
-// TODO Alias for InputArgs to minimized changes outside this crate. Eventually we will remove it.
-pub type SpendingArgs = InputArgs;
-// TODO Alias for InputType to minimized changes outside this crate. Eventually we will remove it.
-pub type InputSpendingInfo = InputType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Signature {
@@ -73,45 +68,72 @@ impl SighashType {
 }
 
 #[derive(Clone, Debug)]
-pub struct InputArgs {
-    args: Vec<Vec<u8>>,
-    taproot_leaf: Option<ScriptBuf>,
+pub enum InputArgs {
+    TaprootKey {
+        args: Vec<Vec<u8>>
+    },
+    TaprootScript {
+        args: Vec<Vec<u8>>,
+        leaf_index: usize,
+    },
+    Segwit {
+        args: Vec<Vec<u8>>,
+    },
 }
 
 impl InputArgs {
-    pub fn new_taproot_args(taproot_leaf: &ScriptBuf) -> Self {
-        InputArgs {
-            args: vec![],
-            taproot_leaf: Some(taproot_leaf.clone()),
+    pub fn new_taproot_script_args(leaf_index: usize) -> Self {
+        Self::TaprootScript { 
+            args: vec![], 
+            leaf_index, 
         }
     }
 
-    pub fn new_args() -> Self {
-        InputArgs {
+    pub fn new_taproot_key_args() -> Self {
+        Self::TaprootKey { 
+            args: vec![], 
+        }
+    }
+
+    pub fn new_segwit_args() -> Self {
+        Self::Segwit {
             args: vec![],
-            taproot_leaf: None,
         }
     }
 
     pub fn push_slice(&mut self, args: &[u8]) -> &mut Self {
-        self.args.push(args.to_vec());
+        match self {
+            Self::TaprootKey { args: taproot_args } => taproot_args.push(args.to_vec()),
+            Self::TaprootScript { args: taproot_args, .. } => taproot_args.push(args.to_vec()),
+            Self::Segwit { args: segwit_args } => segwit_args.push(args.to_vec()),
+        }
+        
         self
     }
 
     pub fn push_taproot_signature(
         &mut self,
         taproot_signature: bitcoin::taproot::Signature,
-    ) -> &mut Self {
-        self.push_slice(&taproot_signature.serialize());
-        self
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        match self {
+            Self::TaprootKey { .. } => self.push_slice(&taproot_signature.serialize()),
+            Self::TaprootScript { .. } => self.push_slice(&taproot_signature.serialize()),
+            _ => return Err(ProtocolBuilderError::InvalidSignatureType),
+        };
+
+        Ok(self)
     }
 
     pub fn push_ecdsa_signature(
         &mut self,
         ecdsa_signature: bitcoin::ecdsa::Signature,
-    ) -> &mut Self {
-        self.push_slice(&ecdsa_signature.serialize());
-        self
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        match self {
+            Self::Segwit { .. } =>  self.push_slice(&ecdsa_signature.serialize()),
+            _ => return Err(ProtocolBuilderError::InvalidSignatureType),
+        };
+
+        Ok(self)
     }
 
     pub fn push_winternitz_signature(
@@ -135,24 +157,31 @@ impl InputArgs {
         self
     }
 
-    pub fn get_taproot_leaf(&self) -> Option<ScriptBuf> {
-        self.taproot_leaf.clone()
+    pub fn get_leaf_index(&self) -> Option<usize> {
+        match self {
+            Self::TaprootScript { leaf_index, .. } => Some(*leaf_index),
+            _ => None,
+        }
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Vec<u8>> {
-        self.args.iter()
+        match self {
+            Self::TaprootKey { args } => args.iter(),
+            Self::TaprootScript { args, .. } => args.iter(),
+            Self::Segwit { args } => args.iter(),
+        }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InputType {
+pub struct InputInfo {
     output_type: Option<OutputType>,
     sighash_type: SighashType,
     hashed_messages: Vec<Option<Vec<u8>>>,
     signatures: Vec<Option<Signature>>,
 }
 
-impl InputSpendingInfo {
+impl InputInfo {
     pub(crate) fn new(sighash_type: &SighashType) -> Self {
         Self {
             output_type: None,
@@ -178,13 +207,13 @@ impl InputSpendingInfo {
             SighashType::Taproot(_) => match output_type {
                 OutputType::TaprootKey { .. } => {}
                 OutputType::TaprootScript { .. } => {}
-                _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
+                _ => Err(GraphError::InvalidOutputTypeForSighashType)?,
             },
             SighashType::Ecdsa(_) => match output_type {
                 OutputType::SegwitPublicKey { .. } => {}
                 OutputType::SegwitScript { .. } => {}
                 OutputType::SegwitUnspendable { .. } => {}
-                _ => Err(GraphError::InvalidSpendingTypeForSighashType)?,
+                _ => Err(GraphError::InvalidOutputTypeForSighashType)?,
             },
         }
 
@@ -214,8 +243,8 @@ impl InputSpendingInfo {
         match &self.output_type {
             Some(OutputType::TaprootKey { internal_key, .. }) => vec![*internal_key],
             Some(OutputType::TaprootScript {
-                spending_scripts, ..
-            }) => spending_scripts
+                leaves, ..
+            }) => leaves
                 .iter()
                 .map(|script| script.get_verifying_key())
                 .collect(),
@@ -231,7 +260,7 @@ impl InputSpendingInfo {
     pub fn output_type(&self) -> Result<&OutputType, GraphError> {
         self.output_type
             .as_ref()
-            .ok_or(GraphError::MissingOutputSpendingTypeForInputSpendingInfo(
+            .ok_or(GraphError::MissingOutputTypeForInput(
                 format!("{:?}", self.sighash_type),
             ))
     }
