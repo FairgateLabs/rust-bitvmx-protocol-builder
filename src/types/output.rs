@@ -210,10 +210,7 @@ impl OutputType {
                 leaves,
                 internal_key,
                 ..
-            } => Ok(Some(Self::compute_spend_info(
-                internal_key,
-                leaves,
-            )?)),
+            } => Ok(Some(Self::compute_spend_info(internal_key, leaves)?)),
             _ => Ok(None),
         }
     }
@@ -271,10 +268,7 @@ impl OutputType {
                         Message::from(hasher.taproot_script_spend_signature_hash(
                             input_index,
                             &sighash::Prevouts::All(&prevouts),
-                            TapLeafHash::from_script(
-                                leaf.get_script(),
-                                LeafVersion::TapScript,
-                            ),
+                            TapLeafHash::from_script(leaf.get_script(), LeafVersion::TapScript),
                             *tap_sighash_type,
                         )?);
 
@@ -295,9 +289,9 @@ impl OutputType {
                     hashed_messages.push(Some(hashed_message));
                 }
 
-                if *with_key_path {
+                let key_path_hashed_message = if *with_key_path {
                     // Compute a sighash for the key spend path.
-                    let key_spend_hashed_message =
+                    let key_path_hashed_message =
                         Message::from(hasher.taproot_key_spend_signature_hash(
                             input_index,
                             &sighash::Prevouts::All(&prevouts),
@@ -322,15 +316,18 @@ impl OutputType {
                                 leaves.len() as u32,
                             )
                             .as_str(),
-                            key_spend_hashed_message.as_ref().to_vec(),
+                            key_path_hashed_message.as_ref().to_vec(),
                             internal_key,
                             Some(musig2_tweak),
                         )?;
                     }
 
-                    hashed_messages.push(Some(key_spend_hashed_message));
+                    Some(key_path_hashed_message)
+                } else {
+                    None
                 };
 
+                hashed_messages.push(key_path_hashed_message);
                 hashed_messages
             }
             _ => {
@@ -478,7 +475,8 @@ impl OutputType {
                             input_index as u32,
                             index as u32,
                         );
-                        key_manager.get_aggregated_signature(&leaf.get_verifying_key(), &message_id)?
+                        key_manager
+                            .get_aggregated_signature(&leaf.get_verifying_key(), &message_id)?
                     } else {
                         key_manager.sign_schnorr_message(
                             &hashed_messages[index].unwrap(),
@@ -494,9 +492,9 @@ impl OutputType {
                     signatures.push(signature);
                 }
 
-                if *with_key_path {
+                let key_path_signature = if *with_key_path {
                     // Compute a signature for the key spend path.
-                    let key_spend_hashed_message = hashed_messages.last().unwrap().unwrap();
+                    let key_path_hashed_message = hashed_messages.last().unwrap().unwrap();
                     hashed_messages[leaves.len()].as_ref().unwrap();
 
                     let schnorr_signature = if musig2 {
@@ -512,7 +510,7 @@ impl OutputType {
 
                         let (schnorr_signature, output_key) = key_manager
                             .sign_schnorr_message_with_tap_tweak(
-                                &key_spend_hashed_message,
+                                &key_path_hashed_message,
                                 internal_key,
                                 spend_info.merkle_root(),
                             )?;
@@ -520,7 +518,7 @@ impl OutputType {
                         // Verify the signature.
                         if !SignatureVerifier::new().verify_schnorr_signature(
                             &schnorr_signature,
-                            &key_spend_hashed_message,
+                            &key_path_hashed_message,
                             output_key,
                         ) {
                             return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed);
@@ -529,14 +527,15 @@ impl OutputType {
                         schnorr_signature
                     };
 
-                    let signature = Some(Signature::Taproot(bitcoin::taproot::Signature {
+                    Some(Signature::Taproot(bitcoin::taproot::Signature {
                         signature: schnorr_signature,
                         sighash_type: *tap_sighash_type,
-                    }));
-
-                    signatures.push(signature);
+                    }))
+                } else {
+                    None
                 };
 
+                signatures.push(key_path_signature);
                 signatures
             }
             _ => {
@@ -615,11 +614,8 @@ impl OutputType {
         leaves: &[ProtocolScript],
     ) -> Result<TaprootSpendInfo, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
-        let spend_info = scripts::build_taproot_spend_info(
-            &secp,
-            &XOnlyPublicKey::from(*internal_key),
-            leaves,
-        )?;
+        let spend_info =
+            scripts::build_taproot_spend_info(&secp, &XOnlyPublicKey::from(*internal_key), leaves)?;
         Ok(spend_info)
     }
 }

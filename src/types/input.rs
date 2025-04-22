@@ -1,4 +1,4 @@
-use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, TapSighashType};
+use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
 
@@ -68,46 +68,40 @@ impl SighashType {
 }
 
 #[derive(Clone, Debug)]
+pub enum LeafSpec {
+    Index(usize),
+    Script(ScriptBuf),
+}
+
+#[derive(Clone, Debug)]
 pub enum InputArgs {
-    TaprootKey {
-        args: Vec<Vec<u8>>
-    },
-    TaprootScript {
-        args: Vec<Vec<u8>>,
-        leaf_index: usize,
-    },
-    Segwit {
-        args: Vec<Vec<u8>>,
-    },
+    TaprootKey { args: Vec<Vec<u8>> },
+    TaprootScript { args: Vec<Vec<u8>>, leaf: LeafSpec },
+    Segwit { args: Vec<Vec<u8>> },
 }
 
 impl InputArgs {
-    pub fn new_taproot_script_args(leaf_index: usize) -> Self {
-        Self::TaprootScript { 
-            args: vec![], 
-            leaf_index, 
-        }
+    pub fn new_taproot_script_args(leaf: LeafSpec) -> Self {
+        Self::TaprootScript { args: vec![], leaf }
     }
 
     pub fn new_taproot_key_args() -> Self {
-        Self::TaprootKey { 
-            args: vec![], 
-        }
+        Self::TaprootKey { args: vec![] }
     }
 
     pub fn new_segwit_args() -> Self {
-        Self::Segwit {
-            args: vec![],
-        }
+        Self::Segwit { args: vec![] }
     }
 
     pub fn push_slice(&mut self, args: &[u8]) -> &mut Self {
         match self {
             Self::TaprootKey { args: taproot_args } => taproot_args.push(args.to_vec()),
-            Self::TaprootScript { args: taproot_args, .. } => taproot_args.push(args.to_vec()),
+            Self::TaprootScript {
+                args: taproot_args, ..
+            } => taproot_args.push(args.to_vec()),
             Self::Segwit { args: segwit_args } => segwit_args.push(args.to_vec()),
         }
-        
+
         self
     }
 
@@ -129,7 +123,7 @@ impl InputArgs {
         ecdsa_signature: bitcoin::ecdsa::Signature,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         match self {
-            Self::Segwit { .. } =>  self.push_slice(&ecdsa_signature.serialize()),
+            Self::Segwit { .. } => self.push_slice(&ecdsa_signature.serialize()),
             _ => return Err(ProtocolBuilderError::InvalidSignatureType),
         };
 
@@ -155,13 +149,6 @@ impl InputArgs {
         }
 
         self
-    }
-
-    pub fn get_leaf_index(&self) -> Option<usize> {
-        match self {
-            Self::TaprootScript { leaf_index, .. } => Some(*leaf_index),
-            _ => None,
-        }
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Vec<u8>> {
@@ -194,11 +181,7 @@ impl InputInfo {
     pub(crate) fn set_hashed_messages(&mut self, messages: Vec<Option<Message>>) {
         self.hashed_messages = messages
             .iter()
-            .map(|msg| {
-                msg.as_ref()
-                    .map(|m| m.as_ref().to_vec())
-                    .or_else(|| Some(vec![]))
-            })
+            .map(|msg| msg.as_ref().map(|m| m.as_ref().to_vec()).or(None))
             .collect();
     }
 
@@ -247,9 +230,7 @@ impl InputInfo {
     pub fn input_keys(&self) -> Vec<PublicKey> {
         match &self.output_type {
             Some(OutputType::TaprootKey { internal_key, .. }) => vec![*internal_key],
-            Some(OutputType::TaprootScript {
-                leaves, ..
-            }) => leaves
+            Some(OutputType::TaprootScript { leaves, .. }) => leaves
                 .iter()
                 .map(|script| script.get_verifying_key())
                 .collect(),
@@ -265,9 +246,10 @@ impl InputInfo {
     pub fn output_type(&self) -> Result<&OutputType, GraphError> {
         self.output_type
             .as_ref()
-            .ok_or(GraphError::MissingOutputTypeForInput(
-                format!("{:?}", self.sighash_type),
-            ))
+            .ok_or(GraphError::MissingOutputTypeForInput(format!(
+                "{:?}",
+                self.sighash_type
+            )))
     }
 
     pub fn signatures(&self) -> &Vec<Option<Signature>> {

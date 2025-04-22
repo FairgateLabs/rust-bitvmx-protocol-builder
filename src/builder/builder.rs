@@ -48,13 +48,8 @@ impl ProtocolBuilder {
     ) -> Result<&Self, ProtocolBuilderError> {
         check_empty_scripts(leaves)?;
 
-        let output_type = OutputType::tr_script(
-            value,
-            internal_key,
-            leaves,
-            with_key_path,
-            prevouts,
-        )?;
+        let output_type =
+            OutputType::tr_script(value, internal_key, leaves, with_key_path, prevouts)?;
         protocol.add_transaction_output(transaction_name, output_type)?;
         Ok(self)
     }
@@ -445,13 +440,8 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Connection between the from and to transactions using the leaves_from.
-            let output_type = OutputType::tr_script(
-                value,
-                internal_key,
-                leaves_from,
-                with_key_path,
-                vec![],
-            )?;
+            let output_type =
+                OutputType::tr_script(value, internal_key, leaves_from, with_key_path, vec![])?;
             protocol.add_connection(
                 connection_name,
                 &from_round,
@@ -465,13 +455,8 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the leaves_to.
-            let output_type = OutputType::tr_script(
-                value,
-                internal_key,
-                leaves_to,
-                with_key_path,
-                vec![],
-            )?;
+            let output_type =
+                OutputType::tr_script(value, internal_key, leaves_to, with_key_path, vec![])?;
             protocol.add_connection(
                 connection_name,
                 &to_round,
@@ -487,13 +472,8 @@ impl ProtocolBuilder {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using leaves_from.
-        let output_type = OutputType::tr_script(
-            value,
-            internal_key,
-            leaves_from,
-            with_key_path,
-            vec![],
-        )?;
+        let output_type =
+            OutputType::tr_script(value, internal_key, leaves_from, with_key_path, vec![])?;
         protocol.add_connection(
             connection_name,
             &from_round,

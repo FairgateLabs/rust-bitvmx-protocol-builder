@@ -1,9 +1,6 @@
 use bitcoin::{
-    hashes::Hash,
-    locktime, secp256k1,
-    taproot::LeafVersion,
-    transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
-    XOnlyPublicKey,
+    hashes::Hash, locktime, secp256k1, taproot::LeafVersion, transaction, OutPoint, PublicKey,
+    ScriptBuf, Sequence, Transaction, Txid, Witness, XOnlyPublicKey,
 };
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use serde::{Deserialize, Serialize};
@@ -15,7 +12,7 @@ use crate::{
     graph::graph::TransactionGraph,
     scripts::ProtocolScript,
     types::{
-        input::{InputSignatures, InputInfo, SighashType, Signature, InputArgs},
+        input::{InputArgs, InputInfo, InputSignatures, LeafSpec, SighashType, Signature},
         output::OutputType,
     },
     unspendable::unspendable_key,
@@ -52,11 +49,14 @@ impl Protocol {
         Ok(())
     }
 
-    pub fn add_transaction(&mut self, transaction_name: &str) -> Result<(), ProtocolBuilderError> {
+    pub fn add_transaction(
+        &mut self,
+        transaction_name: &str,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
         self.get_or_create_transaction(transaction_name)?;
-        Ok(())
+        Ok(self)
     }
 
     pub fn add_transaction_input(
@@ -66,7 +66,7 @@ impl Protocol {
         transaction_name: &str,
         sequence: Sequence,
         sighash_type: &SighashType,
-    ) -> Result<(), ProtocolBuilderError> {
+    ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
         let mut transaction = self.get_or_create_transaction(transaction_name)?;
@@ -84,14 +84,14 @@ impl Protocol {
         self.graph
             .add_transaction_input(transaction_name, transaction, sighash_type)?;
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn add_transaction_output(
         &mut self,
         transaction_name: &str,
         output_type: OutputType,
-    ) -> Result<(), ProtocolBuilderError> {
+    ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
         let mut transaction = self.get_or_create_transaction(transaction_name)?;
@@ -104,7 +104,7 @@ impl Protocol {
         self.graph
             .add_transaction_output(transaction_name, transaction, output_type)?;
 
-        Ok(())
+        Ok(self)
     }
 
     pub fn add_connection(
@@ -236,14 +236,8 @@ impl Protocol {
             .get_transaction_by_name(transaction_name)?
             .clone();
 
-        for (input_index, input) in
-            self.graph.get_inputs(transaction_name)?.iter().enumerate()
-        {
-            let witness = self.get_witness_for_input(
-                input_index,
-                input,
-                &args[input_index],
-            )?;
+        for (input_index, input) in self.graph.get_inputs(transaction_name)?.iter().enumerate() {
+            let witness = self.get_witness_for_input(input_index, input, &args[input_index])?;
             transaction.input[input_index].witness = witness;
         }
 
@@ -263,10 +257,7 @@ impl Protocol {
         Ok(next_transactions)
     }
 
-    pub fn inputs(
-        &self,
-        transaction_name: &str,
-    ) -> Result<Vec<InputInfo>, ProtocolBuilderError> {
+    pub fn inputs(&self, transaction_name: &str) -> Result<Vec<InputInfo>, ProtocolBuilderError> {
         Ok(self.graph.get_inputs(transaction_name)?)
     }
 
@@ -358,9 +349,7 @@ impl Protocol {
             .get_input(transaction_name, input_index as usize)?;
 
         let script = match input.output_type()? {
-            OutputType::TaprootScript {
-                leaves, ..
-            } => leaves[script_index as usize].clone(),
+            OutputType::TaprootScript { leaves, .. } => leaves[script_index as usize].clone(),
             // TODO complete this for all other output types and remove the "Unknown output type".to_string() value in the error
             OutputType::SegwitScript { script, .. } => script.clone(),
             _ => {
@@ -530,20 +519,16 @@ impl Protocol {
         let witness = match input.sighash_type() {
             SighashType::Taproot(..) => match input.output_type()? {
                 OutputType::TaprootKey { .. } => self.taproot_key_spend_witness(args)?,
-                OutputType::TaprootScript { .. } => {
-                    match args {
-                        InputArgs::TaprootScript { leaf_index, .. } => {
-                            self.taproot_script_spend_witness(
-                                input_index,
-                                *leaf_index,
-                                input,
-                                args,
-                            )?
-                        }
-                        InputArgs::TaprootKey { .. } => {
-                            self.taproot_key_spend_witness(args)?
-                        }
-                        _ => return Err(ProtocolBuilderError::InvalidInputArgsType("TaprootScript or TaprootKey".to_string(), "Segwit".to_string())),
+                OutputType::TaprootScript { .. } => match args {
+                    InputArgs::TaprootScript { leaf, .. } => {
+                        self.taproot_script_spend_witness(input_index, leaf, input, args)?
+                    }
+                    InputArgs::TaprootKey { .. } => self.taproot_key_spend_witness(args)?,
+                    _ => {
+                        return Err(ProtocolBuilderError::InvalidInputArgsType(
+                            "TaprootScript or TaprootKey".to_string(),
+                            "Segwit".to_string(),
+                        ))
                     }
                 },
                 _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
@@ -572,10 +557,7 @@ impl Protocol {
         Ok(key)
     }
 
-    fn taproot_key_spend_witness(
-        &self,
-        args: &InputArgs,
-    ) -> Result<Witness, ProtocolBuilderError> {
+    fn taproot_key_spend_witness(&self, args: &InputArgs) -> Result<Witness, ProtocolBuilderError> {
         let mut witness = Witness::default();
         for value in args.iter() {
             witness.push(value.clone());
@@ -589,29 +571,36 @@ impl Protocol {
     fn taproot_script_spend_witness(
         &self,
         input_index: usize,
-        leaf_index: usize,
+        leaf_spec: &LeafSpec,
         input: &InputInfo,
         args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
-        let spend_info = &input
-            .output_type()?
-            .get_taproot_spend_info()?
-            .unwrap();
+        let spend_info = &input.output_type()?.get_taproot_spend_info()?.unwrap();
 
         let leaf = match input.output_type()? {
-            OutputType::TaprootScript {
-                leaves,
-                ..
-            } => leaves[leaf_index].get_script().clone(),
+            OutputType::TaprootScript { leaves, .. } => match leaf_spec {
+                LeafSpec::Index(index) => {
+                    if *index >= leaves.len() {
+                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
+                    }
+                    leaves[*index].get_script().clone()
+                }
+                LeafSpec::Script(ref script) => {
+                    if !leaves.iter().any(|leaf| leaf.get_script() == script) {
+                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
+                    }
+                    script.clone()
+                }
+            },
             _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
         };
 
-        let control_block =
-            match spend_info.control_block(&(leaf.clone(), LeafVersion::TapScript)) {
-                Some(cb) => cb,
-                None => return Err(ProtocolBuilderError::InvalidLeaf(input_index)),
-            };
+        let control_block = match spend_info.control_block(&(leaf.clone(), LeafVersion::TapScript))
+        {
+            Some(cb) => cb,
+            None => return Err(ProtocolBuilderError::InvalidLeaf(input_index)),
+        };
 
         if !control_block.verify_taproot_commitment(
             &secp,

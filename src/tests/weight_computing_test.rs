@@ -8,7 +8,10 @@ mod tests {
         helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
-        types::{input::{InputArgs, SighashType}, output::OutputType},
+        types::{
+            input::{InputArgs, LeafSpec, SighashType},
+            output::OutputType,
+        },
     };
 
     #[test]
@@ -104,12 +107,12 @@ mod tests {
         protocol.build_and_sign(&key_manager)?;
 
         let challenge_args = &[
-            InputArgs::new_taproot_script_args(0),
-            InputArgs::new_taproot_script_args(1),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
         ];
         let response_args = &[
-            InputArgs::new_taproot_script_args(0),
-            InputArgs::new_taproot_script_args(1),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
         ];
 
         let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
