@@ -457,6 +457,21 @@ pub fn ots_checksig(
     Ok(verify)
 }
 
+pub fn fake_reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScript {
+    let script = script!(
+        OP_SHA256
+        { hashed_secret }
+        OP_EQUALVERIFY
+        OP_DROP
+        /*{ XOnlyPublicKey::from(*pub_key).serialize().to_vec() }
+        OP_CHECKSIG*/
+        //OP_DROP
+        //OP_DROP
+        OP_TRUE
+    );
+
+    ProtocolScript::new(script, pub_key)
+}
 pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScript {
     let script = script!(
         OP_SHA256
