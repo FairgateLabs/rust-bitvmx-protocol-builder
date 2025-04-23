@@ -529,16 +529,12 @@ pub fn build_taproot_spend_info(
     let nodes_at_min_depth = total_slots - scripts_count;
     // Add leaves at minimum depth
     for i in 0..nodes_at_min_depth {
-        tr_builder =
-            tr_builder.add_leaf(min_depth, leaves[i].get_script().clone())?;
+        tr_builder = tr_builder.add_leaf(min_depth, leaves[i].get_script().clone())?;
     }
 
     // Add remaining leaves at minimum depth + 1
     for i in nodes_at_min_depth..scripts_count {
-        tr_builder = tr_builder.add_leaf(
-            min_depth + 1,
-            leaves[i].get_script().clone(),
-        )?;
+        tr_builder = tr_builder.add_leaf(min_depth + 1, leaves[i].get_script().clone())?;
     }
 
     tr_builder

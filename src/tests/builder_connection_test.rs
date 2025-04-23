@@ -7,7 +7,10 @@ mod tests {
         errors::ProtocolBuilderError,
         scripts::ProtocolScript,
         tests::utils::{new_key_manager, TemporaryDir},
-        types::{input::{InputArgs, SighashType}, output::OutputType},
+        types::{
+            input::{InputArgs, LeafSpec, SighashType},
+            output::OutputType,
+        },
     };
 
     #[test]
@@ -69,7 +72,7 @@ mod tests {
                 &internal_key,
                 &expired_from,
                 &renew_from,
-                true,
+                false,
                 vec![],
                 "challenge",
                 blocks,
@@ -94,7 +97,7 @@ mod tests {
                 &internal_key,
                 &expired_to,
                 &renew_to,
-                true,
+                false,
                 vec![],
                 "response",
                 blocks,
@@ -104,12 +107,12 @@ mod tests {
         protocol.build_and_sign(&key_manager)?;
 
         let challenge_args = &[
-            InputArgs::new_taproot_script_args(0),
-            InputArgs::new_taproot_script_args(1),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
         ];
         let response_args = &[
-            InputArgs::new_taproot_script_args(0),
-            InputArgs::new_taproot_script_args(1),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
+            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
         ];
 
         let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
@@ -124,13 +127,93 @@ mod tests {
         assert_eq!(challenge.output.len(), 2);
         assert_eq!(response.output.len(), 0);
 
-        let sighashes_start = protocol.inputs("start")?;
-        let sighashes_challenge = protocol.inputs("challenge")?;
-        let sighashes_response = protocol.inputs("response")?;
+        let start_inputs = protocol.inputs("start")?;
+        let challenge_inputs = protocol.inputs("challenge")?;
+        let response_inputs = protocol.inputs("response")?;
 
-        assert_eq!(sighashes_start.len(), 1);
-        assert_eq!(sighashes_challenge.len(), 2);
-        assert_eq!(sighashes_response.len(), 2);
+        assert_eq!(start_inputs.len(), 1);
+        assert_eq!(challenge_inputs.len(), 2);
+        assert_eq!(response_inputs.len(), 2);
+
+        // Check hashed messages for all transactions
+        assert_eq!(start_inputs[0].hashed_messages().len(), 1);
+        match start_inputs[0].hashed_messages().as_slice() {
+            [Some(m)] => assert_eq!(m[..].len(), 32),
+            _ => panic!("Start hashed messages for input {} does not contain the expected hashes. Hashed messages are: {:?}", 0, start_inputs[0].hashed_messages()),
+        }
+
+        assert_eq!(challenge_inputs[0].hashed_messages().len(), 3);
+        match challenge_inputs[0].hashed_messages().as_slice() {
+            [Some(m1), Some(m2), Some(m3)] => {
+                assert_eq!(m1[..].len(), 32);
+                assert_eq!(m2[..].len(), 32);
+                assert_eq!(m3[..].len(), 32);
+            }
+            _ => panic!("Challenge hashed messages for input {} does not contain the expected hashes. Hashed messages are: {:?}", 0, challenge_inputs[0].hashed_messages()),
+        }
+
+        // Input was created with a taproot script spend connection that doesn't generate the hash for the key path. Hence the None in the last position of the hashed messages.
+        assert_eq!(challenge_inputs[1].hashed_messages().len(), 3);
+        match challenge_inputs[1].hashed_messages().as_slice() {
+            [Some(m1), Some(m2), None] => {
+                assert_eq!(m1[..].len(), 32);
+                assert_eq!(m2[..].len(), 32);
+            }
+            _ => panic!("Challenge hashed messages for input {} does not contain the expected hashes. Hashed messages are: {:?}", 1, challenge_inputs[1].hashed_messages()),
+        }
+
+        assert_eq!(response_inputs[0].hashed_messages().len(), 3);
+        match response_inputs[0].hashed_messages().as_slice() {
+            [Some(m1), Some(m2), Some(m3)] => {
+                assert_eq!(m1[..].len(), 32);
+                assert_eq!(m2[..].len(), 32);
+                assert_eq!(m3[..].len(), 32);
+            }
+            _ => panic!("Response hashed messages for input {} does not contain the expected hashes. Hashed messages are: {:?}", 0, response_inputs[0].hashed_messages()),
+        }
+
+        // Input was created with a taproot script spend connection that doesn't generate the hash for the key path. Hence the None in the last position of the hashed messages.
+        assert_eq!(response_inputs[1].hashed_messages().len(), 3);
+        match response_inputs[1].hashed_messages().as_slice() {
+            [Some(m1), Some(m2), None] => {
+                assert_eq!(m1[..].len(), 32);
+                assert_eq!(m2[..].len(), 32);
+            }
+            _ => panic!("Response hashed messages for input {} does not contain the expected hashes. Hashed messages are: {:?}", 1, response_inputs[1].hashed_messages()),
+        }
+
+        // Check signatures for all transactions
+        assert_eq!(start_inputs[0].signatures().len(), 1);
+        match start_inputs[0].signatures().as_slice() {
+            [Some(_)] => {},
+            _ => panic!("Start signatures for input {} does not contain the expected signatures. Signatures are: {:?}", 0, start_inputs[0].signatures()),
+        }
+
+        assert_eq!(challenge_inputs[0].signatures().len(), 3);
+        match challenge_inputs[0].signatures().as_slice() {
+            [Some(_), Some(_), Some(_)] => {},
+            _ => panic!("Challenge signatures for input {} does not contain the expected signatures. Signatures are: {:?}", 0, challenge_inputs[0].signatures()),
+        }
+
+        // Input was created with a taproot script spend connection that doesn't generate the signature for the key path. Hence the None in the last position of the signatures.
+        assert_eq!(challenge_inputs[1].signatures().len(), 3);
+        match challenge_inputs[1].signatures().as_slice() {
+            [Some(_), Some(_), None] => {},
+            _ => panic!("Challenge signatures for input {} does not contain the expected signatures. Signatures are: {:?}", 1, challenge_inputs[1].signatures()),
+        }
+
+        assert_eq!(response_inputs[0].signatures().len(), 3);
+        match response_inputs[0].signatures().as_slice() {
+            [Some(_), Some(_), Some(_)] => {},
+            _ => panic!("Response signatures for input {} does not contain the expected signatures. Signatures are: {:?}", 0, response_inputs[0].signatures()),
+        }
+
+        // Input was created with a taproot script spend connection that doesn't generate the signature for the key path. Hence the None in the last position of the signatures.
+        assert_eq!(response_inputs[1].signatures().len(), 3);
+        match response_inputs[1].signatures().as_slice() {
+            [Some(_), Some(_), None] => {},
+            _ => panic!("Response signatures for input {} does not contain the expected signatures. Signaturess are: {:?}", 1, response_inputs[1].signatures()),
+        }
 
         Ok(())
     }
@@ -363,9 +446,7 @@ mod tests {
 
         protocol.build_and_sign(&key_manager)?;
 
-        let args = [
-            InputArgs::new_taproot_script_args(0),
-        ];
+        let args = [InputArgs::new_taproot_script_args(LeafSpec::Index(0))];
 
         let a = protocol.transaction_to_send("A", &[InputArgs::new_segwit_args()])?;
         let b0 = protocol.transaction_to_send("B_0", &args)?;

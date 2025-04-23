@@ -9,11 +9,12 @@ use petgraph::{
     Graph,
 };
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::{
     errors::GraphError,
     types::{
-        input::{InputSignatures, InputInfo, SighashType, Signature},
+        input::{InputInfo, InputSignatures, SighashType, Signature},
         output::OutputType,
     },
 };
@@ -36,16 +37,10 @@ impl Node {
         }
     }
 
-    pub(crate) fn get_input(
-        &self,
-        input_index: usize,
-    ) -> Result<&InputInfo, GraphError> {
+    pub(crate) fn get_input(&self, input_index: usize) -> Result<&InputInfo, GraphError> {
         self.inputs
             .get(input_index)
-            .ok_or(GraphError::MissingInputInfo(
-                self.name.clone(),
-                input_index,
-            ))
+            .ok_or(GraphError::MissingInputInfo(self.name.clone(), input_index))
     }
 }
 
@@ -158,8 +153,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
-        node.inputs
-            .push(InputInfo::new(sighash_type));
+        node.inputs.push(InputInfo::new(sighash_type));
         Ok(())
     }
 
@@ -206,8 +200,7 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let to_node = self.get_node_mut(to)?;
 
-        to_node.inputs[to_node.transaction.input.len() - 1]
-            .set_output_type(output_type)?;
+        to_node.inputs[to_node.transaction.input.len() - 1].set_output_type(output_type)?;
 
         Ok(())
     }
@@ -220,6 +213,10 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
+        debug!(
+            "Updating hashed messages for transaction: {} input index: {}. Message hashes are: {:?}",
+            transaction_name, input_index, message_hashes
+        );
         node.inputs[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
     }
@@ -244,10 +241,7 @@ impl TransactionGraph {
     ) -> Result<Option<Message>, GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
-        Ok(
-            node.inputs[input_index as usize].hashed_messages()
-                [message_index as usize],
-        )
+        Ok(node.inputs[input_index as usize].hashed_messages()[message_index as usize])
     }
 
     pub fn get_transaction_by_name(&self, name: &str) -> Result<&Transaction, GraphError> {
@@ -332,9 +326,7 @@ impl TransactionGraph {
         Ok(self.get_node(name)?.inputs.clone())
     }
 
-    pub fn get_transaction_inputs(
-        &self,
-    ) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
+    pub fn get_transaction_inputs(&self) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
         self.node_indexes
             .keys()
             .map(|name| {
@@ -395,15 +387,8 @@ impl TransactionGraph {
         Ok(all_signatures)
     }
 
-    pub fn get_input(
-        &self,
-        name: &str,
-        input_index: usize,
-    ) -> Result<InputInfo, GraphError> {
-        Ok(self
-            .get_node(name)?
-            .get_input(input_index)?
-            .clone())
+    pub fn get_input(&self, name: &str, input_index: usize) -> Result<InputInfo, GraphError> {
+        Ok(self.get_node(name)?.get_input(input_index)?.clone())
     }
 
     pub fn get_input_ecdsa_signature(
