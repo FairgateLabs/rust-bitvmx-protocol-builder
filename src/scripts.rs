@@ -85,6 +85,10 @@ impl ProtocolScript {
         }
     }
 
+    pub fn set_skip_signing(&mut self, skip_signing: bool) {
+        self.skip_signing = skip_signing;
+    }
+
     pub fn add_key(
         &mut self,
         name: &str,
