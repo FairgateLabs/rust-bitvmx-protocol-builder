@@ -233,8 +233,13 @@ impl InputInfo {
         self.hashed_messages
             .iter()
             .map(|msg| {
-                msg.as_ref()
-                    .map(|m| Message::from_digest_slice(m).expect("Invalid message size"))
+                msg.as_ref().and_then(|m| {
+                    if m.is_empty() {
+                        None
+                    } else {
+                        Some(Message::from_digest_slice(m).expect("Invalid message size"))
+                    }
+                })
             })
             .collect()
     }
