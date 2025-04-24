@@ -26,7 +26,7 @@ pub fn get_transaction_vsize(tx: &Transaction) -> usize {
     let non_witness_size = get_transaction_non_witness_size(tx);
 
     let weight = (non_witness_size * 3) + total_size;
-    (weight + 3) / 4 // Equivalent to rounding up (weight / 4)
+    (weight + 3).div_ceil(4)
 }
 
 pub fn get_transaction_hex(tx: &Transaction) -> String {

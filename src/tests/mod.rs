@@ -4,5 +4,6 @@ pub mod builder_persistance_test;
 pub mod graph_test;
 pub mod input_test;
 pub mod output_test;
+pub mod single_scripts_test;
 pub mod utils;
 pub mod weight_computing_test;

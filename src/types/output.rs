@@ -1,6 +1,7 @@
+use std::fmt::{self, Display, Formatter};
+
 use bitcoin::{
-    key::{TweakedPublicKey, UntweakedPublicKey},
-    secp256k1::{self, Message, Scalar},
+    secp256k1::{self, Message},
     sighash::{self, SighashCache},
     taproot::{LeafVersion, TaprootSpendInfo},
     Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, TapTweakHash,
@@ -13,10 +14,42 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::ProtocolBuilderError,
-    graph::graph::MessageId,
-    scripts::{self, ProtocolScript},
+    scripts::{self, ProtocolScript, SignMode},
     types::input::Signature,
 };
+
+use super::input::LeafSpec;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageId {
+    transaction: String,
+    input_index: u32,
+    script_index: u32,
+}
+
+impl MessageId {
+    pub fn new(transaction: String, input_index: u32, script_index: u32) -> Self {
+        MessageId {
+            transaction,
+            input_index,
+            script_index,
+        }
+    }
+
+    pub fn new_string_id(transaction: &str, input_index: u32, script_index: u32) -> String {
+        format!("tx:{}_ix:{}_sx:{}", transaction, input_index, script_index)
+    }
+}
+
+impl fmt::Display for MessageId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "tx:{}_ix:{}_sx:{}",
+            self.transaction, self.input_index, self.script_index
+        )
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Utxo {
@@ -38,20 +71,43 @@ impl Utxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SpendMode {
+    /// Compute sighashes and signatures for all script paths plus the internal key path.
+    All { key_path_sign: SignMode },
+
+    /// Compute sighashes and signatures only for the internal key path.
+    KeyOnly { key_path_sign: SignMode },
+
+    /// Compute sighashes and signatures for all the script paths excluding the internal key.
+    ScriptsOnly,
+
+    /// Compute sighashes and signatures for a specific script path.
+    Script { leaf: LeafSpec },
+
+    /// No sighashes or signatures are computed for any path.
+    None,
+}
+
+impl Display for SpendMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpendMode::All { key_path_sign: key_path_sign_mode } => write!(f, "All({})", key_path_sign_mode),
+            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => write!(f, "KeyOnly({})", key_path_sign_mode),
+            SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
+            SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
+            SpendMode::None => write!(f, "None"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
-    TaprootKey {
-        value: Amount,
-        internal_key: PublicKey,
-        tweak: Option<Vec<u8>>,
-        script_pubkey: ScriptBuf,
-        prevouts: Vec<TxOut>,
-    },
-    TaprootScript {
+    Taproot {
         value: Amount,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
-        with_key_path: bool,
+        spend_mode: SpendMode,
         prevouts: Vec<TxOut>,
     },
     SegwitPublicKey {
@@ -71,45 +127,12 @@ pub enum OutputType {
 }
 
 impl OutputType {
-    pub fn tr_key(
-        value: u64,
-        internal_key: &PublicKey,
-        tweak: Option<&Scalar>,
-        prevouts: Vec<TxOut>,
-    ) -> Result<Self, ProtocolBuilderError> {
-        let secp = secp256k1::Secp256k1::new();
-        let untweaked_key: UntweakedPublicKey = XOnlyPublicKey::from(*internal_key);
-
-        let script_pubkey = match tweak {
-            Some(t) => {
-                let (output_key, tweaked_parity) = untweaked_key.add_tweak(&secp, t)?;
-
-                if !untweaked_key.tweak_add_check(&secp, &output_key, tweaked_parity, *t) {
-                    return Err(ProtocolBuilderError::TweakError(
-                        bitcoin::secp256k1::Error::InvalidTweak,
-                    ));
-                }
-
-                ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(output_key))
-            }
-            None => ScriptBuf::new_p2tr(&secp, untweaked_key, None),
-        };
-
-        Ok(OutputType::TaprootKey {
-            value: Amount::from_sat(value),
-            internal_key: *internal_key,
-            tweak: tweak.map(|t| t.to_be_bytes().to_vec()),
-            script_pubkey,
-            prevouts,
-        })
-    }
-
-    pub fn tr_script(
+    pub fn taproot(
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
     ) -> Result<Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let spend_info = Self::compute_spend_info(internal_key, leaves)?;
@@ -117,13 +140,13 @@ impl OutputType {
         let script_pubkey =
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
 
-        Ok(OutputType::TaprootScript {
+        Ok(OutputType::Taproot {
             value: Amount::from_sat(value),
             internal_key: *internal_key,
             script_pubkey,
             leaves: leaves.to_vec(),
-            with_key_path,
-            prevouts,
+            spend_mode: spend_mode.clone(),
+            prevouts: prevouts.to_vec(),
         })
     }
 
@@ -160,8 +183,7 @@ impl OutputType {
 
     pub fn get_name(&self) -> &'static str {
         match self {
-            OutputType::TaprootKey { .. } => "TaprootKey",
-            OutputType::TaprootScript { .. } => "TaprootScript",
+            OutputType::Taproot { .. } => "TaprootScript",
             OutputType::SegwitPublicKey { .. } => "SegwitPublicKey",
             OutputType::SegwitScript { .. } => "SegwitScript",
             OutputType::SegwitUnspendable { .. } => "SegwitUnspendable",
@@ -170,8 +192,7 @@ impl OutputType {
 
     pub fn get_value(&self) -> Amount {
         match self {
-            OutputType::TaprootKey { value, .. }
-            | OutputType::TaprootScript { value, .. }
+            OutputType::Taproot { value, .. }
             | OutputType::SegwitPublicKey { value, .. }
             | OutputType::SegwitScript { value, .. }
             | OutputType::SegwitUnspendable { value, .. } => *value,
@@ -180,8 +201,7 @@ impl OutputType {
 
     pub fn get_script_pubkey(&self) -> &ScriptBuf {
         match self {
-            OutputType::TaprootKey { script_pubkey, .. }
-            | OutputType::TaprootScript { script_pubkey, .. }
+            OutputType::Taproot { script_pubkey, .. }
             | OutputType::SegwitPublicKey { script_pubkey, .. }
             | OutputType::SegwitScript { script_pubkey, .. }
             | OutputType::SegwitUnspendable { script_pubkey, .. } => script_pubkey,
@@ -190,23 +210,21 @@ impl OutputType {
 
     pub fn has_prevouts(&self) -> bool {
         match self {
-            OutputType::TaprootKey { prevouts, .. } => !prevouts.is_empty(),
-            OutputType::TaprootScript { prevouts, .. } => !prevouts.is_empty(),
+            OutputType::Taproot { prevouts, .. } => !prevouts.is_empty(),
             _ => false,
         }
     }
 
     pub fn get_prevouts(&self) -> Vec<TxOut> {
         match self {
-            OutputType::TaprootKey { prevouts, .. } => prevouts.clone(),
-            OutputType::TaprootScript { prevouts, .. } => prevouts.clone(),
+            OutputType::Taproot { prevouts, .. } => prevouts.clone(),
             _ => vec![],
         }
     }
 
     pub fn get_taproot_spend_info(&self) -> Result<Option<TaprootSpendInfo>, ProtocolBuilderError> {
         match self {
-            OutputType::TaprootScript {
+            OutputType::Taproot {
                 leaves,
                 internal_key,
                 ..
@@ -221,115 +239,27 @@ impl OutputType {
         transaction: &Transaction,
         transaction_name: &str,
         input_index: usize,
-        prevouts: Vec<TxOut>,
+        prevouts: &[TxOut],
         tap_sighash_type: &TapSighashType,
-        musig2: bool,
         key_manager: &KeyManager<K>,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let messages = match self {
-            OutputType::TaprootKey {
-                ref internal_key, ..
-            } => {
-                let mut hasher = SighashCache::new(transaction);
-
-                let hashed_message = Message::from(hasher.taproot_key_spend_signature_hash(
-                    input_index,
-                    &sighash::Prevouts::All(&prevouts),
-                    *tap_sighash_type,
-                )?);
-
-                if musig2 {
-                    key_manager.generate_nonce(
-                        MessageId::new_string_id(transaction_name, input_index as u32, 0).as_str(),
-                        hashed_message.as_ref().to_vec(),
-                        internal_key,
-                        None,
-                    )?;
-                };
-
-                vec![Some(hashed_message)]
-            }
-            OutputType::TaprootScript {
+            OutputType::Taproot {
                 internal_key,
                 leaves,
-                with_key_path,
+                spend_mode,
                 ..
-            } => {
-                let mut hasher = SighashCache::new(transaction);
-
-                let mut hashed_messages = vec![];
-                for (script_index, leaf) in leaves.iter().enumerate() {
-                    if leaf.skip_signing() {
-                        hashed_messages.push(None);
-                        continue;
-                    }
-
-                    let hashed_message =
-                        Message::from(hasher.taproot_script_spend_signature_hash(
-                            input_index,
-                            &sighash::Prevouts::All(&prevouts),
-                            TapLeafHash::from_script(leaf.get_script(), LeafVersion::TapScript),
-                            *tap_sighash_type,
-                        )?);
-
-                    if musig2 {
-                        key_manager.generate_nonce(
-                            MessageId::new_string_id(
-                                transaction_name,
-                                input_index as u32,
-                                script_index as u32,
-                            )
-                            .as_str(),
-                            hashed_message.as_ref().to_vec(),
-                            &leaf.get_verifying_key(),
-                            None,
-                        )?;
-                    };
-
-                    hashed_messages.push(Some(hashed_message));
-                }
-
-                let key_path_hashed_message = if *with_key_path {
-                    // Compute a sighash for the key spend path.
-                    let key_path_hashed_message =
-                        Message::from(hasher.taproot_key_spend_signature_hash(
-                            input_index,
-                            &sighash::Prevouts::All(&prevouts),
-                            *tap_sighash_type,
-                        )?);
-
-                    if musig2 {
-                        let spend_info = Self::compute_spend_info(internal_key, leaves)?;
-
-                        let tweak = TapTweakHash::from_key_and_tweak(
-                            XOnlyPublicKey::from(*internal_key),
-                            spend_info.merkle_root(),
-                        )
-                        .to_scalar();
-                        let musig2_tweak =
-                            musig2::secp256k1::Scalar::from_be_bytes(tweak.to_be_bytes()).unwrap();
-
-                        key_manager.generate_nonce(
-                            MessageId::new_string_id(
-                                transaction_name,
-                                input_index as u32,
-                                leaves.len() as u32,
-                            )
-                            .as_str(),
-                            key_path_hashed_message.as_ref().to_vec(),
-                            internal_key,
-                            Some(musig2_tweak),
-                        )?;
-                    }
-
-                    Some(key_path_hashed_message)
-                } else {
-                    None
-                };
-
-                hashed_messages.push(key_path_hashed_message);
-                hashed_messages
-            }
+            } => self.taproot_sighash(
+                transaction,
+                transaction_name,
+                input_index,
+                prevouts,
+                tap_sighash_type,
+                internal_key,
+                leaves,
+                spend_mode,
+                key_manager,
+            )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
                     "Taproot".to_string(),
@@ -351,38 +281,20 @@ impl OutputType {
         let messages = match self {
             OutputType::SegwitPublicKey {
                 value, public_key, ..
-            } => {
-                let wpkh = public_key.wpubkey_hash().expect("key is compressed");
-                let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
-
-                let mut sighasher = SighashCache::new(transaction);
-
-                vec![Some(Message::from(sighasher.p2wpkh_signature_hash(
-                    input_index,
-                    &script_pubkey,
-                    *value,
-                    *ecdsa_sighash_type,
-                )?))]
-            }
-            OutputType::SegwitScript { value, script, .. } => {
-                if script.skip_signing() {
-                    vec![None]
-                } else {
-                    let script_hash = WScriptHash::from(script.get_script().clone());
-                    let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
-
-                    let mut sighasher = SighashCache::new(transaction);
-
-                    let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
-                        input_index,
-                        &script_pubkey,
-                        *value,
-                        *ecdsa_sighash_type,
-                    )?);
-
-                    vec![Some(hashed_message)]
-                }
-            }
+            } => self.ecdsa_key_sighash(
+                transaction,
+                input_index,
+                ecdsa_sighash_type,
+                value,
+                public_key,
+            )?,
+            OutputType::SegwitScript { value, script, .. } => self.ecdsa_script_sighash(
+                transaction,
+                input_index,
+                ecdsa_sighash_type,
+                value,
+                script,
+            )?,
             OutputType::SegwitUnspendable { .. } => {
                 vec![None]
             }
@@ -403,141 +315,24 @@ impl OutputType {
         input_index: usize,
         hashed_messages: &[Option<Message>],
         tap_sighash_type: &TapSighashType,
-        musig2: bool,
         key_manager: &KeyManager<K>,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
-        let messages = match self {
-            OutputType::TaprootKey {
-                internal_key,
-                tweak,
-                ..
-            } => {
-                assert!(
-                    hashed_messages.len() == 1,
-                    "Expected only one message to sign"
-                );
-                if hashed_messages[0].is_none() {
-                    return Ok(vec![None]);
-                }
-
-                let schnorr_signature = if musig2 {
-                    let message_id =
-                        MessageId::new_string_id(transaction_name, input_index as u32, 0);
-                    key_manager.get_aggregated_signature(internal_key, &message_id)?
-                } else {
-                    let hashed_message = hashed_messages[0].as_ref().unwrap();
-                    let (schnorr_signature, _) =
-                        match tweak {
-                            Some(t) => key_manager.sign_schnorr_message_with_tweak(
-                                hashed_message,
-                                internal_key,
-                                &Scalar::from_be_bytes(t.as_slice().try_into().map_err(|_| {
-                                    ProtocolBuilderError::InvalidTweakLength(t.len())
-                                })?)?,
-                            )?,
-                            None => key_manager.sign_schnorr_message_with_tap_tweak(
-                                hashed_message,
-                                internal_key,
-                                None,
-                            )?,
-                        };
-                    schnorr_signature
-                };
-
-                let signature = Signature::Taproot(bitcoin::taproot::Signature {
-                    signature: schnorr_signature,
-                    sighash_type: *tap_sighash_type,
-                });
-
-                vec![Some(signature)]
-            }
-            OutputType::TaprootScript {
+        let signatures = match self {
+            OutputType::Taproot {
                 internal_key,
                 leaves,
-                with_key_path,
+                spend_mode,
                 ..
-            } => {
-                assert!(
-                    hashed_messages.len() == leaves.len() + 1,
-                    "Expected one message for each script and one for the key spend path"
-                );
-
-                let mut signatures = vec![];
-                for (index, leaf) in leaves.iter().enumerate() {
-                    if leaf.skip_signing() {
-                        signatures.push(None);
-                        continue;
-                    }
-
-                    let schnorr_signature = if musig2 {
-                        let message_id = MessageId::new_string_id(
-                            transaction_name,
-                            input_index as u32,
-                            index as u32,
-                        );
-                        key_manager
-                            .get_aggregated_signature(&leaf.get_verifying_key(), &message_id)?
-                    } else {
-                        key_manager.sign_schnorr_message(
-                            &hashed_messages[index].unwrap(),
-                            &leaf.get_verifying_key(),
-                        )?
-                    };
-
-                    let signature = Some(Signature::Taproot(bitcoin::taproot::Signature {
-                        signature: schnorr_signature,
-                        sighash_type: *tap_sighash_type,
-                    }));
-
-                    signatures.push(signature);
-                }
-
-                let key_path_signature = if *with_key_path {
-                    // Compute a signature for the key spend path.
-                    let key_path_hashed_message = hashed_messages.last().unwrap().unwrap();
-                    hashed_messages[leaves.len()].as_ref().unwrap();
-
-                    let schnorr_signature = if musig2 {
-                        let message_id = MessageId::new_string_id(
-                            transaction_name,
-                            input_index as u32,
-                            leaves.len() as u32,
-                        );
-
-                        key_manager.get_aggregated_signature(internal_key, &message_id)?
-                    } else {
-                        let spend_info = Self::compute_spend_info(internal_key, leaves)?;
-
-                        let (schnorr_signature, output_key) = key_manager
-                            .sign_schnorr_message_with_tap_tweak(
-                                &key_path_hashed_message,
-                                internal_key,
-                                spend_info.merkle_root(),
-                            )?;
-
-                        // Verify the signature.
-                        if !SignatureVerifier::new().verify_schnorr_signature(
-                            &schnorr_signature,
-                            &key_path_hashed_message,
-                            output_key,
-                        ) {
-                            return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed);
-                        }
-
-                        schnorr_signature
-                    };
-
-                    Some(Signature::Taproot(bitcoin::taproot::Signature {
-                        signature: schnorr_signature,
-                        sighash_type: *tap_sighash_type,
-                    }))
-                } else {
-                    None
-                };
-
-                signatures.push(key_path_signature);
-                signatures
-            }
+            } => self.taproot_signature(
+                transaction_name,
+                input_index,
+                hashed_messages,
+                tap_sighash_type,
+                internal_key,
+                leaves,
+                spend_mode,
+                key_manager,
+            )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
                     "Taproot".to_string(),
@@ -546,7 +341,7 @@ impl OutputType {
             }
         };
 
-        Ok(messages)
+        Ok(signatures)
     }
 
     pub fn compute_ecdsa_signature<K: KeyStore>(
@@ -558,43 +353,18 @@ impl OutputType {
         key_manager: &KeyManager<K>,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         let signatures = match self {
-            OutputType::SegwitPublicKey { public_key, .. } => {
-                assert!(
-                    hashed_messages.len() == 1,
-                    "Expected only one message to sign"
-                );
-                assert!(hashed_messages[0].is_some(), "Expected a message to sign");
-
-                let ecdsa_signature =
-                    key_manager.sign_ecdsa_message(&hashed_messages[0].unwrap(), public_key)?;
-                let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
-                    signature: ecdsa_signature,
-                    sighash_type: *ecdsa_sighash_type,
-                });
-
-                vec![Some(signature)]
-            }
-            OutputType::SegwitScript { script, .. } => {
-                assert!(
-                    hashed_messages.len() == 1,
-                    "Expected only one message to sign"
-                );
-
-                if script.skip_signing() {
-                    vec![None]
-                } else {
-                    let ecdsa_signature = key_manager.sign_ecdsa_message(
-                        &hashed_messages[0].unwrap(),
-                        &script.get_verifying_key(),
-                    )?;
-                    let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
-                        signature: ecdsa_signature,
-                        sighash_type: *ecdsa_sighash_type,
-                    });
-
-                    vec![Some(signature)]
-                }
-            }
+            OutputType::SegwitPublicKey { public_key, .. } => self.ecdsa_key_signature(
+                hashed_messages,
+                ecdsa_sighash_type,
+                key_manager,
+                public_key,
+            )?,
+            OutputType::SegwitScript { script, .. } => self.ecdsa_script_signature(
+                hashed_messages,
+                ecdsa_sighash_type,
+                key_manager,
+                script,
+            )?,
             OutputType::SegwitUnspendable { .. } => {
                 vec![None]
             }
@@ -617,5 +387,457 @@ impl OutputType {
         let spend_info =
             scripts::build_taproot_spend_info(&secp, &XOnlyPublicKey::from(*internal_key), leaves)?;
         Ok(spend_info)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn taproot_sighash<K: KeyStore>(
+        &self,
+        transaction: &Transaction,
+        transaction_name: &str,
+        input_index: usize,
+        prevouts: &[TxOut],
+        tap_sighash_type: &TapSighashType,
+        internal_key: &PublicKey,
+        leaves: &[ProtocolScript],
+        spend_mode: &SpendMode,
+        key_manager: &KeyManager<K>,
+    ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
+        let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
+            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::ScriptsOnly => (false, true, false, None),
+            SpendMode::Script { .. } => (false, false, true, None),
+            SpendMode::None => (false, false, false, None),
+        };
+
+        // Initialize the vector of hashed messages with None for all paths.
+        let mut hashed_messages: Vec<Option<Message>> = vec![None; leaves.len() + 1];
+
+        if key_path {
+            let hashed_message = self.taproot_key_only_sighash(
+                transaction,
+                transaction_name,
+                input_index,
+                prevouts,
+                tap_sighash_type,
+                key_path_sign_mode.unwrap(),
+                internal_key,
+                leaves,
+                key_manager,
+            )?;
+
+            // Push the key path hash to the end of the vector.
+            let last_index = hashed_messages.len() - 1;
+            hashed_messages[last_index] = hashed_message;
+        };
+
+        if scripts_path {
+            // Script path hashes
+            for (leaf_index, leaf) in leaves.iter().enumerate() {
+                let hashed_message = self.taproot_script_only_sighash(
+                    transaction,
+                    transaction_name,
+                    input_index,
+                    prevouts,
+                    tap_sighash_type,
+                    leaf,
+                    leaf_index,
+                    key_manager,
+                )?;
+
+                // Push the script path hash to the correct position in the vector.
+                hashed_messages[leaf_index] = hashed_message;
+            }
+        };
+
+        if single_script_path {
+            match spend_mode {
+                SpendMode::Script { leaf, .. } => {
+                    let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
+
+                    let hashed_message = self.taproot_script_only_sighash(
+                        transaction,
+                        transaction_name,
+                        input_index,
+                        prevouts,
+                        tap_sighash_type,
+                        &leaf,
+                        leaf_index,
+                        key_manager,
+                    )?;
+
+                    hashed_messages[leaf_index] = hashed_message;
+                }
+                _ => {
+                    return Err(ProtocolBuilderError::InvalidSpendMode(
+                        "Script".to_string(),
+                        spend_mode.clone(),
+                    ));
+                }
+            };
+        }
+
+        Ok(hashed_messages)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn taproot_script_only_sighash<K: KeyStore>(
+        &self,
+        transaction: &Transaction,
+        transaction_name: &str,
+        input_index: usize,
+        prevouts: &[TxOut],
+        tap_sighash_type: &TapSighashType,
+        leaf: &ProtocolScript,
+        leaf_index: usize,
+        key_manager: &KeyManager<K>,
+    ) -> Result<Option<Message>, ProtocolBuilderError> {
+        let mut hasher = SighashCache::new(transaction);
+
+        let hashed_message = Message::from(hasher.taproot_script_spend_signature_hash(
+            input_index,
+            &sighash::Prevouts::All(prevouts),
+            TapLeafHash::from_script(leaf.get_script(), LeafVersion::TapScript),
+            *tap_sighash_type,
+        )?);
+
+        if leaf.aggregate_signing() && leaf.get_verifying_key().is_some() {
+            key_manager.generate_nonce(
+                MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32)
+                    .as_str(),
+                hashed_message.as_ref().to_vec(),
+                &leaf.get_verifying_key().unwrap(),
+                None,
+            )?;
+        };
+
+        Ok(Some(hashed_message))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn taproot_key_only_sighash<K: KeyStore>(
+        &self,
+        transaction: &Transaction,
+        transaction_name: &str,
+        input_index: usize,
+        prevouts: &[TxOut],
+        tap_sighash_type: &TapSighashType,
+        key_path_sign_mode: &SignMode,
+        internal_key: &PublicKey,
+        leaves: &[ProtocolScript],
+        key_manager: &KeyManager<K>,
+    ) -> Result<Option<Message>, ProtocolBuilderError> {
+        let mut hasher = SighashCache::new(transaction);
+
+        // Compute a sighash for the key spend path.
+        let key_path_hashed_message = Message::from(hasher.taproot_key_spend_signature_hash(
+            input_index,
+            &sighash::Prevouts::All(prevouts),
+            *tap_sighash_type,
+        )?);
+
+        if *key_path_sign_mode == SignMode::Aggregate {
+            let spend_info = Self::compute_spend_info(internal_key, leaves)?;
+
+            let tweak = TapTweakHash::from_key_and_tweak(
+                XOnlyPublicKey::from(*internal_key),
+                spend_info.merkle_root(),
+            )
+            .to_scalar();
+            let musig2_tweak =
+                musig2::secp256k1::Scalar::from_be_bytes(tweak.to_be_bytes()).unwrap();
+
+            key_manager.generate_nonce(
+                MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32)
+                    .as_str(),
+                key_path_hashed_message.as_ref().to_vec(),
+                internal_key,
+                Some(musig2_tweak),
+            )?;
+        }
+
+        Ok(Some(key_path_hashed_message))
+    }
+
+    fn ecdsa_key_sighash(
+        &self,
+        transaction: &Transaction,
+        input_index: usize,
+        ecdsa_sighash_type: &EcdsaSighashType,
+        value: &Amount,
+        public_key: &PublicKey,
+    ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
+        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
+
+        let mut sighasher = SighashCache::new(transaction);
+
+        Ok(vec![Some(Message::from(sighasher.p2wpkh_signature_hash(
+            input_index,
+            &script_pubkey,
+            *value,
+            *ecdsa_sighash_type,
+        )?))])
+    }
+
+    fn ecdsa_script_sighash(
+        &self,
+        transaction: &Transaction,
+        input_index: usize,
+        ecdsa_sighash_type: &EcdsaSighashType,
+        value: &Amount,
+        script: &ProtocolScript,
+    ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
+        let script_hash = WScriptHash::from(script.get_script().clone());
+        let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
+
+        let mut sighasher = SighashCache::new(transaction);
+
+        let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
+            input_index,
+            &script_pubkey,
+            *value,
+            *ecdsa_sighash_type,
+        )?);
+
+        Ok(vec![Some(hashed_message)])
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn taproot_signature<K: KeyStore>(
+        &self,
+        transaction_name: &str,
+        input_index: usize,
+        hashed_messages: &[Option<Message>],
+        tap_sighash_type: &TapSighashType,
+        internal_key: &PublicKey,
+        leaves: &[ProtocolScript],
+        spend_mode: &SpendMode,
+        key_manager: &KeyManager<K>,
+    ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
+        assert!(
+            hashed_messages.len() == leaves.len() + 1,
+            "Expected one message for each script and one for the key spend path"
+        );
+
+        let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
+            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::ScriptsOnly => (false, true, false, None),
+            SpendMode::Script { .. } => (false, false, true, None),
+            SpendMode::None => (false, false, false, None),
+        };
+
+        // Initialize the vector of signatures with None for all paths.
+        let mut signatures: Vec<Option<Signature>> = vec![None; leaves.len() + 1];
+
+        if key_path {
+            // Key path signature
+            let signature = self.taproot_key_only_signature(
+                transaction_name,
+                input_index,
+                hashed_messages,
+                tap_sighash_type,
+                key_path_sign_mode.unwrap(),
+                internal_key,
+                leaves,
+                key_manager,
+            )?;
+
+            // Push the key path signature to the end of the vector.
+            let last_index = signatures.len() - 1;
+            signatures[last_index] = signature;
+        };
+
+        if scripts_path {
+            // Script path signatures
+            for (leaf_index, leaf) in leaves.iter().enumerate() {
+                let signature = self.taproot_script_only_signature(
+                    transaction_name,
+                    input_index,
+                    hashed_messages,
+                    tap_sighash_type,
+                    leaf,
+                    leaf_index,
+                    key_manager,
+                )?;
+
+                signatures[leaf_index] = signature;
+            }
+        };
+
+        if single_script_path {
+            match spend_mode {
+                SpendMode::Script { leaf, .. } => {
+                    let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
+
+                    let signature = self.taproot_script_only_signature(
+                        transaction_name,
+                        input_index,
+                        hashed_messages,
+                        tap_sighash_type,
+                        &leaf,
+                        leaf_index,
+                        key_manager,
+                    )?;
+
+                    signatures[leaf_index] = signature;
+                }
+                _ => {
+                    return Err(ProtocolBuilderError::InvalidSpendMode(
+                        "Script".to_string(),
+                        spend_mode.clone(),
+                    ));
+                }
+            };
+        };
+
+        Ok(signatures)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn taproot_script_only_signature<K: KeyStore>(
+        &self,
+        transaction_name: &str,
+        input_index: usize,
+        hashed_messages: &[Option<Message>],
+        tap_sighash_type: &TapSighashType,
+        leaf: &ProtocolScript,
+        leaf_index: usize,
+        key_manager: &KeyManager<K>,
+    ) -> Result<Option<Signature>, ProtocolBuilderError> {
+        if leaf.skip_signing() {
+            return Ok(None);
+        };
+
+        let schnorr_signature = if leaf.aggregate_signing() {
+            let message_id =
+                MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32);
+            key_manager.get_aggregated_signature(&leaf.get_verifying_key().unwrap(), &message_id)?
+        } else {
+            let hashed_message = hashed_messages[leaf_index].unwrap();
+
+            let schnorr_signature = key_manager
+                .sign_schnorr_message(&hashed_message, &leaf.get_verifying_key().unwrap())?;
+
+            // Verify the signature.
+            if !SignatureVerifier::new().verify_schnorr_signature(
+                &schnorr_signature,
+                &hashed_message,
+                leaf.get_verifying_key().unwrap(),
+            ) {
+                return Err(ProtocolBuilderError::ScriptSpendSignatureGenerationFailed(
+                    transaction_name.to_string(),
+                    input_index,
+                    leaf_index,
+                ));
+            };
+
+            schnorr_signature
+        };
+
+        Ok(Some(Signature::Taproot(bitcoin::taproot::Signature {
+            signature: schnorr_signature,
+            sighash_type: *tap_sighash_type,
+        })))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn taproot_key_only_signature<K: KeyStore>(
+        &self,
+        transaction_name: &str,
+        input_index: usize,
+        hashed_messages: &[Option<Message>],
+        tap_sighash_type: &TapSighashType,
+        key_path_sign_mode: &SignMode,
+        internal_key: &PublicKey,
+        leaves: &[ProtocolScript],
+        key_manager: &KeyManager<K>,
+    ) -> Result<Option<Signature>, ProtocolBuilderError> {
+        // Compute a signature for the key spend path.
+        let key_path_hashed_message = hashed_messages.last().unwrap().unwrap();
+        hashed_messages[leaves.len()].as_ref().unwrap();
+
+        let schnorr_signature = if *key_path_sign_mode == SignMode::Aggregate {
+            let message_id =
+                MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32);
+
+            key_manager.get_aggregated_signature(internal_key, &message_id)?
+        } else {
+            let spend_info = Self::compute_spend_info(internal_key, leaves)?;
+
+            let (schnorr_signature, output_key) = key_manager.sign_schnorr_message_with_tap_tweak(
+                &key_path_hashed_message,
+                internal_key,
+                spend_info.merkle_root(),
+            )?;
+
+            // Verify the signature.
+            if !SignatureVerifier::new().verify_schnorr_signature(
+                &schnorr_signature,
+                &key_path_hashed_message,
+                output_key,
+            ) {
+                return Err(ProtocolBuilderError::KeySpendSignatureGenerationFailed(
+                    transaction_name.to_string(),
+                    input_index,
+                ));
+            }
+
+            schnorr_signature
+        };
+
+        Ok(Some(Signature::Taproot(bitcoin::taproot::Signature {
+            signature: schnorr_signature,
+            sighash_type: *tap_sighash_type,
+        })))
+    }
+
+    pub fn ecdsa_key_signature<K: KeyStore>(
+        &self,
+        hashed_messages: &[Option<Message>],
+        ecdsa_sighash_type: &EcdsaSighashType,
+        key_manager: &KeyManager<K>,
+        public_key: &PublicKey,
+    ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
+        assert!(
+            hashed_messages.len() == 1,
+            "Expected only one message to sign"
+        );
+        assert!(hashed_messages[0].is_some(), "Expected a message to sign");
+        let ecdsa_signature =
+            key_manager.sign_ecdsa_message(&hashed_messages[0].unwrap(), public_key)?;
+        let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
+            signature: ecdsa_signature,
+            sighash_type: *ecdsa_sighash_type,
+        });
+        Ok(vec![Some(signature)])
+    }
+
+    pub fn ecdsa_script_signature<K: KeyStore>(
+        &self,
+        hashed_messages: &[Option<Message>],
+        ecdsa_sighash_type: &EcdsaSighashType,
+        key_manager: &KeyManager<K>,
+        script: &ProtocolScript,
+    ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
+        assert!(
+            hashed_messages.len() == 1,
+            "Expected only one message to sign"
+        );
+        Ok(if script.skip_signing() {
+            vec![None]
+        } else {
+            let ecdsa_signature = key_manager.sign_ecdsa_message(
+                &hashed_messages[0].unwrap(),
+                &script.get_verifying_key().unwrap(),
+            )?;
+            let signature = Signature::Ecdsa(bitcoin::ecdsa::Signature {
+                signature: ecdsa_signature,
+                sighash_type: *ecdsa_sighash_type,
+            });
+
+            vec![Some(signature)]
+        })
     }
 }

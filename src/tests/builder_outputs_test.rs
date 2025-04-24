@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use bitcoin::{
         hashes::Hash,
         opcodes::all::{OP_PUSHNUM_1, OP_RETURN},
@@ -9,16 +11,18 @@ mod tests {
     use crate::{
         builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
-        scripts::ProtocolScript,
-        tests::utils::{ecdsa_sighash_type, new_key_manager, taproot_sighash_type, TemporaryDir},
-        types::{input::InputArgs, output::OutputType},
+        scripts::{self, ProtocolScript, SignMode},
+        tests::utils::TestContext,
+        types::{
+            input::InputArgs,
+            output::{OutputType, SpendMode},
+        },
     };
 
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_op_return_output_script");
+        let tc = TestContext::new("test_op_return_output_script").unwrap();
 
-        let ecdsa_sighash_type = ecdsa_sighash_type();
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
@@ -26,10 +30,8 @@ mod tests {
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
 
         // Arrange
         let number: u64 = 0;
@@ -60,11 +62,11 @@ mod tests {
                 output_index,
                 output_type,
                 "op_return",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
             .add_op_return_output(&mut protocol, "op_return", data.clone())?;
 
-        protocol.build(false, &key_manager)?;
+        protocol.build(tc.key_manager())?;
         let tx = protocol.transaction_by_name("op_return")?;
 
         // Assert
@@ -93,20 +95,19 @@ mod tests {
     #[test]
     fn test_taproot_keypath_and_signature() -> Result<(), anyhow::Error> {
         // Arrange
-        let test_dir = TemporaryDir::new("test_taproot_keypath_and_signature");
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let ecdsa_sighash_type = ecdsa_sighash_type();
-        let taproot_sighash_type = taproot_sighash_type();
+        let tc = TestContext::new("test_taproot_keypath_and_signature").unwrap();
+
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let public_key = key_manager.derive_keypair(0).unwrap();
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let public_key = tc.key_manager().derive_keypair(0).unwrap();
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
-        let pubkey_alice = key_manager.derive_keypair(1).unwrap();
+        let pubkey_alice = tc.key_manager().derive_keypair(1).unwrap();
+
+        let unspendable_script = scripts::op_return_script(vec![0x04, 0x05, 0x06])?;
 
         // Act
         let mut protocol = Protocol::new("tap_keypath");
@@ -119,18 +120,20 @@ mod tests {
                 output_index,
                 output_type,
                 "keypath_origin",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
             // This connection creates the output and input scripts for the taprootkeypath spend
-            .add_taproot_key_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "connection",
                 "keypath_origin",
                 value,
                 &public_key,
-                None,
+                &[unspendable_script],
+                &SpendMode::KeyOnly { key_path_sign: SignMode::Single },
+                &[],
                 "keypath_spend",
-                &taproot_sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_speedup_output(
                 &mut protocol,
@@ -140,10 +143,10 @@ mod tests {
             )?
             .add_p2wpkh_output(&mut protocol, "keypath_spend", value, &pubkey_alice)?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
 
         let signature = protocol
-            .input_taproot_script_spend_signature("keypath_spend", 0, 0)
+            .input_taproot_key_spend_signature("keypath_spend", 0)
             .unwrap()
             .unwrap();
         let mut args = InputArgs::new_taproot_key_args();

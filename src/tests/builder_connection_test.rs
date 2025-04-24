@@ -1,40 +1,35 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, EcdsaSighashType, ScriptBuf, TapSighashType};
+    use bitcoin::{hashes::Hash, ScriptBuf};
 
     use crate::{
         builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
-        scripts::ProtocolScript,
-        tests::utils::{new_key_manager, TemporaryDir},
+        scripts::{ProtocolScript, SignMode},
+        tests::utils::TestContext,
         types::{
-            input::{InputArgs, LeafSpec, SighashType},
-            output::OutputType,
+            input::{InputArgs, LeafSpec},
+            output::{OutputType, SpendMode},
         },
     };
 
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_single_connection");
+        let tc = TestContext::new("test_single_connection").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
 
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
-
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key);
-        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key);
-        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key);
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
-        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key);
-        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key);
+        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key, SignMode::Single);
+        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
+        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
+        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key, SignMode::Single);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key, SignMode::Single);
+        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -51,19 +46,19 @@ mod tests {
                 output_index,
                 output_type,
                 "start",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "start",
                 value,
                 &internal_key,
                 &scripts_from,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "challenge",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_timelock_connection(
                 &mut protocol,
@@ -72,23 +67,23 @@ mod tests {
                 &internal_key,
                 &expired_from,
                 &renew_from,
-                false,
-                vec![],
+                &SpendMode::ScriptsOnly,
+                &[],
                 "challenge",
                 blocks,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "challenge",
                 value,
                 &internal_key,
                 &scripts_to,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "response",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_timelock_connection(
                 &mut protocol,
@@ -97,14 +92,14 @@ mod tests {
                 &internal_key,
                 &expired_to,
                 &renew_to,
-                false,
-                vec![],
+                &SpendMode::ScriptsOnly,
+                &[],
                 "response",
                 blocks,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
 
         let challenge_args = &[
             InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
@@ -220,34 +215,30 @@ mod tests {
 
     #[test]
     fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_single_cyclic_connection");
+        let tc = TestContext::new("test_single_cyclic_connection").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
-
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let scripts = vec![script.clone(), script.clone()];
 
         let mut protocol = Protocol::new("cycle");
         let builder = ProtocolBuilder {};
 
-        builder.add_taproot_script_spend_connection(
+        builder.add_taproot_connection(
             &mut protocol,
             "cycle",
             "A",
             value,
             &internal_key,
             &scripts,
-            true,
-            vec![],
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &[],
             "A",
-            &sighash_type,
+            &tc.tr_sighash_type(),
         )?;
 
-        let result = protocol.build_and_sign(&key_manager);
+        let result = protocol.build_and_sign(tc.key_manager());
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -264,19 +255,13 @@ mod tests {
 
     #[test]
     fn test_multiple_cyclic_connection() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_multiple_cyclic_connection");
+        let tc = TestContext::new("test_multiple_cyclic_connection").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
-
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
-
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -293,46 +278,46 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "A",
                 value,
                 &internal_key,
                 &scripts_from,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "B",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "B",
                 value,
                 &internal_key,
                 &scripts_to,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "C",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "C",
                 value,
                 &internal_key,
                 &scripts_to,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "A",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?;
 
-        let result = protocol.build_and_sign(&key_manager);
+        let result = protocol.build_and_sign(tc.key_manager());
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -349,17 +334,13 @@ mod tests {
 
     #[test]
     fn test_single_node_no_connections() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_single_node_no_connections");
+        let tc = TestContext::new("test_single_node_no_connections").unwrap();
+        let public_key = tc.key_manager().derive_keypair(0).unwrap();
 
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let public_key = key_manager.derive_keypair(0).unwrap();
-
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("single_connection");
@@ -371,10 +352,10 @@ mod tests {
             output_index,
             output_type,
             "start",
-            &ecdsa_sighash_type,
+            &tc.ecdsa_sighash_type(),
         )?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
 
         let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
 
@@ -390,25 +371,20 @@ mod tests {
 
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_rounds");
-
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
+        let tc = TestContext::new("test_rounds").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
         let rounds = 3;
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
 
-        let (from_rounds, _) = builder.connect_taproot_script_spend_rounds(
+        let (from_rounds, _) = builder.connect_taproot_rounds(
             &mut protocol,
             "rounds",
             rounds,
@@ -418,8 +394,8 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            true,
-            &sighash_type,
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &tc.tr_sighash_type(),
         )?;
 
         builder
@@ -429,22 +405,22 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "A",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 &from_rounds,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
 
         let args = [InputArgs::new_taproot_script_args(LeafSpec::Index(0))];
 
@@ -487,21 +463,17 @@ mod tests {
 
     #[test]
     fn test_zero_rounds() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_zero_rounds");
-
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
+        let tc = TestContext::new("test_zero_rounds").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
         let rounds = 0;
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
 
-        let result = builder.connect_taproot_script_spend_rounds(
+        let result = builder.connect_taproot_rounds(
             &mut protocol,
             "rounds",
             rounds,
@@ -511,8 +483,8 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            true,
-            &sighash_type,
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &tc.tr_sighash_type(),
         );
 
         match result {
@@ -529,19 +501,14 @@ mod tests {
 
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_multiple_connections");
-
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let internal_key = key_manager.derive_keypair(0).unwrap();
+        let tc = TestContext::new("test_multiple_connections").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
         let rounds = 3;
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
@@ -554,106 +521,106 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "A",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "B",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "A",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "C",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "B",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "D",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "C",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "D",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "D",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "E",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "A",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "F",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "D",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "F",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "F",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "G",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?;
 
-        let (from_rounds, to_rounds) = builder.connect_taproot_script_spend_rounds(
+        let (from_rounds, to_rounds) = builder.connect_taproot_rounds(
             &mut protocol,
             "rounds",
             rounds,
@@ -663,26 +630,26 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            true,
-            &sighash_type,
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &tc.tr_sighash_type(),
         )?;
 
         builder
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "G",
                 value,
                 &internal_key,
                 &[script.clone()],
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 &from_rounds,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_p2wsh_output(&mut protocol, &to_rounds, value, &script)?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
         let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 

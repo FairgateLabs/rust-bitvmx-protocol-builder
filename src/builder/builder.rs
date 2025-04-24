@@ -1,16 +1,17 @@
 use bitcoin::{
-    hashes::Hash,
-    secp256k1::{Message, Scalar},
-    sighash::SighashCache,
-    Address, Amount, EcdsaSighashType, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Txid, Witness,
+    hashes::Hash, secp256k1::Message, sighash::SighashCache, Address, Amount, EcdsaSighashType,
+    OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 
 use crate::{
     errors::ProtocolBuilderError,
     scripts::{self, ProtocolScript},
-    types::{input::SighashType, output::OutputType, Utxo},
+    types::{
+        input::{InputSpec, SighashType},
+        output::{OutputType, SpendMode},
+        Utxo,
+    },
 };
 
 use super::{
@@ -21,36 +22,21 @@ use super::{
 pub struct ProtocolBuilder {}
 
 impl ProtocolBuilder {
-    pub fn add_taproot_key_spend_output(
-        &self,
-        protocol: &mut Protocol,
-        transaction_name: &str,
-        value: u64,
-        internal_key: &PublicKey,
-        tweak: Option<&Scalar>,
-        prevouts: Vec<TxOut>,
-    ) -> Result<&Self, ProtocolBuilderError> {
-        let output_type = OutputType::tr_key(value, internal_key, tweak, prevouts)?;
-        protocol.add_transaction_output(transaction_name, output_type)?;
-        Ok(self)
-    }
-
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_output(
+    pub fn add_taproot_output(
         &self,
         protocol: &mut Protocol,
         transaction_name: &str,
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
     ) -> Result<&Self, ProtocolBuilderError> {
         check_empty_scripts(leaves)?;
 
-        let output_type =
-            OutputType::tr_script(value, internal_key, leaves, with_key_path, prevouts)?;
-        protocol.add_transaction_output(transaction_name, output_type)?;
+        let output_type = OutputType::taproot(value, internal_key, leaves, spend_mode, prevouts)?;
+        protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
 
@@ -62,7 +48,7 @@ impl ProtocolBuilder {
         public_key: &PublicKey,
     ) -> Result<&Self, ProtocolBuilderError> {
         let output_type = OutputType::segwit_key(value, public_key)?;
-        protocol.add_transaction_output(transaction_name, output_type)?;
+        protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
 
@@ -74,7 +60,7 @@ impl ProtocolBuilder {
         script: &ProtocolScript,
     ) -> Result<&Self, ProtocolBuilderError> {
         let output_type = OutputType::segwit_script(value, script)?;
-        protocol.add_transaction_output(transaction_name, output_type)?;
+        protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
 
@@ -95,7 +81,7 @@ impl ProtocolBuilder {
         data: Vec<u8>,
     ) -> Result<&Self, ProtocolBuilderError> {
         let output_type = OutputType::segwit_unspendable(scripts::op_return(data))?;
-        protocol.add_transaction_output(transaction_name, output_type)?;
+        protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
 
@@ -108,16 +94,16 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         expired_script: &ProtocolScript,
         renew_script: &ProtocolScript,
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_taproot_script_spend_output(
+        self.add_taproot_output(
             protocol,
             transaction_name,
             value,
             internal_key,
             &[expired_script.clone(), renew_script.clone()],
-            with_key_path,
+            spend_mode,
             prevouts,
         )
     }
@@ -126,7 +112,7 @@ impl ProtocolBuilder {
         &self,
         protocol: &mut Protocol,
         transaction_name: &str,
-        previous_output: u32,
+        previous_output: usize,
         blocks: u16,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
@@ -194,35 +180,7 @@ impl ProtocolBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_key_spend_connection(
-        &self,
-        protocol: &mut Protocol,
-        connection_name: &str,
-        from: &str,
-        value: u64,
-        internal_key: &PublicKey,
-        tweak: Option<&Scalar>,
-        to: &str,
-        sighash_type: &SighashType,
-    ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_taproot_key_spend_output(protocol, from, value, internal_key, tweak, vec![])?;
-        let output_index = (protocol.transaction_by_name(from)?.output.len() - 1) as u32;
-
-        protocol.add_transaction_input(
-            Hash::all_zeros(),
-            output_index,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            sighash_type,
-        )?;
-        let input_index = (protocol.transaction_by_name(to)?.input.len() - 1) as u32;
-
-        protocol.connect(connection_name, from, output_index, to, input_index)?;
-        Ok(self)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_taproot_script_spend_connection(
+    pub fn add_taproot_connection(
         &self,
         protocol: &mut Protocol,
         connection_name: &str,
@@ -230,21 +188,21 @@ impl ProtocolBuilder {
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_taproot_script_spend_output(
+        self.add_taproot_output(
             protocol,
             from,
             value,
             internal_key,
             leaves,
-            with_key_path,
+            spend_mode,
             prevouts,
         )?;
-        let output_index = (protocol.transaction_by_name(from)?.output.len() - 1) as u32;
+        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
 
         protocol.add_transaction_input(
             Hash::all_zeros(),
@@ -253,9 +211,15 @@ impl ProtocolBuilder {
             Sequence::ENABLE_RBF_NO_LOCKTIME,
             sighash_type,
         )?;
-        let input_index = (protocol.transaction_by_name(to)?.input.len() - 1) as u32;
+        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
 
-        protocol.connect(connection_name, from, output_index, to, input_index)?;
+        protocol.connect(
+            connection_name,
+            from,
+            output_index,
+            to,
+            InputSpec::Index(input_index),
+        )?;
         Ok(self)
     }
 
@@ -271,7 +235,7 @@ impl ProtocolBuilder {
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
         self.add_p2wpkh_output(protocol, from, value, public_key)?;
-        let output_index = (protocol.transaction_by_name(from)?.output.len() - 1) as u32;
+        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
 
         protocol.add_transaction_input(
             Hash::all_zeros(),
@@ -280,9 +244,15 @@ impl ProtocolBuilder {
             Sequence::ENABLE_RBF_NO_LOCKTIME,
             sighash_type,
         )?;
-        let input_index = (protocol.transaction_by_name(to)?.input.len() - 1) as u32;
+        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
 
-        protocol.connect(connection_name, from, output_index, to, input_index)?;
+        protocol.connect(
+            connection_name,
+            from,
+            output_index,
+            to,
+            InputSpec::Index(input_index),
+        )?;
         Ok(self)
     }
 
@@ -298,7 +268,7 @@ impl ProtocolBuilder {
         sighash_type: &SighashType,
     ) -> Result<(), ProtocolBuilderError> {
         self.add_p2wsh_output(protocol, from, value, script)?;
-        let output_index = (protocol.transaction_by_name(from)?.output.len() - 1) as u32;
+        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
 
         protocol.add_transaction_input(
             Hash::all_zeros(),
@@ -307,9 +277,15 @@ impl ProtocolBuilder {
             Sequence::ENABLE_RBF_NO_LOCKTIME,
             sighash_type,
         )?;
-        let input_index = (protocol.transaction_by_name(to)?.input.len() - 1) as u32;
+        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
 
-        protocol.connect(connection_name, from, output_index, to, input_index)?;
+        protocol.connect(
+            connection_name,
+            from,
+            output_index,
+            to,
+            InputSpec::Index(input_index),
+        )?;
         Ok(())
     }
 
@@ -322,8 +298,8 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         expired_script: &ProtocolScript,
         renew_script: &ProtocolScript,
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
         to: &str,
         _expired_blocks: u16,
         sighash_type: &SighashType,
@@ -335,16 +311,22 @@ impl ProtocolBuilder {
             internal_key,
             expired_script,
             renew_script,
-            with_key_path,
+            spend_mode,
             prevouts,
         )?;
-        let output_index = (protocol.transaction_by_name(from)?.output.len() - 1) as u32;
+        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
 
         // This input consumes the renew_script output, no need to use the expired_blocks
         self.add_timelock_input(protocol, to, output_index, 0, sighash_type)?;
-        let input_index = (protocol.transaction_by_name(to)?.input.len() - 1) as u32;
+        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
 
-        protocol.connect("timelock", from, output_index, to, input_index)?;
+        protocol.connect(
+            "timelock",
+            from,
+            output_index,
+            to,
+            InputSpec::Index(input_index),
+        )?;
         Ok(self)
 
         // TODO use expired_blocks to create a transaction that consumes the expired_script
@@ -377,19 +359,19 @@ impl ProtocolBuilder {
         speedup_value: u64,
         speedup_key: &PublicKey,
         internal_key: &PublicKey,
-        with_key_path: bool,
-        prevouts: Vec<TxOut>,
+        spend_mode: &SpendMode,
+        prevouts: &[TxOut],
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_taproot_script_spend_connection(
+        self.add_taproot_connection(
             protocol,
             "linked_messages",
             from,
             protocol_value,
             internal_key,
             protocol_scripts,
-            with_key_path,
-            prevouts.clone(),
+            spend_mode,
+            prevouts,
             to,
             sighash_type,
         )?;
@@ -400,7 +382,7 @@ impl ProtocolBuilder {
             internal_key,
             timelock_expired,
             timelock_renew,
-            with_key_path,
+            spend_mode,
             prevouts,
             to,
             0,
@@ -413,7 +395,7 @@ impl ProtocolBuilder {
 
     /// Creates a connection between two transactions for a given number of rounds creating the intermediate transactions to complete the DAG.
     #[allow(clippy::too_many_arguments)]
-    pub fn connect_taproot_script_spend_rounds(
+    pub fn connect_taproot_rounds(
         &self,
         protocol: &mut Protocol,
         connection_name: &str,
@@ -424,7 +406,7 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         leaves_from: &[ProtocolScript],
         leaves_to: &[ProtocolScript],
-        with_key_path: bool,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
     ) -> Result<(String, String), ProtocolBuilderError> {
         check_zero_rounds(rounds)?;
@@ -441,12 +423,12 @@ impl ProtocolBuilder {
 
             // Connection between the from and to transactions using the leaves_from.
             let output_type =
-                OutputType::tr_script(value, internal_key, leaves_from, with_key_path, vec![])?;
+                OutputType::taproot(value, internal_key, leaves_from, spend_mode, &[])?;
             protocol.add_connection(
                 connection_name,
                 &from_round,
                 &to_round,
-                output_type,
+                &output_type,
                 sighash_type,
             )?;
 
@@ -455,13 +437,12 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the leaves_to.
-            let output_type =
-                OutputType::tr_script(value, internal_key, leaves_to, with_key_path, vec![])?;
+            let output_type = OutputType::taproot(value, internal_key, leaves_to, spend_mode, &[])?;
             protocol.add_connection(
                 connection_name,
                 &to_round,
                 &from_round,
-                output_type,
+                &output_type,
                 sighash_type,
             )?;
         }
@@ -472,13 +453,12 @@ impl ProtocolBuilder {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using leaves_from.
-        let output_type =
-            OutputType::tr_script(value, internal_key, leaves_from, with_key_path, vec![])?;
+        let output_type = OutputType::taproot(value, internal_key, leaves_from, spend_mode, &[])?;
         protocol.add_connection(
             connection_name,
             &from_round,
             &to_round,
-            output_type,
+            &output_type,
             sighash_type,
         )?;
 

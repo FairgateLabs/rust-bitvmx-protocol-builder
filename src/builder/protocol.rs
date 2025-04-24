@@ -16,7 +16,10 @@ use crate::{
     graph::graph::TransactionGraph,
     scripts::ProtocolScript,
     types::{
-        input::{InputArgs, InputInfo, InputSignatures, LeafSpec, SighashType, Signature},
+        connection::ConnectionType,
+        input::{
+            InputArgs, InputInfo, InputSignatures, InputSpec, LeafSpec, SighashType, Signature,
+        },
         output::OutputType,
     },
     unspendable::unspendable_key,
@@ -66,7 +69,7 @@ impl Protocol {
     pub fn add_transaction_input(
         &mut self,
         previous_txid: Txid,
-        previous_output: u32,
+        previous_output: usize,
         transaction_name: &str,
         sequence: Sequence,
         sighash_type: &SighashType,
@@ -78,7 +81,7 @@ impl Protocol {
         transaction.input.push(transaction::TxIn {
             previous_output: OutPoint {
                 txid: previous_txid,
-                vout: previous_output,
+                vout: previous_output as u32,
             },
             script_sig: ScriptBuf::default(),
             sequence,
@@ -94,7 +97,7 @@ impl Protocol {
     pub fn add_transaction_output(
         &mut self,
         transaction_name: &str,
-        output_type: OutputType,
+        output_type: &OutputType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
@@ -106,7 +109,7 @@ impl Protocol {
         });
 
         self.graph
-            .add_transaction_output(transaction_name, transaction, output_type)?;
+            .add_transaction_output(transaction_name, transaction, output_type.clone())?;
 
         Ok(self)
     }
@@ -116,7 +119,7 @@ impl Protocol {
         connection_name: &str,
         from: &str,
         to: &str,
-        output_type: OutputType,
+        output_type: &OutputType,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_transaction_output(from, output_type)?;
@@ -124,14 +127,20 @@ impl Protocol {
 
         self.add_transaction_input(
             Hash::all_zeros(),
-            output_index,
+            output_index as usize,
             to,
             Sequence::ENABLE_RBF_NO_LOCKTIME,
             sighash_type,
         )?;
-        let input_index = (self.transaction_by_name(to)?.input.len() - 1) as u32;
+        let input_index = self.transaction_by_name(to)?.input.len() - 1;
 
-        self.connect(connection_name, from, output_index, to, input_index)
+        self.connect(
+            connection_name,
+            from,
+            output_index as usize,
+            to,
+            InputSpec::Index(input_index),
+        )
     }
 
     pub fn add_external_connection(
@@ -144,13 +153,16 @@ impl Protocol {
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_transaction_input(
             txid,
-            output_index,
+            output_index as usize,
             to,
             Sequence::ENABLE_RBF_NO_LOCKTIME,
             sighash_type,
         )?;
-        self.graph
-            .connect_with_external_transaction(output_type, to)?;
+
+        self.graph.connect(ConnectionType::External {
+            to: to.to_string(),
+            output_type,
+        })?;
         Ok(self)
     }
 
@@ -158,9 +170,9 @@ impl Protocol {
         &mut self,
         connection_name: &str,
         from: &str,
-        output_index: u32,
+        output_index: usize,
         to: &str,
-        input_index: u32,
+        input_index: InputSpec,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_connection_name(connection_name)?;
         check_empty_transaction_name(from)?;
@@ -169,42 +181,61 @@ impl Protocol {
         let from_tx = self.transaction_by_name(from)?;
         let to_tx = self.transaction_by_name(to)?;
 
-        if output_index >= from_tx.output.len() as u32 {
+        if output_index >= from_tx.output.len() {
             return Err(ProtocolBuilderError::MissingOutput(
                 from.to_string(),
                 output_index,
             ));
         }
 
-        if input_index >= to_tx.input.len() as u32 {
-            return Err(ProtocolBuilderError::MissingInput(
-                to.to_string(),
-                input_index,
-            ));
-        }
+        let input_index = match input_index {
+            InputSpec::Index(index) => {
+                if index >= to_tx.input.len() {
+                    return Err(ProtocolBuilderError::MissingInput(to.to_string(), index));
+                }
 
-        self.graph
-            .connect(connection_name, from, output_index, to, input_index)?;
+                index
+            }
+            InputSpec::SighashType(sighash_type) => {
+                // If input_index is not present, add a new input with the specified
+                // sighash type to the "to" transaction and return its index
+                self.add_transaction_input(
+                    Hash::all_zeros(),
+                    output_index,
+                    to,
+                    Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    &sighash_type,
+                )?;
+
+                self.transaction_by_name(to)?.input.len() - 1
+            }
+        };
+
+        self.graph.connect(ConnectionType::Internal {
+            name: connection_name.to_string(),
+            from: from.to_string(),
+            output_index,
+            to: to.to_string(),
+            input_index,
+        })?;
 
         Ok(self)
     }
 
     pub fn build<K: KeyStore>(
         &mut self,
-        musig2: bool,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_sighashes(musig2, key_manager)?;
+        self.compute_sighashes(key_manager)?;
         Ok(self.clone())
     }
 
     pub fn sign<K: KeyStore>(
         &mut self,
-        musig2: bool,
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Self, ProtocolBuilderError> {
-        self.compute_signatures(musig2, key_manager)?;
+        self.compute_signatures(key_manager)?;
         Ok(self.clone())
     }
 
@@ -214,9 +245,82 @@ impl Protocol {
         key_manager: &Rc<KeyManager<K>>,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_sighashes(false, key_manager)?;
-        self.compute_signatures(false, key_manager)?;
+        self.compute_sighashes(key_manager)?;
+        self.compute_signatures(key_manager)?;
         Ok(self.clone())
+    }
+
+    pub fn sign_input<K: KeyStore>(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
+        leaf: Option<LeafSpec>,
+        key_manager: &KeyManager<K>,
+    ) -> Result<(), ProtocolBuilderError> {
+        let input = &self.graph.get_inputs(transaction_name)?[input_index];
+        let output_type = input.output_type().unwrap();
+
+        let (signature, signature_index) = match input.sighash_type() {
+            SighashType::Taproot(tap_sighash_type) => {
+                let leaves = match output_type {
+                    OutputType::Taproot { leaves, .. } => leaves,
+                    _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
+                };
+
+                let (leaf, leaf_index) = match leaf {
+                    Some(leaf) => leaf.script_and_index(leaves)?,
+                    None => {
+                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
+                    }
+                };
+
+                (
+                    output_type.taproot_script_only_signature(
+                        transaction_name,
+                        input_index,
+                        &input.hashed_messages(),
+                        tap_sighash_type,
+                        &leaf,
+                        leaf_index,
+                        key_manager,
+                    )?,
+                    leaf_index,
+                )
+            }
+
+            SighashType::Ecdsa(ecdsa_sighash_type) => match output_type {
+                OutputType::SegwitPublicKey { public_key, .. } => (
+                    output_type.ecdsa_key_signature(
+                        &input.hashed_messages(),
+                        ecdsa_sighash_type,
+                        key_manager,
+                        public_key,
+                    )?[0]
+                        .clone(),
+                    0,
+                ),
+                OutputType::SegwitScript { script, .. } => (
+                    output_type.ecdsa_script_signature(
+                        &input.hashed_messages(),
+                        ecdsa_sighash_type,
+                        key_manager,
+                        script,
+                    )?[0]
+                        .clone(),
+                    0,
+                ),
+                _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
+            },
+        };
+
+        self.graph.update_input_signature(
+            transaction_name,
+            input_index as u32,
+            signature,
+            signature_index,
+        )?;
+
+        Ok(())
     }
 
     pub fn update_input_signatures(
@@ -313,7 +417,7 @@ impl Protocol {
     ) -> Result<Option<bitcoin::ecdsa::Signature>, ProtocolBuilderError> {
         let input_signature = self
             .graph
-            .get_input_ecdsa_signature(transaction_name, input_index)?;
+            .get_ecdsa_signature(transaction_name, input_index)?;
         Ok(input_signature)
     }
 
@@ -323,11 +427,9 @@ impl Protocol {
         input_index: usize,
         leaf_index: usize,
     ) -> Result<Option<bitcoin::taproot::Signature>, ProtocolBuilderError> {
-        let input_signature = self.graph.get_input_taproot_script_spend_signature(
-            transaction_name,
-            input_index,
-            leaf_index,
-        )?;
+        let input_signature =
+            self.graph
+                .get_taproot_script_signature(transaction_name, input_index, leaf_index)?;
         Ok(input_signature)
     }
 
@@ -338,7 +440,7 @@ impl Protocol {
     ) -> Result<Option<bitcoin::taproot::Signature>, ProtocolBuilderError> {
         let input_signature = self
             .graph
-            .get_input_taproot_key_spend_signature(transaction_name, input_index)?;
+            .get_taproot_key_signature(transaction_name, input_index)?;
         Ok(input_signature)
     }
 
@@ -353,7 +455,7 @@ impl Protocol {
             .get_input(transaction_name, input_index as usize)?;
 
         let script = match input.output_type()? {
-            OutputType::TaprootScript { leaves, .. } => leaves[script_index as usize].clone(),
+            OutputType::Taproot { leaves, .. } => leaves[script_index as usize].clone(),
             // TODO complete this for all other output types and remove the "Unknown output type".to_string() value in the error
             OutputType::SegwitScript { script, .. } => script.clone(),
             _ => {
@@ -427,7 +529,6 @@ impl Protocol {
 
     fn compute_sighashes<K: KeyStore>(
         &mut self,
-        musig2: bool,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
@@ -448,9 +549,8 @@ impl Protocol {
                             transaction,
                             transaction_name,
                             input_index,
-                            prevouts,
+                            &prevouts,
                             tap_sighash_type,
-                            musig2,
                             key_manager,
                         )?
                     }
@@ -475,7 +575,6 @@ impl Protocol {
 
     fn compute_signatures<K: KeyStore>(
         &mut self,
-        musig2: bool,
         key_manager: &KeyManager<K>,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
@@ -491,7 +590,6 @@ impl Protocol {
                             input_index,
                             &input.hashed_messages(),
                             tap_sighash_type,
-                            musig2,
                             key_manager,
                         )?,
                     SighashType::Ecdsa(ecdsa_sighash_type) => output_type.compute_ecdsa_signature(
@@ -522,12 +620,11 @@ impl Protocol {
     ) -> Result<Witness, ProtocolBuilderError> {
         let witness = match input.sighash_type() {
             SighashType::Taproot(..) => match input.output_type()? {
-                OutputType::TaprootKey { .. } => self.taproot_key_spend_witness(args)?,
-                OutputType::TaprootScript { .. } => match args {
+                OutputType::Taproot { .. } => match args {
                     InputArgs::TaprootScript { leaf, .. } => {
-                        self.taproot_script_spend_witness(input_index, leaf, input, args)?
+                        self.taproot_script_witness(input_index, leaf, input, args)?
                     }
-                    InputArgs::TaprootKey { .. } => self.taproot_key_spend_witness(args)?,
+                    InputArgs::TaprootKey { .. } => self.taproot_key_witness(args)?,
                     _ => {
                         return Err(ProtocolBuilderError::InvalidInputArgsType(
                             "TaprootScript or TaprootKey".to_string(),
@@ -539,10 +636,10 @@ impl Protocol {
             },
             SighashType::Ecdsa(..) => match input.output_type()? {
                 OutputType::SegwitPublicKey { public_key, .. } => {
-                    self.segwit_key_spend_witness(public_key, args)?
+                    self.segwit_key_witness(public_key, args)?
                 }
                 OutputType::SegwitScript { ref script, .. } => {
-                    self.segwit_script_spend_witness(script, args)?
+                    self.segwit_script_witness(script, args)?
                 }
                 OutputType::SegwitUnspendable { .. } => {
                     // Create an empty witness for unspendable outputs
@@ -572,18 +669,16 @@ impl Protocol {
             .get_hashed_message(transaction_name, input_index, message_index)?)
     }
 
-    fn taproot_key_spend_witness(&self, args: &InputArgs) -> Result<Witness, ProtocolBuilderError> {
+    fn taproot_key_witness(&self, args: &InputArgs) -> Result<Witness, ProtocolBuilderError> {
         let mut witness = Witness::default();
         for value in args.iter() {
             witness.push(value.clone());
-            //last element in script_args is the signature
-            //witness.push(signature.serialize());
         }
 
         Ok(witness)
     }
 
-    fn taproot_script_spend_witness(
+    fn taproot_script_witness(
         &self,
         input_index: usize,
         leaf_spec: &LeafSpec,
@@ -594,7 +689,7 @@ impl Protocol {
         let spend_info = &input.output_type()?.get_taproot_spend_info()?.unwrap();
 
         let leaf = match input.output_type()? {
-            OutputType::TaprootScript { leaves, .. } => match leaf_spec {
+            OutputType::Taproot { leaves, .. } => match leaf_spec {
                 LeafSpec::Index(index) => {
                     if *index >= leaves.len() {
                         return Err(ProtocolBuilderError::InvalidLeaf(input_index));
@@ -629,8 +724,6 @@ impl Protocol {
 
         for value in args.iter() {
             witness.push(value.clone());
-            //last element in script_args is the signature
-            //witness.push(signature.serialize());
         }
 
         witness.push(leaf.to_bytes());
@@ -639,7 +732,7 @@ impl Protocol {
         Ok(witness)
     }
 
-    fn segwit_key_spend_witness(
+    fn segwit_key_witness(
         &self,
         public_key: &PublicKey,
         args: &InputArgs,
@@ -647,15 +740,13 @@ impl Protocol {
         let mut witness = Witness::default();
         for value in args.iter() {
             witness.push(value.clone());
-            //last element in script_args is the signature
-            //witness.push(signature.serialize());
         }
 
         witness.push(public_key.to_bytes());
         Ok(witness)
     }
 
-    fn segwit_script_spend_witness(
+    fn segwit_script_witness(
         &self,
         script: &ProtocolScript,
         args: &InputArgs,
@@ -663,8 +754,6 @@ impl Protocol {
         let mut witness = Witness::default();
         for value in args.iter() {
             witness.push(value.clone());
-            //last element in script_args is the signature
-            //witness.push(signature.serialize());
         }
 
         witness.push(script.get_script().to_bytes());

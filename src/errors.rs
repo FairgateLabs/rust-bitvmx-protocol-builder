@@ -14,6 +14,8 @@ use thiserror::Error;
 
 use config as settings;
 
+use crate::types::{input::LeafSpec, output::SpendMode};
+
 #[derive(Error, Debug)]
 pub enum UnspendableKeyError {
     #[error("Failed to build NUMS (unspendable) public key")]
@@ -48,6 +50,9 @@ pub enum GraphError {
 
     #[error("Invalid signature type in transaction {0} for input {1}. Expected {2}, got {3}")]
     InvalidSignatureType(String, usize, String, String),
+
+    #[error("Invalid signature index: {0}")]
+    InvalidSignatureIndex(usize),
 
     #[error("Transaction with txid {0} not found in graph")]
     TransactionNotFound(String),
@@ -101,10 +106,10 @@ pub enum ProtocolBuilderError {
     MissingTransaction(String, String),
 
     #[error("Transaction with name {0} does not contained ouput with index {1}")]
-    MissingOutput(String, u32),
+    MissingOutput(String, usize),
 
     #[error("Transaction with name {0} does not contained input with index {1}")]
-    MissingInput(String, u32),
+    MissingInput(String, usize),
 
     #[error(
         "Transaction with name {0} does not contained message to sign for input with index {1}"
@@ -129,8 +134,8 @@ pub enum ProtocolBuilderError {
     #[error("Failed to build unspendable internal key")]
     UnspendableInternalKeyError(#[from] UnspendableKeyError),
 
-    #[error("Invalid SighashType")]
-    InvalidSighashType,
+    #[error("Invalid SighashType for transaction {0} and input {1}. Expected {2}, got {3}")]
+    InvalidSighashType(String, usize, String, String),
 
     #[error("Invalid output type for sighash type")]
     InvalidOutputTypeForSighashType,
@@ -140,6 +145,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Invalid spending script for input {0}")]
     InvalidLeaf(usize),
+
+    #[error("Invalid leaf spec {0}")]
+    InvalidLeafSpec(LeafSpec),
 
     #[error("Missing taproot leaf for input {0}")]
     MissingTaprootLeaf(usize),
@@ -189,8 +197,11 @@ pub enum ProtocolBuilderError {
     #[error("Failed to push data in op_return script")]
     OpReturnDataError(#[from] PushBytesError),
 
-    #[error("Failed to generate signature for key spend path for taproot output with taptree")]
-    KeySpendSignatureGenerationFailed,
+    #[error("Failed to generate signature for key spend path in taproot output with taptree. Transaction: {0}, input index: {1}")]
+    KeySpendSignatureGenerationFailed(String, usize),
+
+    #[error("Failed to generate signature for script spend path in taproot output. Transaction: {0}, input index: {1}, script index: {2}")]
+    ScriptSpendSignatureGenerationFailed(String, usize, usize),
 
     #[error("Failed to get script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
     CannotGetScriptForOutputType(String, u32, u32, String),
@@ -209,6 +220,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Failed to tweak public key, invalid tweak length. Expected 32 bytes, got {0} bytes")]
     InvalidTweakLength(usize),
+
+    #[error("Invalid spend mode. Expected {0}, got {1}")]
+    InvalidSpendMode(String, SpendMode),
 }
 
 #[derive(Error, Debug)]

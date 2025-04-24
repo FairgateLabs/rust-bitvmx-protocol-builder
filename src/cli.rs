@@ -14,8 +14,11 @@ use tracing::info;
 use crate::{
     builder::{Protocol, ProtocolBuilder},
     config::Config,
-    scripts::ProtocolScript,
-    types::{input::SighashType, output::OutputType},
+    scripts::{ProtocolScript, SignMode},
+    types::{
+        input::SighashType,
+        output::{OutputType, SpendMode},
+    },
     unspendable::unspendable_key,
 };
 
@@ -247,7 +250,7 @@ impl Cli {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build(false, &key_manager)?;
+        protocol.build(&key_manager)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
@@ -283,7 +286,7 @@ impl Cli {
         let output_index = 0;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new(protocol_name);
@@ -368,21 +371,21 @@ impl Cli {
         let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
 
-        builder.add_taproot_script_spend_connection(
+        builder.add_taproot_connection(
             &mut protocol,
             "protocol",
             from,
             value,
             &internal_key,
             &[script.clone()],
-            true,
-            vec![],
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &[],
             to,
             &sighash_type,
         )?;
@@ -413,8 +416,8 @@ impl Cli {
         let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
+        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
@@ -427,8 +430,8 @@ impl Cli {
             &internal_key,
             &expired_from,
             &renew_from,
-            true,
-            vec![],
+            &SpendMode::All { key_path_sign: SignMode::Single },
+            &[],
             to,
             blocks,
             &sighash_type,
@@ -455,13 +458,13 @@ impl Cli {
 
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
 
-        builder.connect_taproot_script_spend_rounds(
+        builder.connect_taproot_rounds(
             &mut protocol,
             "rounds",
             rounds,
@@ -471,7 +474,7 @@ impl Cli {
             &public_key,
             &[script.clone()],
             &[script.clone()],
-            true,
+            &SpendMode::All { key_path_sign: SignMode::Single },
             &sighash_type,
         )?;
 
@@ -479,8 +482,11 @@ impl Cli {
 
         info!(
             "Connected rounds from '{}' to '{}' in Protocol {}",
-            from, to, protocol_name
+            from.to_owned(),
+            to.to_owned(),
+            protocol_name.to_owned()
         );
+
         Ok(())
     }
 

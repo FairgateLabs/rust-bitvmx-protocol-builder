@@ -1,10 +1,22 @@
-use bitcoin::{secp256k1::Message, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
+use std::fmt::Formatter;
+
+use bitcoin::{secp256k1::Message, EcdsaSighashType, ScriptBuf, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
-use crate::errors::{GraphError, ProtocolBuilderError};
+use crate::{
+    errors::{GraphError, ProtocolBuilderError},
+    scripts::ProtocolScript,
+};
 
 use super::OutputType;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InputSpec {
+    Index(usize),
+    SighashType(SighashType),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Signature {
@@ -67,10 +79,45 @@ impl SighashType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum LeafSpec {
     Index(usize),
     Script(ScriptBuf),
+}
+
+impl LeafSpec {
+    pub fn script_and_index(
+        &self,
+        leaves: &[ProtocolScript],
+    ) -> Result<(ProtocolScript, usize), ProtocolBuilderError> {
+        let result = match self {
+            LeafSpec::Index(index) => {
+                if *index >= leaves.len() {
+                    return Err(ProtocolBuilderError::InvalidLeafSpec(self.clone()));
+                };
+
+                (leaves[*index].clone(), *index)
+            }
+            LeafSpec::Script(ref script) => {
+                let leaf_index = leaves
+                    .iter()
+                    .position(|l| l.get_script() == script)
+                    .ok_or(ProtocolBuilderError::InvalidLeafSpec(self.clone()))?;
+                (leaves[leaf_index].clone(), leaf_index)
+            }
+        };
+
+        Ok(result)
+    }
+}
+
+impl Display for LeafSpec {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LeafSpec::Index(index) => write!(f, "LeafSpec::Index({})", index),
+            LeafSpec::Script(script) => write!(f, "LeafSpec::Script({:?})", script),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -188,8 +235,7 @@ impl InputInfo {
     pub(crate) fn set_output_type(&mut self, output_type: OutputType) -> Result<(), GraphError> {
         match self.sighash_type {
             SighashType::Taproot(_) => match output_type {
-                OutputType::TaprootKey { .. } => {}
-                OutputType::TaprootScript { .. } => {}
+                OutputType::Taproot { .. } => {}
                 _ => Err(GraphError::InvalidOutputTypeForSighashType)?,
             },
             SighashType::Ecdsa(_) => match output_type {
@@ -206,6 +252,19 @@ impl InputInfo {
 
     pub fn set_signatures(&mut self, signatures: Vec<Option<Signature>>) {
         self.signatures = signatures;
+    }
+
+    pub fn set_signature(
+        &mut self,
+        signature: Option<Signature>,
+        signature_index: usize,
+    ) -> Result<(), GraphError> {
+        if signature_index >= self.signatures.len() {
+            return Err(GraphError::InvalidSignatureIndex(signature_index));
+        }
+        self.signatures[signature_index] = signature;
+
+        Ok(())
     }
 
     pub fn sighash_type(&self) -> &SighashType {
@@ -225,22 +284,6 @@ impl InputInfo {
                 })
             })
             .collect()
-    }
-
-    pub fn input_keys(&self) -> Vec<PublicKey> {
-        match &self.output_type {
-            Some(OutputType::TaprootKey { internal_key, .. }) => vec![*internal_key],
-            Some(OutputType::TaprootScript { leaves, .. }) => leaves
-                .iter()
-                .map(|script| script.get_verifying_key())
-                .collect(),
-            Some(OutputType::SegwitPublicKey { public_key, .. }) => vec![*public_key],
-            Some(OutputType::SegwitScript { script, .. }) => {
-                vec![script.get_verifying_key()]
-            }
-            Some(OutputType::SegwitUnspendable { .. }) => vec![],
-            None => vec![],
-        }
     }
 
     pub fn output_type(&self) -> Result<&OutputType, GraphError> {

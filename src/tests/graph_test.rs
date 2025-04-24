@@ -23,7 +23,7 @@ mod test {
     fn create_connection() {
         use Connection;
 
-        let connection = Connection::new("test_connection".to_string(), 1, 2);
+        let connection = Connection::new("test_connection", 1, 2);
 
         assert_eq!(connection.name, "test_connection");
         assert_eq!(connection.input_index, 1);

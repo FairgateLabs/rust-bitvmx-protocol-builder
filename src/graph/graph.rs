@@ -1,4 +1,3 @@
-use core::fmt;
 use std::{collections::HashMap, vec};
 
 use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
@@ -9,11 +8,11 @@ use petgraph::{
     Graph,
 };
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 use crate::{
     errors::GraphError,
     types::{
+        connection::ConnectionType,
         input::{InputInfo, InputSignatures, SighashType, Signature},
         output::OutputType,
     },
@@ -52,43 +51,12 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub(crate) fn new(name: String, input_index: u32, output_index: u32) -> Self {
+    pub(crate) fn new(name: &str, input_index: usize, output_index: usize) -> Self {
         Connection {
-            name,
-            input_index,
-            output_index,
+            name: name.to_string(),
+            input_index: input_index as u32,
+            output_index: output_index as u32,
         }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessageId {
-    transaction: String,
-    input_index: u32,
-    script_index: u32,
-}
-
-impl MessageId {
-    pub fn new(transaction: String, input_index: u32, script_index: u32) -> Self {
-        MessageId {
-            transaction,
-            input_index,
-            script_index,
-        }
-    }
-
-    pub fn new_string_id(transaction: &str, input_index: u32, script_index: u32) -> String {
-        format!("tx:{}_ix:{}_sx:{}", transaction, input_index, script_index)
-    }
-}
-
-impl fmt::Display for MessageId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "tx:{}_ix:{}_sx:{}",
-            self.transaction, self.input_index, self.script_index
-        )
     }
 }
 
@@ -169,38 +137,32 @@ impl TransactionGraph {
         Ok(())
     }
 
-    pub fn connect(
-        &mut self,
-        connection_name: &str,
-        from: &str,
-        output_index: u32,
-        to: &str,
-        input_index: u32,
-    ) -> Result<(), GraphError> {
-        let from_node_index = self.get_node_index(from)?;
-        let to_node_index = self.get_node_index(to)?;
-        let output_type = self.get_output_type(from, output_index)?;
+    pub fn connect(&mut self, connection: ConnectionType) -> Result<(), GraphError> {
+        match connection {
+            ConnectionType::Internal {
+                name,
+                from,
+                output_index,
+                to,
+                input_index,
+            } => {
+                let from_node_index = self.get_node_index(&from)?;
+                let to_node_index = self.get_node_index(&to)?;
+                let output_type = self.get_output_type(&from, output_index)?;
 
-        let connection = Connection::new(connection_name.to_string(), input_index, output_index);
+                let connection = Connection::new(&name, input_index, output_index);
 
-        self.graph
-            .add_edge(from_node_index, to_node_index, connection.clone());
+                self.graph
+                    .add_edge(from_node_index, to_node_index, connection.clone());
 
-        let to_node = self.get_node_mut(to)?;
-
-        to_node.inputs[input_index as usize].set_output_type(output_type)?;
-
-        Ok(())
-    }
-
-    pub fn connect_with_external_transaction(
-        &mut self,
-        output_type: OutputType,
-        to: &str,
-    ) -> Result<(), GraphError> {
-        let to_node = self.get_node_mut(to)?;
-
-        to_node.inputs[to_node.transaction.input.len() - 1].set_output_type(output_type)?;
+                let to_node = self.get_node_mut(&to)?;
+                to_node.inputs[input_index].set_output_type(output_type)?;
+            }
+            ConnectionType::External { to, output_type } => {
+                let to_node = self.get_node_mut(&to)?;
+                to_node.inputs[to_node.transaction.input.len() - 1].set_output_type(output_type)?;
+            }
+        }
 
         Ok(())
     }
@@ -213,10 +175,6 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
 
-        debug!(
-            "Updating hashed messages for transaction: {} input index: {}. Message hashes are: {:?}",
-            transaction_name, input_index, message_hashes
-        );
         node.inputs[input_index as usize].set_hashed_messages(message_hashes);
         Ok(())
     }
@@ -229,6 +187,19 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(transaction_name)?;
         node.inputs[input_index as usize].set_signatures(signatures);
+
+        Ok(())
+    }
+
+    pub fn update_input_signature(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        signature: Option<Signature>,
+        signature_index: usize,
+    ) -> Result<(), GraphError> {
+        let node = self.get_node_mut(transaction_name)?;
+        node.inputs[input_index as usize].set_signature(signature, signature_index)?;
 
         Ok(())
     }
@@ -326,21 +297,6 @@ impl TransactionGraph {
         Ok(self.get_node(name)?.inputs.clone())
     }
 
-    pub fn get_transaction_inputs(&self) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
-        self.node_indexes
-            .keys()
-            .map(|name| {
-                let node_index = self.get_node_index(name)?;
-                let node = self
-                    .graph
-                    .node_weight(node_index)
-                    .ok_or(GraphError::MissingTransaction(name.to_string()))?;
-
-                Ok((name.clone(), node.inputs.clone()))
-            })
-            .collect()
-    }
-
     pub fn get_output_for_input(
         &self,
         name: &str,
@@ -391,7 +347,7 @@ impl TransactionGraph {
         Ok(self.get_node(name)?.get_input(input_index)?.clone())
     }
 
-    pub fn get_input_ecdsa_signature(
+    pub fn get_ecdsa_signature(
         &self,
         name: &str,
         input_index: usize,
@@ -415,7 +371,7 @@ impl TransactionGraph {
         Ok(signature)
     }
 
-    pub fn get_input_taproot_script_spend_signature(
+    pub fn get_taproot_script_signature(
         &self,
         name: &str,
         input_index: usize,
@@ -440,7 +396,7 @@ impl TransactionGraph {
         Ok(signature)
     }
 
-    pub fn get_input_taproot_key_spend_signature(
+    pub fn get_taproot_key_signature(
         &self,
         name: &str,
         input_index: usize,
@@ -581,9 +537,24 @@ impl TransactionGraph {
     fn get_output_type(
         &self,
         transaction_name: &str,
-        output_index: u32,
+        output_index: usize,
     ) -> Result<OutputType, GraphError> {
-        Ok(self.get_node(transaction_name)?.outputs[output_index as usize].clone())
+        Ok(self.get_node(transaction_name)?.outputs[output_index].clone())
+    }
+
+    fn get_transaction_inputs(&self) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
+        self.node_indexes
+            .keys()
+            .map(|name| {
+                let node_index = self.get_node_index(name)?;
+                let node = self
+                    .graph
+                    .node_weight(node_index)
+                    .ok_or(GraphError::MissingTransaction(name.to_string()))?;
+
+                Ok((name.clone(), node.inputs.clone()))
+            })
+            .collect()
     }
 
     // Getters for testing purposes

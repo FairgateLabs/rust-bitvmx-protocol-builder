@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::{Display, Formatter}};
 
 use bitcoin::{
     key::{Secp256k1, UntweakedPublicKey},
@@ -56,37 +56,52 @@ impl ScriptKey {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+// Controls how the script is signed using the verifying key
+pub enum SignMode {
+    // No signature is required
+    Skip,
+    // The script is signed using the verifying key in ecdsa mode
+    Single,
+    // The script is signed using the verifying key in musig2 mode
+    Aggregate,
+}
+
+impl Display for SignMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignMode::Skip => write!(f, "SignMode::Skip"),
+            SignMode::Single => write!(f, "SignMode::Single"),
+            SignMode::Aggregate => write!(f, "SignMode::Aggregate"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
-    verifying_key: PublicKey,
-    skip_signing: bool,
+    verifying_key: Option<PublicKey>,
+    sign_mode: SignMode,
 }
 
 impl ProtocolScript {
-    pub fn new(script: ScriptBuf, verifying_key: &PublicKey) -> Self {
+    pub fn new(script: ScriptBuf, verifying_key: &PublicKey, sign_mode: SignMode) -> Self {
         Self {
             script,
             keys: HashMap::new(),
-            verifying_key: *verifying_key,
-            skip_signing: false,
+            verifying_key: Some(*verifying_key),
+            sign_mode,
         }
     }
 
-    // This constructor is used to flag scripts that will not required signing in the protocol builder.
-    // TODO: remove this. It is introduced temporarily to not break any current code that relays on the semantic of ProtocoslScript::new().
-    pub fn new_unsigned_script(script: ScriptBuf, verifying_key: &PublicKey) -> Self {
+    pub fn new_unspendable(script: ScriptBuf) -> Self {
         Self {
             script,
             keys: HashMap::new(),
-            verifying_key: *verifying_key,
-            skip_signing: true,
+            verifying_key: None,
+            sign_mode: SignMode::Skip,
         }
-    }
-
-    pub fn set_skip_signing(&mut self, skip_signing: bool) {
-        self.skip_signing = skip_signing;
     }
 
     pub fn add_key(
@@ -122,18 +137,34 @@ impl ProtocolScript {
             .collect()
     }
 
-    pub fn get_verifying_key(&self) -> PublicKey {
+    pub fn get_verifying_key(&self) -> Option<PublicKey> {
         self.verifying_key
     }
 
     pub fn skip_signing(&self) -> bool {
-        self.skip_signing
+        self.sign_mode == SignMode::Skip
     }
+
+    pub fn normal_signing(&self) -> bool {
+        self.sign_mode == SignMode::Single
+    }
+
+    pub fn aggregate_signing(&self) -> bool {
+        self.sign_mode == SignMode::Aggregate
+    }
+}
+
+pub fn op_return_script(data: Vec<u8>) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(OP_RETURN { data });
+
+    let protocol_script = ProtocolScript::new_unspendable(script);
+    Ok(protocol_script)
 }
 
 pub fn verify_winternitz_signature(
     verifying_key: &PublicKey,
     public_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
@@ -142,7 +173,7 @@ pub fn verify_winternitz_signature(
         OP_PUSHNUM_1
     );
 
-    let mut protocol_script = ProtocolScript::new(script, verifying_key);
+    let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     protocol_script.add_key(
         "value",
         public_key.derivation_index()?,
@@ -153,7 +184,7 @@ pub fn verify_winternitz_signature(
     Ok(protocol_script)
 }
 
-pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
+pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
         { blocks as u32 }
@@ -163,7 +194,7 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey) -> ProtocolScript {
         OP_CHECKSIG
     );
 
-    ProtocolScript::new(script, timelock_key)
+    ProtocolScript::new(script, timelock_key, sign_mode)
 }
 
 pub fn op_return(data: Vec<u8>) -> ScriptBuf {
@@ -171,26 +202,29 @@ pub fn op_return(data: Vec<u8>) -> ScriptBuf {
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
-pub fn timelock_renew(aggregated_key: &PublicKey) -> ProtocolScript {
+pub fn timelock_renew(aggregated_key: &PublicKey, sign_mode: SignMode,) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIG
     );
 
-    ProtocolScript::new(script, aggregated_key)
+    ProtocolScript::new(script, aggregated_key, sign_mode)
 }
 
-pub fn check_signature(public_key: &PublicKey) -> ProtocolScript {
+pub fn check_signature(public_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*public_key).serialize().to_vec() }
         OP_CHECKSIG
     );
 
-    ProtocolScript::new(script, public_key)
+    ProtocolScript::new(script, public_key, sign_mode)
 }
 
-pub fn check_aggregated_signature(aggregated_key: &PublicKey) -> ProtocolScript {
-    check_signature(aggregated_key)
+pub fn check_aggregated_signature(
+    aggregated_key: &PublicKey,
+    sign_mode: SignMode,
+) -> ProtocolScript {
+    check_signature(aggregated_key, sign_mode)
 }
 
 pub fn kickoff(
@@ -198,6 +232,7 @@ pub fn kickoff(
     input_key: &WinternitzPublicKey,
     ending_state_key: &WinternitzPublicKey,
     ending_step_number_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
@@ -207,7 +242,7 @@ pub fn kickoff(
         { ots_checksig(ending_step_number_key, false)? }
     );
 
-    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
         "input",
         input_key.derivation_index()?,
@@ -234,6 +269,7 @@ pub fn initial_stages(
     aggregated_key: &PublicKey,
     interval_keys: &[WinternitzPublicKey],
     selection_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
@@ -245,7 +281,7 @@ pub fn initial_stages(
         OP_PUSHNUM_1
     );
 
-    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     for (index, key) in interval_keys.iter().enumerate() {
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
@@ -270,6 +306,7 @@ pub fn stage_from_3_and_upward(
     interval_keys: &[WinternitzPublicKey],
     key_previous_selection_bob: &WinternitzPublicKey,
     key_previous_selection_alice: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
@@ -282,7 +319,7 @@ pub fn stage_from_3_and_upward(
         OP_PUSHNUM_1
     );
 
-    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     for (index, key) in interval_keys.iter().enumerate() {
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
@@ -311,6 +348,7 @@ pub fn stage_from_3_and_upward(
 pub fn linked_message_challenge(
     aggregated_key: &PublicKey,
     xc_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
@@ -319,7 +357,7 @@ pub fn linked_message_challenge(
         OP_PUSHNUM_1
     );
 
-    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
@@ -335,6 +373,7 @@ pub fn linked_message_response(
     xc_key: &WinternitzPublicKey,
     xp_key: &WinternitzPublicKey,
     yp_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
@@ -345,7 +384,7 @@ pub fn linked_message_response(
         OP_PUSHNUM_1
     );
 
-    let mut protocol_script = ProtocolScript::new(script, aggregated_key);
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
@@ -461,7 +500,7 @@ pub fn ots_checksig(
     Ok(verify)
 }
 
-pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScript {
+pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
     let script = script!(
         OP_SHA256
         { hashed_secret }
@@ -470,7 +509,7 @@ pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey) -> ProtocolScr
         OP_CHECKSIG
     );
 
-    ProtocolScript::new(script, pub_key)
+    ProtocolScript::new(script, pub_key, sign_mode)
 }
 
 pub fn build_taproot_spend_info(
@@ -578,7 +617,7 @@ mod tests {
         let verifying_key =
             PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key, SignMode::Single);
         script
             .add_key(AGGREGATED_SIGNATURE, 1, KeyType::EcdsaKey, 0)
             .expect("Failed to add key");
@@ -612,7 +651,7 @@ mod tests {
         let verifying_key =
             PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key, SignMode::Single);
         script
             .add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0)
             .expect("Failed to add key");
@@ -637,7 +676,7 @@ mod tests {
         let verifying_key =
             PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key, SignMode::Single);
         script
             .add_key(AGGREGATED_SIGNATURE, 0, KeyType::EcdsaKey, 0)
             .unwrap();
@@ -674,7 +713,7 @@ mod tests {
         let verifying_key =
             PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        let script = ProtocolScript::new(get_script_buff(), &verifying_key, SignMode::Single);
         assert!(script.get_keys().is_empty());
     }
 
@@ -686,7 +725,7 @@ mod tests {
         let verifying_key =
             PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
-        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key);
+        let mut script = ProtocolScript::new(get_script_buff(), &verifying_key, SignMode::Single);
         assert!(script.add_key("", 1, KeyType::EcdsaKey, 0).is_err());
     }
 
@@ -700,7 +739,7 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
 
         // Act
-        let script_timelock = timelock(blocks, &public_key);
+        let script_timelock = timelock(blocks, &public_key, SignMode::Single);
 
         // Assert
         let instructions = script_timelock
@@ -790,7 +829,7 @@ mod tests {
 
         // Act
         let taproot_spend_info =
-            build_taproot_spend_info(&secp, &internal_key, &[timelock(1, &public_key)])
+            build_taproot_spend_info(&secp, &internal_key, &[timelock(1, &public_key, SignMode::Single)])
                 .expect("Failed to build taproot spend info");
 
         // Assert
@@ -811,7 +850,10 @@ mod tests {
         let taproot_spend_info = build_taproot_spend_info(
             &secp,
             &internal_key,
-            &[timelock(1, &public_key), timelock(2, &public_key)],
+            &[
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+            ],
         )
         .expect("Failed to build taproot spend info");
 
@@ -834,9 +876,9 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");
@@ -860,10 +902,10 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
-                timelock(4, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
+                timelock(4, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");
@@ -887,11 +929,11 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
-                timelock(4, &public_key),
-                timelock(5, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
+                timelock(4, &public_key, SignMode::Single),
+                timelock(5, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");
@@ -915,12 +957,12 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
-                timelock(4, &public_key),
-                timelock(5, &public_key),
-                timelock(6, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
+                timelock(4, &public_key, SignMode::Single),
+                timelock(5, &public_key, SignMode::Single),
+                timelock(6, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");
@@ -944,13 +986,13 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
-                timelock(4, &public_key),
-                timelock(5, &public_key),
-                timelock(6, &public_key),
-                timelock(7, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
+                timelock(4, &public_key, SignMode::Single),
+                timelock(5, &public_key, SignMode::Single),
+                timelock(6, &public_key, SignMode::Single),
+                timelock(7, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");
@@ -974,16 +1016,16 @@ mod tests {
             &secp,
             &internal_key,
             &[
-                timelock(1, &public_key),
-                timelock(2, &public_key),
-                timelock(3, &public_key),
-                timelock(4, &public_key),
-                timelock(5, &public_key),
-                timelock(6, &public_key),
-                timelock(7, &public_key),
-                timelock(8, &public_key),
-                timelock(9, &public_key),
-                timelock(10, &public_key),
+                timelock(1, &public_key, SignMode::Single),
+                timelock(2, &public_key, SignMode::Single),
+                timelock(3, &public_key, SignMode::Single),
+                timelock(4, &public_key, SignMode::Single),
+                timelock(5, &public_key, SignMode::Single),
+                timelock(6, &public_key, SignMode::Single),
+                timelock(7, &public_key, SignMode::Single),
+                timelock(8, &public_key, SignMode::Single),
+                timelock(9, &public_key, SignMode::Single),
+                timelock(10, &public_key, SignMode::Single),
             ],
         )
         .expect("Failed to build taproot spend info");

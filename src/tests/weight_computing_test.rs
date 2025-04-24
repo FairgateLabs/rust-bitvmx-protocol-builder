@@ -1,40 +1,37 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, EcdsaSighashType, ScriptBuf, TapSighashType};
+    use bitcoin::{hashes::Hash, ScriptBuf};
 
     use crate::{
         builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
         helpers::weight_computing::{get_transaction_hex, get_transaction_vsize},
-        scripts::ProtocolScript,
-        tests::utils::{new_key_manager, TemporaryDir},
+        scripts::{ProtocolScript, SignMode},
+        tests::utils::TestContext,
         types::{
-            input::{InputArgs, LeafSpec, SighashType},
-            output::OutputType,
+            input::{InputArgs, LeafSpec},
+            output::{OutputType, SpendMode},
         },
     };
 
     #[test]
     fn test_weights_for_single_connection() -> Result<(), ProtocolBuilderError> {
-        let test_dir = TemporaryDir::new("test_weights_for_single_connection");
-        let key_manager =
-            new_key_manager(test_dir.path("keystore"), test_dir.path("musig2data")).unwrap();
-        let sighash_type = SighashType::Taproot(TapSighashType::All);
-        let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
+        let tc = TestContext::new("test_weights_for_single_connection").unwrap();
+        let public_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc.key_manager().derive_keypair(1).unwrap();
+
         let value = 1000;
-        let public_key = key_manager.derive_keypair(0)?;
-        let internal_key = key_manager.derive_keypair(1)?;
         let txid = Hash::all_zeros();
         let output_index = 0;
         let blocks = 100;
 
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key);
-        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key);
-        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key);
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key);
-        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key);
-        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key);
+        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
+        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
+        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
+        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
+        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -51,19 +48,19 @@ mod tests {
                 output_index,
                 output_type,
                 "start",
-                &ecdsa_sighash_type,
+                &tc.ecdsa_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "start",
                 value,
                 &internal_key,
                 &scripts_from,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "challenge",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_timelock_connection(
                 &mut protocol,
@@ -72,23 +69,23 @@ mod tests {
                 &internal_key,
                 &expired_from,
                 &renew_from,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "challenge",
                 blocks,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
-            .add_taproot_script_spend_connection(
+            .add_taproot_connection(
                 &mut protocol,
                 "protocol",
                 "challenge",
                 value,
                 &internal_key,
                 &scripts_to,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "response",
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?
             .add_timelock_connection(
                 &mut protocol,
@@ -97,14 +94,14 @@ mod tests {
                 &internal_key,
                 &expired_to,
                 &renew_to,
-                true,
-                vec![],
+                &SpendMode::All { key_path_sign: SignMode::Single },
+                &[],
                 "response",
                 blocks,
-                &sighash_type,
+                &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(&key_manager)?;
+        protocol.build_and_sign(tc.key_manager())?;
 
         let challenge_args = &[
             InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
