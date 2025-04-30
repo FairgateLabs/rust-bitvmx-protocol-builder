@@ -1,6 +1,10 @@
 use bitcoin::{
-    hashes::Hash, locktime, secp256k1, taproot::LeafVersion, transaction, OutPoint, PublicKey,
-    ScriptBuf, Sequence, Transaction, Txid, Witness, XOnlyPublicKey,
+    hashes::Hash,
+    locktime,
+    secp256k1::{self, Message},
+    taproot::LeafVersion,
+    transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
+    XOnlyPublicKey,
 };
 use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
 use serde::{Deserialize, Serialize};
@@ -555,6 +559,17 @@ impl Protocol {
         let mut rng = secp256k1::rand::thread_rng();
         let key = XOnlyPublicKey::from(unspendable_key(&mut rng)?);
         Ok(key)
+    }
+
+    pub fn get_hashed_message(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        message_index: u32,
+    ) -> Result<Option<Message>, ProtocolBuilderError> {
+        Ok(self
+            .graph
+            .get_hashed_message(transaction_name, input_index, message_index)?)
     }
 
     fn taproot_key_spend_witness(&self, args: &InputArgs) -> Result<Witness, ProtocolBuilderError> {
