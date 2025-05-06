@@ -256,6 +256,7 @@ impl Protocol {
         input_index: usize,
         leaf: Option<LeafSpec>,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
         let output_type = input.output_type().unwrap();
@@ -283,6 +284,7 @@ impl Protocol {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?,
                     leaf_index,
                 )

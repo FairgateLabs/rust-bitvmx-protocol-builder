@@ -422,6 +422,7 @@ impl OutputType {
         let mut hashed_messages: Vec<Option<Message>> = vec![None; leaves.len() + 1];
 
         if key_path {
+            let id = "COMPLETE THIS";
             let hashed_message = self.taproot_key_only_sighash(
                 transaction,
                 transaction_name,
@@ -432,6 +433,7 @@ impl OutputType {
                 internal_key,
                 leaves,
                 key_manager,
+                id,
             )?;
 
             // Push the key path hash to the end of the vector.
@@ -442,6 +444,7 @@ impl OutputType {
         if scripts_path {
             // Script path hashes
             for (leaf_index, leaf) in leaves.iter().enumerate() {
+                let id = "COMPLETE THIS";
                 let hashed_message = self.taproot_script_only_sighash(
                     transaction,
                     transaction_name,
@@ -451,6 +454,7 @@ impl OutputType {
                     leaf,
                     leaf_index,
                     key_manager,
+                    id,
                 )?;
 
                 // Push the script path hash to the correct position in the vector.
@@ -463,6 +467,7 @@ impl OutputType {
                 SpendMode::Script { leaf, .. } => {
                     let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
 
+                    let id = "COMPLETE THIS";
                     let hashed_message = self.taproot_script_only_sighash(
                         transaction,
                         transaction_name,
@@ -472,6 +477,7 @@ impl OutputType {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?;
 
                     hashed_messages[leaf_index] = hashed_message;
@@ -499,6 +505,7 @@ impl OutputType {
         leaf: &ProtocolScript,
         leaf_index: usize,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
 
@@ -510,7 +517,6 @@ impl OutputType {
         )?);
 
         if leaf.aggregate_signing() && leaf.get_verifying_key().is_some() {
-            let id = "COMPLETE THIS";
             key_manager.generate_nonce(
                 MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32)
                     .as_str(),
@@ -536,6 +542,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
 
@@ -556,8 +563,6 @@ impl OutputType {
             .to_scalar();
             let musig2_tweak =
                 musig2::secp256k1::Scalar::from_be_bytes(tweak.to_be_bytes()).unwrap();
-
-            let id = "COMPLETE THIS";
 
             key_manager.generate_nonce(
                 MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32)
@@ -650,6 +655,7 @@ impl OutputType {
 
         if key_path {
             // Key path signature
+            let id = "COMPLETE THIS";
             let signature = self.taproot_key_only_signature(
                 transaction_name,
                 input_index,
@@ -659,6 +665,7 @@ impl OutputType {
                 internal_key,
                 leaves,
                 key_manager,
+                id,
             )?;
 
             // Push the key path signature to the end of the vector.
@@ -669,6 +676,7 @@ impl OutputType {
         if scripts_path {
             // Script path signatures
             for (leaf_index, leaf) in leaves.iter().enumerate() {
+                let id = "COMPLETE THIS";
                 let signature = self.taproot_script_only_signature(
                     transaction_name,
                     input_index,
@@ -677,6 +685,7 @@ impl OutputType {
                     leaf,
                     leaf_index,
                     key_manager,
+                    id,
                 )?;
 
                 signatures[leaf_index] = signature;
@@ -688,6 +697,7 @@ impl OutputType {
                 SpendMode::Script { leaf, .. } => {
                     let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
 
+                    let id = "COMPLETE THIS";
                     let signature = self.taproot_script_only_signature(
                         transaction_name,
                         input_index,
@@ -696,6 +706,7 @@ impl OutputType {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?;
 
                     signatures[leaf_index] = signature;
@@ -722,6 +733,7 @@ impl OutputType {
         leaf: &ProtocolScript,
         leaf_index: usize,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         if leaf.skip_signing() {
             return Ok(None);
@@ -730,7 +742,6 @@ impl OutputType {
         let schnorr_signature = if leaf.aggregate_signing() {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32);
-            let id = "COMPLETE THIS";
             key_manager.get_aggregated_signature(
                 &leaf.get_verifying_key().unwrap(),
                 id,
@@ -775,6 +786,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         // Compute a signature for the key spend path.
         let key_path_hashed_message = hashed_messages.last().unwrap().unwrap();
@@ -784,7 +796,6 @@ impl OutputType {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32);
 
-            let id = "COMPLETE THIS";
             key_manager.get_aggregated_signature(internal_key, id, &message_id)?
         } else {
             let spend_info = Self::compute_spend_info(internal_key, leaves)?;
