@@ -91,8 +91,12 @@ pub enum SpendMode {
 impl Display for SpendMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => write!(f, "All({})", key_path_sign_mode),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => write!(f, "KeyOnly({})", key_path_sign_mode),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "All({})", key_path_sign_mode),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "KeyOnly({})", key_path_sign_mode),
             SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
             SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
             SpendMode::None => write!(f, "None"),
@@ -403,8 +407,12 @@ impl OutputType {
         key_manager: &KeyManager<K>,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => (true, false, false, Some(key_path_sign_mode)),
             SpendMode::ScriptsOnly => (false, true, false, None),
             SpendMode::Script { .. } => (false, false, true, None),
             SpendMode::None => (false, false, false, None),
@@ -502,11 +510,13 @@ impl OutputType {
         )?);
 
         if leaf.aggregate_signing() && leaf.get_verifying_key().is_some() {
+            let id = "COMPLETE THIS";
             key_manager.generate_nonce(
                 MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32)
                     .as_str(),
                 hashed_message.as_ref().to_vec(),
                 &leaf.get_verifying_key().unwrap(),
+                id,
                 None,
             )?;
         };
@@ -547,11 +557,14 @@ impl OutputType {
             let musig2_tweak =
                 musig2::secp256k1::Scalar::from_be_bytes(tweak.to_be_bytes()).unwrap();
 
+            let id = "COMPLETE THIS";
+
             key_manager.generate_nonce(
                 MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32)
                     .as_str(),
                 key_path_hashed_message.as_ref().to_vec(),
                 internal_key,
+                id,
                 Some(musig2_tweak),
             )?;
         }
@@ -621,8 +634,12 @@ impl OutputType {
         );
 
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => (true, false, false, Some(key_path_sign_mode)),
             SpendMode::ScriptsOnly => (false, true, false, None),
             SpendMode::Script { .. } => (false, false, true, None),
             SpendMode::None => (false, false, false, None),
@@ -713,7 +730,12 @@ impl OutputType {
         let schnorr_signature = if leaf.aggregate_signing() {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32);
-            key_manager.get_aggregated_signature(&leaf.get_verifying_key().unwrap(), &message_id)?
+            let id = "COMPLETE THIS";
+            key_manager.get_aggregated_signature(
+                &leaf.get_verifying_key().unwrap(),
+                id,
+                &message_id,
+            )?
         } else {
             let hashed_message = hashed_messages[leaf_index].unwrap();
 
@@ -762,7 +784,8 @@ impl OutputType {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32);
 
-            key_manager.get_aggregated_signature(internal_key, &message_id)?
+            let id = "COMPLETE THIS";
+            key_manager.get_aggregated_signature(internal_key, id, &message_id)?
         } else {
             let spend_info = Self::compute_spend_info(internal_key, leaves)?;
 
