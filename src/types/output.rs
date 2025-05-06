@@ -246,6 +246,7 @@ impl OutputType {
         prevouts: &[TxOut],
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let messages = match self {
             OutputType::Taproot {
@@ -263,6 +264,7 @@ impl OutputType {
                 leaves,
                 spend_mode,
                 key_manager,
+                id,
             )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
@@ -320,6 +322,7 @@ impl OutputType {
         hashed_messages: &[Option<Message>],
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         let signatures = match self {
             OutputType::Taproot {
@@ -336,6 +339,7 @@ impl OutputType {
                 leaves,
                 spend_mode,
                 key_manager,
+                id,
             )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
@@ -405,6 +409,7 @@ impl OutputType {
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
             SpendMode::All {
@@ -422,7 +427,6 @@ impl OutputType {
         let mut hashed_messages: Vec<Option<Message>> = vec![None; leaves.len() + 1];
 
         if key_path {
-            let id = "COMPLETE THIS";
             let hashed_message = self.taproot_key_only_sighash(
                 transaction,
                 transaction_name,
@@ -444,7 +448,6 @@ impl OutputType {
         if scripts_path {
             // Script path hashes
             for (leaf_index, leaf) in leaves.iter().enumerate() {
-                let id = "COMPLETE THIS";
                 let hashed_message = self.taproot_script_only_sighash(
                     transaction,
                     transaction_name,
@@ -467,7 +470,6 @@ impl OutputType {
                 SpendMode::Script { leaf, .. } => {
                     let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
 
-                    let id = "COMPLETE THIS";
                     let hashed_message = self.taproot_script_only_sighash(
                         transaction,
                         transaction_name,
@@ -632,6 +634,7 @@ impl OutputType {
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         assert!(
             hashed_messages.len() == leaves.len() + 1,
@@ -655,7 +658,6 @@ impl OutputType {
 
         if key_path {
             // Key path signature
-            let id = "COMPLETE THIS";
             let signature = self.taproot_key_only_signature(
                 transaction_name,
                 input_index,
@@ -676,7 +678,6 @@ impl OutputType {
         if scripts_path {
             // Script path signatures
             for (leaf_index, leaf) in leaves.iter().enumerate() {
-                let id = "COMPLETE THIS";
                 let signature = self.taproot_script_only_signature(
                     transaction_name,
                     input_index,
@@ -697,7 +698,6 @@ impl OutputType {
                 SpendMode::Script { leaf, .. } => {
                     let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
 
-                    let id = "COMPLETE THIS";
                     let signature = self.taproot_script_only_signature(
                         transaction_name,
                         input_index,
