@@ -225,17 +225,19 @@ impl Protocol {
     pub fn build<K: KeyStore>(
         &mut self,
         key_manager: &Rc<KeyManager<K>>,
+        id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_sighashes(key_manager)?;
+        self.compute_sighashes(key_manager, id)?;
         Ok(self.clone())
     }
 
     pub fn sign<K: KeyStore>(
         &mut self,
         key_manager: &Rc<KeyManager<K>>,
+        id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
-        self.compute_signatures(key_manager)?;
+        self.compute_signatures(key_manager, id)?;
         Ok(self.clone())
     }
 
@@ -243,10 +245,11 @@ impl Protocol {
     pub fn build_and_sign<K: KeyStore>(
         &mut self,
         key_manager: &Rc<KeyManager<K>>,
+        id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
-        self.compute_sighashes(key_manager)?;
-        self.compute_signatures(key_manager)?;
+        self.compute_sighashes(key_manager, id)?;
+        self.compute_signatures(key_manager, id)?;
         Ok(self.clone())
     }
 
@@ -256,6 +259,7 @@ impl Protocol {
         input_index: usize,
         leaf: Option<LeafSpec>,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
         let output_type = input.output_type().unwrap();
@@ -283,6 +287,7 @@ impl Protocol {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?,
                     leaf_index,
                 )
@@ -530,6 +535,7 @@ impl Protocol {
     fn compute_sighashes<K: KeyStore>(
         &mut self,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
         for (transaction, transaction_name) in transactions.iter().zip(transaction_names.iter()) {
@@ -552,6 +558,7 @@ impl Protocol {
                             &prevouts,
                             tap_sighash_type,
                             key_manager,
+                            id,
                         )?
                     }
                     SighashType::Ecdsa(ecdsa_sighash_type) => output_type.compute_ecdsa_sighash(
@@ -576,6 +583,7 @@ impl Protocol {
     fn compute_signatures<K: KeyStore>(
         &mut self,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
         for (_, transaction_name) in transactions.iter().zip(transaction_names.iter()) {
@@ -591,6 +599,7 @@ impl Protocol {
                             &input.hashed_messages(),
                             tap_sighash_type,
                             key_manager,
+                            id,
                         )?,
                     SighashType::Ecdsa(ecdsa_sighash_type) => output_type.compute_ecdsa_signature(
                         transaction_name,

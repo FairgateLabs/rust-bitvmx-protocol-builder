@@ -250,7 +250,8 @@ impl Cli {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build(&key_manager)?;
+        let id = "COMPLETE THIS";
+        protocol.build(&key_manager, id)?;
 
         info!("Protocol {} built", protocol_name);
         Ok(())
@@ -265,7 +266,8 @@ impl Cli {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build_and_sign(&key_manager)?;
+        let id = "COMPLETE THIS";
+        protocol.build_and_sign(&key_manager, id)?;
 
         info!("Protocol {} built and signed", protocol_name);
 
@@ -286,7 +288,8 @@ impl Cli {
         let output_index = 0;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new(protocol_name);
@@ -371,7 +374,8 @@ impl Cli {
         let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
@@ -384,7 +388,9 @@ impl Cli {
             value,
             &internal_key,
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
             to,
             &sighash_type,
@@ -416,8 +422,10 @@ impl Cli {
         let internal_key = unspendable_key(&mut rng)?;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
+        let expired_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let renew_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
@@ -430,7 +438,9 @@ impl Cli {
             &internal_key,
             &expired_from,
             &renew_from,
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
             to,
             blocks,
@@ -458,7 +468,8 @@ impl Cli {
 
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
         let sighash_type = SighashType::Taproot(TapSighashType::All);
 
         let mut protocol = Protocol::new(protocol_name);
@@ -474,7 +485,9 @@ impl Cli {
             &public_key,
             &[script.clone()],
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &sighash_type,
         )?;
 

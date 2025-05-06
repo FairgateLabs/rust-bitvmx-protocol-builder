@@ -91,8 +91,12 @@ pub enum SpendMode {
 impl Display for SpendMode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => write!(f, "All({})", key_path_sign_mode),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => write!(f, "KeyOnly({})", key_path_sign_mode),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "All({})", key_path_sign_mode),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "KeyOnly({})", key_path_sign_mode),
             SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
             SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
             SpendMode::None => write!(f, "None"),
@@ -242,6 +246,7 @@ impl OutputType {
         prevouts: &[TxOut],
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let messages = match self {
             OutputType::Taproot {
@@ -259,6 +264,7 @@ impl OutputType {
                 leaves,
                 spend_mode,
                 key_manager,
+                id,
             )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
@@ -316,6 +322,7 @@ impl OutputType {
         hashed_messages: &[Option<Message>],
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         let signatures = match self {
             OutputType::Taproot {
@@ -332,6 +339,7 @@ impl OutputType {
                 leaves,
                 spend_mode,
                 key_manager,
+                id,
             )?,
             _ => {
                 return Err(ProtocolBuilderError::InvalidOutputType(
@@ -401,10 +409,15 @@ impl OutputType {
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => (true, false, false, Some(key_path_sign_mode)),
             SpendMode::ScriptsOnly => (false, true, false, None),
             SpendMode::Script { .. } => (false, false, true, None),
             SpendMode::None => (false, false, false, None),
@@ -424,6 +437,7 @@ impl OutputType {
                 internal_key,
                 leaves,
                 key_manager,
+                id,
             )?;
 
             // Push the key path hash to the end of the vector.
@@ -443,6 +457,7 @@ impl OutputType {
                     leaf,
                     leaf_index,
                     key_manager,
+                    id,
                 )?;
 
                 // Push the script path hash to the correct position in the vector.
@@ -464,6 +479,7 @@ impl OutputType {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?;
 
                     hashed_messages[leaf_index] = hashed_message;
@@ -491,6 +507,7 @@ impl OutputType {
         leaf: &ProtocolScript,
         leaf_index: usize,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
 
@@ -507,6 +524,7 @@ impl OutputType {
                     .as_str(),
                 hashed_message.as_ref().to_vec(),
                 &leaf.get_verifying_key().unwrap(),
+                id,
                 None,
             )?;
         };
@@ -526,6 +544,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
 
@@ -552,6 +571,7 @@ impl OutputType {
                     .as_str(),
                 key_path_hashed_message.as_ref().to_vec(),
                 internal_key,
+                id,
                 Some(musig2_tweak),
             )?;
         }
@@ -614,6 +634,7 @@ impl OutputType {
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         assert!(
             hashed_messages.len() == leaves.len() + 1,
@@ -621,8 +642,12 @@ impl OutputType {
         );
 
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All { key_path_sign: key_path_sign_mode } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly { key_path_sign: key_path_sign_mode } => (true, false, false, Some(key_path_sign_mode)),
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => (true, true, false, Some(key_path_sign_mode)),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => (true, false, false, Some(key_path_sign_mode)),
             SpendMode::ScriptsOnly => (false, true, false, None),
             SpendMode::Script { .. } => (false, false, true, None),
             SpendMode::None => (false, false, false, None),
@@ -642,6 +667,7 @@ impl OutputType {
                 internal_key,
                 leaves,
                 key_manager,
+                id,
             )?;
 
             // Push the key path signature to the end of the vector.
@@ -660,6 +686,7 @@ impl OutputType {
                     leaf,
                     leaf_index,
                     key_manager,
+                    id,
                 )?;
 
                 signatures[leaf_index] = signature;
@@ -679,6 +706,7 @@ impl OutputType {
                         &leaf,
                         leaf_index,
                         key_manager,
+                        id,
                     )?;
 
                     signatures[leaf_index] = signature;
@@ -705,6 +733,7 @@ impl OutputType {
         leaf: &ProtocolScript,
         leaf_index: usize,
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         if leaf.skip_signing() {
             return Ok(None);
@@ -713,7 +742,11 @@ impl OutputType {
         let schnorr_signature = if leaf.aggregate_signing() {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaf_index as u32);
-            key_manager.get_aggregated_signature(&leaf.get_verifying_key().unwrap(), &message_id)?
+            key_manager.get_aggregated_signature(
+                &leaf.get_verifying_key().unwrap(),
+                id,
+                &message_id,
+            )?
         } else {
             let hashed_message = hashed_messages[leaf_index].unwrap();
 
@@ -753,6 +786,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         key_manager: &KeyManager<K>,
+        id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         // Compute a signature for the key spend path.
         let key_path_hashed_message = hashed_messages.last().unwrap().unwrap();
@@ -762,7 +796,7 @@ impl OutputType {
             let message_id =
                 MessageId::new_string_id(transaction_name, input_index as u32, leaves.len() as u32);
 
-            key_manager.get_aggregated_signature(internal_key, &message_id)?
+            key_manager.get_aggregated_signature(internal_key, id, &message_id)?
         } else {
             let spend_info = Self::compute_spend_info(internal_key, leaves)?;
 
