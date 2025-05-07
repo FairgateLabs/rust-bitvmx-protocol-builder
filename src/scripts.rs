@@ -161,6 +161,33 @@ pub fn op_return_script(data: Vec<u8>) -> Result<ProtocolScript, ScriptError> {
     Ok(protocol_script)
 }
 
+pub fn verify_winternitz_signatures(
+    verifying_key: &PublicKey,
+    public_keys: &Vec<(&str, &WinternitzPublicKey)>,
+    sign_mode: SignMode,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        for (_,key) in public_keys {
+            { ots_checksig(key, false)? }
+        }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
+    for i in 0..public_keys.len() {
+        protocol_script.add_key(
+            public_keys[i].0,
+            public_keys[i].1.derivation_index()?,
+            KeyType::WinternitzKey(public_keys[i].1.key_type()),
+            i as u32,
+        )?;
+    }
+
+    Ok(protocol_script)
+}
+
 pub fn verify_winternitz_signature(
     verifying_key: &PublicKey,
     public_key: &WinternitzPublicKey,
@@ -202,7 +229,7 @@ pub fn op_return(data: Vec<u8>) -> ScriptBuf {
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
-pub fn timelock_renew(aggregated_key: &PublicKey, sign_mode: SignMode,) -> ProtocolScript {
+pub fn timelock_renew(aggregated_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIG
