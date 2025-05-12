@@ -177,13 +177,20 @@ pub fn verify_winternitz_signatures_aux(
     public_keys: &Vec<(&str, &WinternitzPublicKey)>,
     sign_mode: SignMode,
     keep_message: bool,
-    extra_check_script: Option<ScriptBuf>,
+    extra_check_script: Option<Vec<ScriptBuf>>,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
         for (_,key) in public_keys {
             { ots_checksig(key, keep_message)? }
+        }
+        if keep_message {
+            for (_,key) in public_keys {
+                for _ in 0..key.message_size()? {
+                    OP_FROMALTSTACK
+                }
+            }
         }
         if let Some(extra_script) = extra_check_script {
             { extra_script }
@@ -536,6 +543,10 @@ pub fn ots_checksig(
                     }
                     OP_DROP
                 }
+            }
+        } else {
+            for _ in 0..message_size {
+                OP_TOALTSTACK
             }
         }
     };
