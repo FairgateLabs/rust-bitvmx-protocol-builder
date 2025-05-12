@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt::{Display, Formatter}};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 use bitcoin::{
     key::{Secp256k1, UntweakedPublicKey},
@@ -166,11 +169,24 @@ pub fn verify_winternitz_signatures(
     public_keys: &Vec<(&str, &WinternitzPublicKey)>,
     sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
+    verify_winternitz_signatures_aux(verifying_key, public_keys, sign_mode, false, None)
+}
+
+pub fn verify_winternitz_signatures_aux(
+    verifying_key: &PublicKey,
+    public_keys: &Vec<(&str, &WinternitzPublicKey)>,
+    sign_mode: SignMode,
+    keep_message: bool,
+    extra_check_script: Option<ScriptBuf>,
+) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
         OP_CHECKSIGVERIFY
         for (_,key) in public_keys {
-            { ots_checksig(key, false)? }
+            { ots_checksig(key, keep_message)? }
+        }
+        if let Some(extra_script) = extra_check_script {
+            { extra_script }
         }
         OP_PUSHNUM_1
     );
@@ -527,7 +543,11 @@ pub fn ots_checksig(
     Ok(verify)
 }
 
-pub fn reveal_secret(hashed_secret: Vec<u8>, pub_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
+pub fn reveal_secret(
+    hashed_secret: Vec<u8>,
+    pub_key: &PublicKey,
+    sign_mode: SignMode,
+) -> ProtocolScript {
     let script = script!(
         OP_SHA256
         { hashed_secret }
@@ -855,9 +875,12 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info =
-            build_taproot_spend_info(&secp, &internal_key, &[timelock(1, &public_key, SignMode::Single)])
-                .expect("Failed to build taproot spend info");
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
+            &[timelock(1, &public_key, SignMode::Single)],
+        )
+        .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
