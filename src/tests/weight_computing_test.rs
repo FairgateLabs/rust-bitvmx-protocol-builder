@@ -25,13 +25,20 @@ mod tests {
         let output_index = 0;
         let blocks = 100;
 
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
-        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
-        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
-        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
+        let expired_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let renew_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
+        let expired_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
+        let renew_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script_a =
+            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
+        let script_b =
+            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -57,7 +64,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "challenge",
                 &tc.tr_sighash_type(),
@@ -69,7 +78,9 @@ mod tests {
                 &internal_key,
                 &expired_from,
                 &renew_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "challenge",
                 blocks,
@@ -82,7 +93,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "response",
                 &tc.tr_sighash_type(),
@@ -94,14 +107,16 @@ mod tests {
                 &internal_key,
                 &expired_to,
                 &renew_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "response",
                 blocks,
                 &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "test")?;
 
         let challenge_args = &[
             InputArgs::new_taproot_script_args(LeafSpec::Index(0)),

@@ -1,8 +1,9 @@
 use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use config as settings;
-use key_manager::config::{KeyManagerConfig, KeyStorageConfig};
+use key_manager::config::KeyManagerConfig;
 use serde::Deserialize;
 use std::env;
+use storage_backend::storage_config::StorageConfig;
 use tracing::warn;
 
 use crate::errors::ConfigError;
@@ -26,7 +27,7 @@ pub struct Config {
     pub rpc: RpcConfig,
     pub builder: ProtocolBuilderConfig,
     pub key_manager: KeyManagerConfig,
-    pub key_storage: KeyStorageConfig,
+    pub key_storage: StorageConfig,
 }
 
 impl Config {

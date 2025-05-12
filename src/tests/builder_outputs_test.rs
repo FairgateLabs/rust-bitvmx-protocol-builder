@@ -30,7 +30,8 @@ mod tests {
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         // Arrange
@@ -66,7 +67,7 @@ mod tests {
             )?
             .add_op_return_output(&mut protocol, "op_return", data.clone())?;
 
-        protocol.build(tc.key_manager())?;
+        protocol.build(tc.key_manager(), "test")?;
         let tx = protocol.transaction_by_name("op_return")?;
 
         // Assert
@@ -101,7 +102,8 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let public_key = tc.key_manager().derive_keypair(0).unwrap();
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
@@ -130,7 +132,9 @@ mod tests {
                 value,
                 &public_key,
                 &[unspendable_script],
-                &SpendMode::KeyOnly { key_path_sign: SignMode::Single },
+                &SpendMode::KeyOnly {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "keypath_spend",
                 &tc.tr_sighash_type(),
@@ -143,7 +147,7 @@ mod tests {
             )?
             .add_p2wpkh_output(&mut protocol, "keypath_spend", value, &pubkey_alice)?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "test")?;
 
         let signature = protocol
             .input_taproot_key_spend_signature("keypath_spend", 0)

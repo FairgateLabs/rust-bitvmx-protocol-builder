@@ -2,7 +2,7 @@ use bitcoin::{
     hashes::Hash, secp256k1::Message, sighash::SighashCache, Address, Amount, EcdsaSighashType,
     OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
-use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
+use key_manager::key_manager::KeyManager;
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -131,13 +131,13 @@ impl ProtocolBuilder {
         Ok(self)
     }
 
-    pub fn speedup_transaction<K: KeyStore>(
+    pub fn speedup_transaction(
         &self,
         transaction_to_speedup_utxo: Utxo,
         funding_transaction_utxo: Utxo,
         change_address: Address,
         speedup_fee: u64,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
     ) -> Result<Transaction, ProtocolBuilderError> {
         //let transaction_to_speedup = protocol.transaction_by_id(&transaction_to_speedup_utxo.txid)?;
         let mut speedup_transaction = Protocol::transaction_template();
@@ -501,11 +501,11 @@ fn push_output(
     Ok(())
 }
 
-fn push_witness<K: KeyStore>(
+fn push_witness(
     transaction: &mut Transaction,
     utxo: Utxo,
     input_index: usize,
-    key_manager: &KeyManager<K>,
+    key_manager: &KeyManager,
     sighasher: &mut SighashCache<Transaction>,
 ) -> Result<(), ProtocolBuilderError> {
     let value = Amount::from_sat(utxo.amount);

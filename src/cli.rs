@@ -4,11 +4,8 @@ use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, secp256k1, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 use clap::{Parser, Subcommand};
-use key_manager::{
-    create_database_key_store_from_config, create_key_manager_from_config, key_manager::KeyManager,
-    keystorage::database::DatabaseKeyStore,
-};
-use storage_backend::storage::Storage;
+use key_manager::{create_key_manager_from_config, key_manager::KeyManager, key_store::KeyStore};
+use storage_backend::{storage::Storage, storage_config::StorageConfig};
 use tracing::info;
 
 use crate::{
@@ -242,7 +239,8 @@ impl Cli {
     }
 
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
         let key_manager = Rc::new(self.key_manager()?);
 
         let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
@@ -258,7 +256,8 @@ impl Cli {
     }
 
     fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
         let key_manager = Rc::new(self.key_manager()?);
 
         let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
@@ -282,7 +281,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
         let txid = Hash::all_zeros();
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let output_index = 0;
@@ -321,7 +321,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
@@ -344,7 +345,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
@@ -368,7 +370,8 @@ impl Cli {
         to: &str,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
 
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = unspendable_key(&mut rng)?;
@@ -416,7 +419,8 @@ impl Cli {
         blocks: u16,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
 
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = unspendable_key(&mut rng)?;
@@ -464,7 +468,8 @@ impl Cli {
         value: u64,
         data: &str,
     ) -> Result<()> {
-        let storage = Rc::new(Storage::new_with_path(&graph_storage_path)?);
+        let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
+        let storage = Rc::new(Storage::new(&config).unwrap());
 
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
@@ -503,15 +508,14 @@ impl Cli {
         Ok(())
     }
 
-    fn key_manager(&self) -> Result<KeyManager<DatabaseKeyStore>> {
-        let keystore = create_database_key_store_from_config(
-            &self.config.key_storage,
-            &self.config.key_manager.network,
-        )?;
+    fn key_manager(&self) -> Result<KeyManager> {
+        let store = Rc::new(Storage::new(&self.config.key_storage)?);
+        let keystore = KeyStore::new(store);
 
         // TODO read from config
         let path = PathBuf::from("/tmp/store".to_string());
-        let store = Rc::new(Storage::new_with_path(&path).unwrap());
+        let config = StorageConfig::new(path.to_str().unwrap().to_string(), None);
+        let store = Rc::new(Storage::new(&config).unwrap());
 
         Ok(create_key_manager_from_config(
             &self.config.key_manager,
