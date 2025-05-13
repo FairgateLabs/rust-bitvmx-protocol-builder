@@ -142,7 +142,7 @@ mod tests {
             &tc.tr_sighash_type(),
         )?;
 
-        protocol.build(tc.key_manager())?;
+        protocol.build(tc.key_manager(), "")?;
 
 
         Ok(())

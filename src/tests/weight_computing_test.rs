@@ -101,7 +101,7 @@ mod tests {
                 &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         let challenge_args = &[
             InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
@@ -157,5 +157,56 @@ mod tests {
         assert_eq!(sighashes_response.len(), 2);
 
         Ok(())
+    }
+
+    #[test]
+    fn dust_threshold_estimation_test() {
+        let fee_rate = 3.0; // Conservative relay fee (Bitcoin Core default)
+
+        let taproot_spend_size = taproot_script_spend_size_vbytes();
+        let dust = dust_threshold(fee_rate, taproot_spend_size);
+        let padding = 5; // Slightly above dust
+
+        let output_value = suggested_output_value(dust, padding);
+
+        println!("Taproot script spend size estimate: {} vbytes", taproot_spend_size);
+        println!("Dust threshold (at {} sat/vB): {} sats", fee_rate, dust);
+        println!("Suggested output value: {} sats", output_value);
+
+        // Example: CPFP child transaction spends this + pays miner
+        let parent_tx_vbytes = 200; // rough estimate
+        let child_tx_vbytes = 120;  // single-input CPFP spend
+        let total_required_fee = cpfp_fee_for_chain(fee_rate, parent_tx_vbytes, child_tx_vbytes);
+
+        println!(
+            "Required total CPFP fee to get both mined: {} sats",
+            total_required_fee
+        );
+
+        let cpfp_contribution_needed = total_required_fee.saturating_sub(output_value);
+        println!(
+            "Child tx must contribute at least: {} sats in additional fees",
+            cpfp_contribution_needed
+        );
+    }
+
+    /// Estimated spend size for a Taproot script path (conservative)
+    fn taproot_script_spend_size_vbytes() -> usize {
+        165 // Based on Bitcoin Core's estimate
+    }
+
+    /// Compute dust threshold: size × fee_rate × 3
+    fn dust_threshold(fee_rate_sat_per_vbyte: f64, spend_size_vbytes: usize) -> u64 {
+        (spend_size_vbytes as f64 * fee_rate_sat_per_vbyte * 3.0).ceil() as u64
+    }
+
+    /// Suggest a near-dust output (dust + padding)
+    fn suggested_output_value(dust: u64, padding: u64) -> u64 {
+        dust + padding // e.g., dust + 5 sats
+    }
+
+    /// Estimate total fee required for CPFP to get both txs mined
+    fn cpfp_fee_for_chain(fee_rate_sat_per_vbyte: f64, parent_vbytes: usize, child_vbytes: usize) -> u64 {
+        ((parent_vbytes + child_vbytes) as f64 * fee_rate_sat_per_vbyte).ceil() as u64
     }
 }
