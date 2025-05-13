@@ -30,7 +30,8 @@ mod tests {
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         // Arrange
@@ -101,7 +102,8 @@ mod tests {
         let txid = Hash::all_zeros();
         let output_index = 0;
         let public_key = tc.key_manager().derive_keypair(0).unwrap();
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
@@ -130,7 +132,9 @@ mod tests {
                 value,
                 &public_key,
                 &[unspendable_script],
-                &SpendMode::KeyOnly { key_path_sign: SignMode::Single },
+                &SpendMode::KeyOnly {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "keypath_spend",
                 &tc.tr_sighash_type(),

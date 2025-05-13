@@ -25,13 +25,20 @@ mod tests {
         let output_index = 0;
         let blocks = 100;
 
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
-        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
-        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
-        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
+        let expired_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let renew_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
+        let expired_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
+        let renew_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script_a =
+            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
+        let script_b =
+            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -57,7 +64,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "challenge",
                 &tc.tr_sighash_type(),
@@ -69,7 +78,9 @@ mod tests {
                 &internal_key,
                 &expired_from,
                 &renew_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "challenge",
                 blocks,
@@ -82,7 +93,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "response",
                 &tc.tr_sighash_type(),
@@ -94,7 +107,9 @@ mod tests {
                 &internal_key,
                 &expired_to,
                 &renew_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "response",
                 blocks,
@@ -169,13 +184,16 @@ mod tests {
 
         let output_value = suggested_output_value(dust, padding);
 
-        println!("Taproot script spend size estimate: {} vbytes", taproot_spend_size);
+        println!(
+            "Taproot script spend size estimate: {} vbytes",
+            taproot_spend_size
+        );
         println!("Dust threshold (at {} sat/vB): {} sats", fee_rate, dust);
         println!("Suggested output value: {} sats", output_value);
 
         // Example: CPFP child transaction spends this + pays miner
         let parent_tx_vbytes = 200; // rough estimate
-        let child_tx_vbytes = 120;  // single-input CPFP spend
+        let child_tx_vbytes = 120; // single-input CPFP spend
         let total_required_fee = cpfp_fee_for_chain(fee_rate, parent_tx_vbytes, child_tx_vbytes);
 
         println!(
@@ -206,7 +224,11 @@ mod tests {
     }
 
     /// Estimate total fee required for CPFP to get both txs mined
-    fn cpfp_fee_for_chain(fee_rate_sat_per_vbyte: f64, parent_vbytes: usize, child_vbytes: usize) -> u64 {
+    fn cpfp_fee_for_chain(
+        fee_rate_sat_per_vbyte: f64,
+        parent_vbytes: usize,
+        child_vbytes: usize,
+    ) -> u64 {
         ((parent_vbytes + child_vbytes) as f64 * fee_rate_sat_per_vbyte).ceil() as u64
     }
 }

@@ -25,14 +25,34 @@ mod tests {
 
         // Create the leaves
         let challenge_leaves = vec![
-            ProtocolScript::new(ScriptBuf::from_bytes(vec![0x00]), &internal_key, SignMode::Single),
-            ProtocolScript::new(ScriptBuf::from_bytes(vec![0x01]), &internal_key, SignMode::Single),
-            ProtocolScript::new(ScriptBuf::from_bytes(vec![0x02]), &internal_key, SignMode::Single),
+            ProtocolScript::new(
+                ScriptBuf::from_bytes(vec![0x00]),
+                &internal_key,
+                SignMode::Single,
+            ),
+            ProtocolScript::new(
+                ScriptBuf::from_bytes(vec![0x01]),
+                &internal_key,
+                SignMode::Single,
+            ),
+            ProtocolScript::new(
+                ScriptBuf::from_bytes(vec![0x02]),
+                &internal_key,
+                SignMode::Single,
+            ),
         ];
 
         let timeout_leaves = vec![
-            ProtocolScript::new(ScriptBuf::from_bytes(vec![0x03]), &internal_key, SignMode::Single),
-            ProtocolScript::new(ScriptBuf::from_bytes(vec![0x04]), &internal_key, SignMode::Single),
+            ProtocolScript::new(
+                ScriptBuf::from_bytes(vec![0x03]),
+                &internal_key,
+                SignMode::Single,
+            ),
+            ProtocolScript::new(
+                ScriptBuf::from_bytes(vec![0x04]),
+                &internal_key,
+                SignMode::Single,
+            ),
         ];
 
         // Add the transactions
@@ -59,7 +79,9 @@ mod tests {
             value,
             &internal_key,
             &timeout_leaves,
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
         )?;
 
@@ -143,7 +165,6 @@ mod tests {
         )?;
 
         protocol.build(tc.key_manager(), "")?;
-
 
         Ok(())
     }

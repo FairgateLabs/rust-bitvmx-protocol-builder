@@ -23,7 +23,8 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
@@ -68,7 +69,8 @@ mod tests {
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -155,7 +157,8 @@ mod tests {
         let storage = Rc::new(tc.new_storage("protocol"));
 
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -167,7 +170,9 @@ mod tests {
             value,
             &internal_key,
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
             "B",
             &tc.tr_sighash_type(),
@@ -201,9 +206,12 @@ mod tests {
         let storage = Rc::new(tc.new_storage("protocol"));
 
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let script_expired = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
-        let script_renew = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script_expired =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
+        let script_renew =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -220,7 +228,9 @@ mod tests {
             100,
             &public_key,
             &internal_key,
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
             &tc.tr_sighash_type(),
         )?;

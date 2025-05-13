@@ -7,9 +7,7 @@ use bitcoin::{
     Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, TapTweakHash,
     Transaction, TxOut, Txid, WScriptHash, XOnlyPublicKey,
 };
-use key_manager::{
-    key_manager::KeyManager, keystorage::keystore::KeyStore, verifier::SignatureVerifier,
-};
+use key_manager::{key_manager::KeyManager, verifier::SignatureVerifier};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -238,14 +236,14 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn compute_taproot_sighash<K: KeyStore>(
+    pub fn compute_taproot_sighash(
         &self,
         transaction: &Transaction,
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
         tap_sighash_type: &TapSighashType,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let messages = match self {
@@ -315,13 +313,13 @@ impl OutputType {
         Ok(messages)
     }
 
-    pub fn compute_taproot_signature<K: KeyStore>(
+    pub fn compute_taproot_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
         hashed_messages: &[Option<Message>],
         tap_sighash_type: &TapSighashType,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         let signatures = match self {
@@ -352,13 +350,13 @@ impl OutputType {
         Ok(signatures)
     }
 
-    pub fn compute_ecdsa_signature<K: KeyStore>(
+    pub fn compute_ecdsa_signature(
         &self,
         _transaction_name: &str,
         _input_index: usize,
         hashed_messages: &[Option<Message>],
         ecdsa_sighash_type: &EcdsaSighashType,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         let signatures = match self {
             OutputType::SegwitPublicKey { public_key, .. } => self.ecdsa_key_signature(
@@ -398,7 +396,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn taproot_sighash<K: KeyStore>(
+    fn taproot_sighash(
         &self,
         transaction: &Transaction,
         transaction_name: &str,
@@ -408,7 +406,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
@@ -497,7 +495,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn taproot_script_only_sighash<K: KeyStore>(
+    fn taproot_script_only_sighash(
         &self,
         transaction: &Transaction,
         transaction_name: &str,
@@ -506,7 +504,7 @@ impl OutputType {
         tap_sighash_type: &TapSighashType,
         leaf: &ProtocolScript,
         leaf_index: usize,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
@@ -533,7 +531,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn taproot_key_only_sighash<K: KeyStore>(
+    fn taproot_key_only_sighash(
         &self,
         transaction: &Transaction,
         transaction_name: &str,
@@ -543,7 +541,7 @@ impl OutputType {
         key_path_sign_mode: &SignMode,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
         let mut hasher = SighashCache::new(transaction);
@@ -624,7 +622,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn taproot_signature<K: KeyStore>(
+    fn taproot_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
@@ -633,7 +631,7 @@ impl OutputType {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         assert!(
@@ -724,7 +722,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn taproot_script_only_signature<K: KeyStore>(
+    pub fn taproot_script_only_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
@@ -732,7 +730,7 @@ impl OutputType {
         tap_sighash_type: &TapSighashType,
         leaf: &ProtocolScript,
         leaf_index: usize,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         if leaf.skip_signing() {
@@ -776,7 +774,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn taproot_key_only_signature<K: KeyStore>(
+    pub fn taproot_key_only_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
@@ -785,7 +783,7 @@ impl OutputType {
         key_path_sign_mode: &SignMode,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Signature>, ProtocolBuilderError> {
         // Compute a signature for the key spend path.
@@ -827,11 +825,11 @@ impl OutputType {
         })))
     }
 
-    pub fn ecdsa_key_signature<K: KeyStore>(
+    pub fn ecdsa_key_signature(
         &self,
         hashed_messages: &[Option<Message>],
         ecdsa_sighash_type: &EcdsaSighashType,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         public_key: &PublicKey,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         assert!(
@@ -848,11 +846,11 @@ impl OutputType {
         Ok(vec![Some(signature)])
     }
 
-    pub fn ecdsa_script_signature<K: KeyStore>(
+    pub fn ecdsa_script_signature(
         &self,
         hashed_messages: &[Option<Message>],
         ecdsa_sighash_type: &EcdsaSighashType,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         script: &ProtocolScript,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
         assert!(

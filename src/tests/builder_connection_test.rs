@@ -23,13 +23,20 @@ mod tests {
         let output_index = 0;
         let blocks = 100;
 
-        let expired_from = ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key, SignMode::Single);
-        let renew_from = ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
-        let expired_to = ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
-        let renew_to = ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key, SignMode::Single);
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let script_a = ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key, SignMode::Single);
-        let script_b = ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key, SignMode::Single);
+        let expired_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key, SignMode::Single);
+        let renew_from =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
+        let expired_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
+        let renew_to =
+            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script_a =
+            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key, SignMode::Single);
+        let script_b =
+            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -55,7 +62,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "challenge",
                 &tc.tr_sighash_type(),
@@ -80,7 +89,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "response",
                 &tc.tr_sighash_type(),
@@ -219,7 +230,8 @@ mod tests {
         let internal_key = tc.key_manager().derive_keypair(0).unwrap();
 
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let scripts = vec![script.clone(), script.clone()];
 
         let mut protocol = Protocol::new("cycle");
@@ -232,7 +244,9 @@ mod tests {
             value,
             &internal_key,
             &scripts,
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &[],
             "A",
             &tc.tr_sighash_type(),
@@ -261,7 +275,8 @@ mod tests {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -287,7 +302,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_from,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "B",
                 &tc.tr_sighash_type(),
@@ -299,7 +316,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "C",
                 &tc.tr_sighash_type(),
@@ -311,7 +330,9 @@ mod tests {
                 value,
                 &internal_key,
                 &scripts_to,
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "A",
                 &tc.tr_sighash_type(),
@@ -340,7 +361,8 @@ mod tests {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("single_connection");
@@ -378,7 +400,8 @@ mod tests {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
@@ -394,7 +417,9 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &tc.tr_sighash_type(),
         )?;
 
@@ -414,7 +439,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 &from_rounds,
                 &tc.tr_sighash_type(),
@@ -468,7 +495,8 @@ mod tests {
 
         let rounds = 0;
         let value = 1000;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -483,7 +511,9 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &tc.tr_sighash_type(),
         );
 
@@ -508,7 +538,8 @@ mod tests {
         let value = 1000;
         let txid = Hash::all_zeros();
         let output_index = 0;
-        let script = ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new("rounds");
@@ -530,7 +561,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "B",
                 &tc.tr_sighash_type(),
@@ -542,7 +575,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "C",
                 &tc.tr_sighash_type(),
@@ -554,7 +589,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "D",
                 &tc.tr_sighash_type(),
@@ -566,7 +603,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "D",
                 &tc.tr_sighash_type(),
@@ -578,7 +617,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "E",
                 &tc.tr_sighash_type(),
@@ -590,7 +631,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "F",
                 &tc.tr_sighash_type(),
@@ -602,7 +645,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "F",
                 &tc.tr_sighash_type(),
@@ -614,7 +659,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 "G",
                 &tc.tr_sighash_type(),
@@ -630,7 +677,9 @@ mod tests {
             &internal_key,
             &[script.clone()],
             &[script.clone()],
-            &SpendMode::All { key_path_sign: SignMode::Single },
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &tc.tr_sighash_type(),
         )?;
 
@@ -642,7 +691,9 @@ mod tests {
                 value,
                 &internal_key,
                 &[script.clone()],
-                &SpendMode::All { key_path_sign: SignMode::Single },
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
                 &[],
                 &from_rounds,
                 &tc.tr_sighash_type(),

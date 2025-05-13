@@ -6,7 +6,7 @@ use bitcoin::{
     transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
     XOnlyPublicKey,
 };
-use key_manager::{key_manager::KeyManager, keystorage::keystore::KeyStore};
+use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::Storage;
@@ -222,9 +222,9 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn build<K: KeyStore>(
+    pub fn build(
         &mut self,
-        key_manager: &Rc<KeyManager<K>>,
+        key_manager: &Rc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
@@ -232,9 +232,9 @@ impl Protocol {
         Ok(self.clone())
     }
 
-    pub fn sign<K: KeyStore>(
+    pub fn sign(
         &mut self,
-        key_manager: &Rc<KeyManager<K>>,
+        key_manager: &Rc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.compute_signatures(key_manager, id)?;
@@ -242,9 +242,9 @@ impl Protocol {
     }
 
     // To be used only when we don't need musig2
-    pub fn build_and_sign<K: KeyStore>(
+    pub fn build_and_sign(
         &mut self,
-        key_manager: &Rc<KeyManager<K>>,
+        key_manager: &Rc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
@@ -253,12 +253,12 @@ impl Protocol {
         Ok(self.clone())
     }
 
-    pub fn sign_input<K: KeyStore>(
+    pub fn sign_input(
         &mut self,
         transaction_name: &str,
         input_index: usize,
         leaf: Option<LeafSpec>,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
@@ -532,9 +532,9 @@ impl Protocol {
         Ok(())
     }
 
-    fn compute_sighashes<K: KeyStore>(
+    fn compute_sighashes(
         &mut self,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
@@ -580,9 +580,9 @@ impl Protocol {
         Ok(())
     }
 
-    fn compute_signatures<K: KeyStore>(
+    fn compute_signatures(
         &mut self,
-        key_manager: &KeyManager<K>,
+        key_manager: &KeyManager,
         id: &str,
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;

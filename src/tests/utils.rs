@@ -4,11 +4,9 @@ use bitcoin::{
     secp256k1::{self},
     Network,
 };
-use key_manager::{
-    errors::ConfigError, key_manager::KeyManager, keystorage::database::DatabaseKeyStore,
-};
+use key_manager::{errors::ConfigError, key_manager::KeyManager, key_store::KeyStore};
 use std::{env, fs, path::PathBuf, rc::Rc};
-use storage_backend::storage::Storage;
+use storage_backend::{storage::Storage, storage_config::StorageConfig};
 
 use crate::types::input::SighashType;
 
@@ -46,7 +44,7 @@ impl Drop for TemporaryDir {
 
 pub struct TestContext {
     test_dir: TemporaryDir,
-    key_manager: Rc<KeyManager<DatabaseKeyStore>>,
+    key_manager: Rc<KeyManager>,
     _network: Network,
 }
 
@@ -71,26 +69,25 @@ impl TestContext {
         SighashType::taproot_all()
     }
 
-    pub fn key_manager(&self) -> &Rc<KeyManager<DatabaseKeyStore>> {
+    pub fn key_manager(&self) -> &Rc<KeyManager> {
         &self.key_manager
     }
 
     pub fn new_storage(&self, name: &str) -> Storage {
-        Storage::new_with_path(&self.test_dir.path(name)).unwrap()
+        let config = StorageConfig::new(name.to_string(), None);
+        Storage::new(&config).unwrap()
     }
 }
 
-pub fn new_key_manager(
-    network: Network,
-    path_prefix: &str,
-) -> Result<Rc<KeyManager<DatabaseKeyStore>>, Error> {
+pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyManager>, Error> {
     let test_dir = TemporaryDir::new(path_prefix);
     let keystore_path = test_dir.path("keystore");
     let musig2_path = test_dir.path("musig2data");
 
     let key_derivation_path = "m/101/1/0/0/";
-    let keystore_password = "secret_password".as_bytes().to_vec();
-    let store = Rc::new(Storage::new_with_path(&musig2_path).unwrap());
+    let keystore_password = "secret_password".to_string();
+    let config = StorageConfig::new(musig2_path.to_str().unwrap().to_string(), None);
+    let store: Rc<Storage> = Rc::new(Storage::new(&config).unwrap());
 
     let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
     let key_derivation_seed: [u8; 32] = bytes
@@ -102,7 +99,12 @@ pub fn new_key_manager(
         .try_into()
         .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
 
-    let database_keystore = DatabaseKeyStore::new(keystore_path, keystore_password, network)?;
+    let config = StorageConfig::new(
+        keystore_path.to_str().unwrap().to_string(),
+        Some(keystore_password),
+    );
+    let storage_keystore = Rc::new(Storage::new(&config)?);
+    let database_keystore = KeyStore::new(storage_keystore);
     let key_manager = KeyManager::new(
         network,
         key_derivation_path,
