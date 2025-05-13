@@ -67,7 +67,7 @@ mod tests {
             )?
             .add_op_return_output(&mut protocol, "op_return", data.clone())?;
 
-        protocol.build(tc.key_manager(), "test")?;
+        protocol.build(tc.key_manager(), "")?;
         let tx = protocol.transaction_by_name("op_return")?;
 
         // Assert
@@ -147,7 +147,7 @@ mod tests {
             )?
             .add_p2wpkh_output(&mut protocol, "keypath_spend", value, &pubkey_alice)?;
 
-        protocol.build_and_sign(tc.key_manager(), "test")?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         let signature = protocol
             .input_taproot_key_spend_signature("keypath_spend", 0)

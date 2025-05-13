@@ -48,7 +48,7 @@ mod tests {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build(tc.key_manager(), "test")?;
+        protocol.build(tc.key_manager(), "")?;
 
         let tx = protocol.transaction_by_name("A")?;
         assert_eq!(tx.input.len(), 1);
@@ -94,7 +94,7 @@ mod tests {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build(tc.key_manager(), "test")?;
+        protocol.build(tc.key_manager(), "")?;
 
         assert_eq!(protocol.transaction_by_name("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction_by_name("B").unwrap().input.len(), 1);
@@ -138,7 +138,7 @@ mod tests {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build(tc.key_manager(), "test")?;
+        protocol.build(tc.key_manager(), "")?;
 
         assert_eq!(protocol.transaction_by_name("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction_by_name("B").unwrap().input.len(), 1);
@@ -187,7 +187,7 @@ mod tests {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build_and_sign(tc.key_manager(), "test")?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         assert_eq!(protocol.transaction_by_name("A").unwrap().output.len(), 1);
         assert_eq!(protocol.transaction_by_name("B").unwrap().input.len(), 1);
@@ -244,7 +244,7 @@ mod tests {
             None => panic!("Failed to load protocol"),
         };
 
-        protocol.build_and_sign(tc.key_manager(), "test")?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         assert_eq!(protocol.transaction_by_name("A").unwrap().output.len(), 3);
         assert_eq!(protocol.transaction_by_name("B").unwrap().input.len(), 2);

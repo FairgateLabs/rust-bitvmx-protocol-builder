@@ -164,7 +164,7 @@ mod tests {
             &tc.tr_sighash_type(),
         )?;
 
-        protocol.build_and_sign(tc.key_manager(), "test")?;
+        protocol.build(tc.key_manager(), "")?;
 
         Ok(())
     }
