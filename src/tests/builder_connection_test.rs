@@ -99,7 +99,7 @@ mod tests {
                 &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         let challenge_args = &[
             InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
@@ -238,7 +238,7 @@ mod tests {
             &tc.tr_sighash_type(),
         )?;
 
-        let result = protocol.build_and_sign(tc.key_manager());
+        let result = protocol.build_and_sign(tc.key_manager(), "");
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -317,7 +317,7 @@ mod tests {
                 &tc.tr_sighash_type(),
             )?;
 
-        let result = protocol.build_and_sign(tc.key_manager());
+        let result = protocol.build_and_sign(tc.key_manager(), "");
 
         match result {
             Err(ProtocolBuilderError::GraphBuildingError(_graph_error)) => {}
@@ -355,7 +355,7 @@ mod tests {
             &tc.ecdsa_sighash_type(),
         )?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
 
@@ -420,7 +420,7 @@ mod tests {
                 &tc.tr_sighash_type(),
             )?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
 
         let args = [InputArgs::new_taproot_script_args(LeafSpec::Index(0))];
 
@@ -649,7 +649,7 @@ mod tests {
             )?
             .add_p2wsh_output(&mut protocol, &to_rounds, value, &script)?;
 
-        protocol.build_and_sign(tc.key_manager())?;
+        protocol.build_and_sign(tc.key_manager(), "")?;
         let mut transaction_names = protocol.transaction_names();
         transaction_names.sort();
 
