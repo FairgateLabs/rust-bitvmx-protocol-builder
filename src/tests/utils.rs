@@ -74,7 +74,8 @@ impl TestContext {
     }
 
     pub fn new_storage(&self, name: &str) -> Storage {
-        let config = StorageConfig::new(name.to_string(), None);
+        let path = self.test_dir.path(name).to_str().unwrap().to_string();
+        let config = StorageConfig::new(path, None);
         Storage::new(&config).unwrap()
     }
 }
