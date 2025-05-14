@@ -6,6 +6,7 @@ use bitcoin::{
     transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
     XOnlyPublicKey,
 };
+use core::time;
 use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
@@ -112,6 +113,37 @@ impl Protocol {
             .add_transaction_output(transaction_name, transaction, output_type.clone())?;
 
         Ok(self)
+    }
+
+    //TODO: Consider best way to unify this with add_connection to support timelock
+    pub fn add_connection_with_timelock(
+        &mut self,
+        connection_name: &str,
+        from: &str,
+        to: &str,
+        output_type: &OutputType,
+        sighash_type: &SighashType,
+        timelock: u16,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.add_transaction_output(from, output_type)?;
+        let output_index = (self.transaction_by_name(from)?.output.len() - 1) as u32;
+
+        self.add_transaction_input(
+            Hash::all_zeros(),
+            output_index as usize,
+            to,
+            Sequence::from_height(timelock),
+            sighash_type,
+        )?;
+        let input_index = self.transaction_by_name(to)?.input.len() - 1;
+
+        self.connect(
+            connection_name,
+            from,
+            output_index as usize,
+            to,
+            InputSpec::Index(input_index),
+        )
     }
 
     pub fn add_connection(
