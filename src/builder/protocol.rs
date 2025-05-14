@@ -115,16 +115,18 @@ impl Protocol {
     }
 
     //TODO: Consider best way to unify this with add_connection to support timelock
+    // as we need to connect a second transaction with the lock don't add the output ot the previous one again
+
     pub fn add_connection_with_timelock(
         &mut self,
         connection_name: &str,
         from: &str,
         to: &str,
-        output_type: &OutputType,
+        _output_type: &OutputType,
         sighash_type: &SighashType,
         timelock: u16,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_transaction_output(from, output_type)?;
+        //self.add_transaction_output(from, output_type)?;
         let output_index = (self.transaction_by_name(from)?.output.len() - 1) as u32;
 
         self.add_transaction_input(

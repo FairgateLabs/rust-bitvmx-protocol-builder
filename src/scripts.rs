@@ -123,6 +123,15 @@ impl ProtocolScript {
         Ok(())
     }
 
+    pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
+        let original_script = self.script.clone();
+        self.script = script!(
+                    { leaf_id }
+                    OP_EQUALVERIFY
+                    { original_script }
+                );
+    }
+
     pub fn get_script(&self) -> &ScriptBuf {
         &self.script
     }
