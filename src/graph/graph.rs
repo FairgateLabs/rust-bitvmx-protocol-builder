@@ -459,7 +459,8 @@ impl TransactionGraph {
 
         for node_index in self.graph.node_indices() {
             let from = self.graph.node_weight(node_index).unwrap();
-            //START_CHALLENGE [label="{txname}|{prev0 | out1} | {prev1 |out0} | {|ou2} | {|out3} "];
+
+            //Converts the tx in a box to show the inputs and outputs and values
             let inputs = from.transaction.input.len();
             let outputs = from.transaction.output.len();
             let total = inputs.max(outputs);
@@ -494,13 +495,14 @@ impl TransactionGraph {
             for edge in self.graph.edges(node_index) {
                 let connection = edge.weight();
                 let to = self.graph.node_weight(edge.target()).unwrap();
+                //Normal view
+                //result.push_str(&format!( "{} -> {} [label={}]\n", from.name, to.name, connection.name,));
+                //Detailed from:vout-to:in (graph view gets messy)
+                //result.push_str(&format!( "{}:o{} -> {}:i{} [label={}]\n", from.name, connection.output_index, to.name, connection.input_index, connection.name,));
+                //Detailed from-to:in
                 result.push_str(&format!(
-                    "{}:o{} -> {}:i{} [label={}]\n",
-                    from.name,
-                    connection.output_index,
-                    to.name,
-                    connection.input_index,
-                    connection.name,
+                    "{} -> {}:i{} [label={}]\n",
+                    from.name, to.name, connection.input_index, connection.name,
                 ));
             }
         }
