@@ -455,17 +455,52 @@ impl TransactionGraph {
     }
 
     pub fn visualize(&self) -> Result<String, GraphError> {
-        let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=Record]\n".to_owned();
+        let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=record]\n".to_owned();
 
         for node_index in self.graph.node_indices() {
             let from = self.graph.node_weight(node_index).unwrap();
+            //START_CHALLENGE [label="{txname}|{prev0 | out1} | {prev1 |out0} | {|ou2} | {|out3} "];
+            let inputs = from.transaction.input.len();
+            let outputs = from.transaction.output.len();
+            let total = inputs.max(outputs);
+            let mut inout = String::new();
+            for i in 0..total {
+                let input_name = if i < inputs {
+                    format!("<i{}> in{}", i, i)
+                } else {
+                    "---".to_string()
+                };
+                let output_name = if i < outputs {
+                    format!(
+                        "<o{}> out{} [{}]",
+                        i,
+                        i,
+                        from.transaction.output[i].value.to_sat()
+                    )
+                } else {
+                    "---".to_string()
+                };
+                inout.push_str(&format!("{{ {} | {} }} ", input_name, output_name));
+                if i < total - 1 {
+                    inout.push('|');
+                }
+            }
+
+            result.push_str(&format!(
+                "{} [label=\"{{ {} }} | {}  \"] \n",
+                from.name, from.name, inout,
+            ));
 
             for edge in self.graph.edges(node_index) {
                 let connection = edge.weight();
                 let to = self.graph.node_weight(edge.target()).unwrap();
                 result.push_str(&format!(
-                    "{} -> {} [label={}]\n",
-                    from.name, to.name, connection.name
+                    "{}:o{} -> {}:i{} [label={}]\n",
+                    from.name,
+                    connection.output_index,
+                    to.name,
+                    connection.input_index,
+                    connection.name,
                 ));
             }
         }
