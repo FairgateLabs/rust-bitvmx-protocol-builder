@@ -767,7 +767,7 @@ impl Protocol {
 
         if !control_block.verify_taproot_commitment(
             &secp,
-            spend_info.output_key().to_x_only_public_key(),
+            spend_info.output_key().to_inner(),
             &leaf,
         ) {
             return Err(ProtocolBuilderError::InvalidLeaf(input_index));
