@@ -17,10 +17,8 @@ use crate::{
     scripts::ProtocolScript,
     types::{
         connection::ConnectionType,
-        input::{
-            InputArgs, InputInfo, InputSignatures, InputSpec, LeafSpec, SighashType, Signature,
-        },
-        output::OutputType,
+        input::{InputArgs, InputSignatures, InputSpec, InputType, SighashType, Signature},
+        output::{OutputType, SpendMode},
     },
     unspendable::unspendable_key,
 };
@@ -72,6 +70,7 @@ impl Protocol {
         previous_output: usize,
         transaction_name: &str,
         sequence: Sequence,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
@@ -88,8 +87,12 @@ impl Protocol {
             witness: Witness::default(),
         });
 
-        self.graph
-            .add_transaction_input(transaction_name, transaction, sighash_type)?;
+        self.graph.add_transaction_input(
+            transaction_name,
+            transaction,
+            spend_mode,
+            sighash_type,
+        )?;
 
         Ok(self)
     }
@@ -117,12 +120,14 @@ impl Protocol {
     //TODO: Consider best way to unify this with add_connection to support timelock
     // as we need to connect a second transaction with the lock don't add the output ot the previous one again
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_connection_with_timelock(
         &mut self,
         connection_name: &str,
         from: &str,
         to: &str,
         _output_type: &OutputType,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
         timelock: u16,
     ) -> Result<&mut Self, ProtocolBuilderError> {
@@ -134,6 +139,7 @@ impl Protocol {
             output_index as usize,
             to,
             Sequence::from_height(timelock),
+            spend_mode,
             sighash_type,
         )?;
         let input_index = self.transaction_by_name(to)?.input.len() - 1;
@@ -153,6 +159,7 @@ impl Protocol {
         from: &str,
         to: &str,
         output_type: &OutputType,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_transaction_output(from, output_type)?;
@@ -163,6 +170,7 @@ impl Protocol {
             output_index as usize,
             to,
             Sequence::ENABLE_RBF_NO_LOCKTIME,
+            spend_mode,
             sighash_type,
         )?;
         let input_index = self.transaction_by_name(to)?.input.len() - 1;
@@ -182,6 +190,7 @@ impl Protocol {
         output_index: u32,
         output_type: OutputType,
         to: &str,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.add_transaction_input(
@@ -189,6 +198,7 @@ impl Protocol {
             output_index as usize,
             to,
             Sequence::ENABLE_RBF_NO_LOCKTIME,
+            spend_mode,
             sighash_type,
         )?;
 
@@ -229,7 +239,7 @@ impl Protocol {
 
                 index
             }
-            InputSpec::SighashType(sighash_type) => {
+            InputSpec::SighashType(sighash_type, spend_mode) => {
                 // If input_index is not present, add a new input with the specified
                 // sighash type to the "to" transaction and return its index
                 self.add_transaction_input(
@@ -237,6 +247,7 @@ impl Protocol {
                     output_index,
                     to,
                     Sequence::ENABLE_RBF_NO_LOCKTIME,
+                    &spend_mode,
                     &sighash_type,
                 )?;
 
@@ -290,7 +301,7 @@ impl Protocol {
         &mut self,
         transaction_name: &str,
         input_index: usize,
-        leaf: Option<LeafSpec>,
+        leaf: Option<usize>,
         key_manager: &KeyManager,
         id: &str,
     ) -> Result<(), ProtocolBuilderError> {
@@ -304,12 +315,18 @@ impl Protocol {
                     _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
                 };
 
-                let (leaf, leaf_index) = match leaf {
-                    Some(leaf) => leaf.script_and_index(leaves)?,
-                    None => {
-                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
-                    }
-                };
+                let (leaf, leaf_index) =
+                    match leaf {
+                        Some(leaf_index) => (
+                            leaves.get(leaf_index).ok_or(
+                                ProtocolBuilderError::MissingTaprootLeaf(leaf_index, input_index),
+                            )?,
+                            leaf_index,
+                        ),
+                        None => {
+                            return Err(ProtocolBuilderError::InvalidLeaf(input_index));
+                        }
+                    };
 
                 (
                     output_type.taproot_script_only_signature(
@@ -317,7 +334,7 @@ impl Protocol {
                         input_index,
                         &input.hashed_messages(),
                         tap_sighash_type,
-                        &leaf,
+                        leaf,
                         leaf_index,
                         key_manager,
                         id,
@@ -403,7 +420,7 @@ impl Protocol {
         Ok(next_transactions)
     }
 
-    pub fn inputs(&self, transaction_name: &str) -> Result<Vec<InputInfo>, ProtocolBuilderError> {
+    pub fn inputs(&self, transaction_name: &str) -> Result<Vec<InputType>, ProtocolBuilderError> {
         Ok(self.graph.get_inputs(transaction_name)?)
     }
 
@@ -589,6 +606,7 @@ impl Protocol {
                             transaction_name,
                             input_index,
                             &prevouts,
+                            input.spend_mode(),
                             tap_sighash_type,
                             key_manager,
                             id,
@@ -630,6 +648,7 @@ impl Protocol {
                             transaction_name,
                             input_index,
                             &input.hashed_messages(),
+                            input.spend_mode(),
                             tap_sighash_type,
                             key_manager,
                             id,
@@ -657,14 +676,14 @@ impl Protocol {
     fn get_witness_for_input(
         &self,
         input_index: usize,
-        input: &InputInfo,
+        input: &InputType,
         args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let witness = match input.sighash_type() {
             SighashType::Taproot(..) => match input.output_type()? {
                 OutputType::Taproot { .. } => match args {
                     InputArgs::TaprootScript { leaf, .. } => {
-                        self.taproot_script_witness(input_index, leaf, input, args)?
+                        self.taproot_script_witness(input_index, *leaf, input, args)?
                     }
                     InputArgs::TaprootKey { .. } => self.taproot_key_witness(args)?,
                     _ => {
@@ -723,28 +742,20 @@ impl Protocol {
     fn taproot_script_witness(
         &self,
         input_index: usize,
-        leaf_spec: &LeafSpec,
-        input: &InputInfo,
+        leaf: usize,
+        input: &InputType,
         args: &InputArgs,
     ) -> Result<Witness, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let spend_info = &input.output_type()?.get_taproot_spend_info()?.unwrap();
 
         let leaf = match input.output_type()? {
-            OutputType::Taproot { leaves, .. } => match leaf_spec {
-                LeafSpec::Index(index) => {
-                    if *index >= leaves.len() {
-                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
-                    }
-                    leaves[*index].get_script().clone()
+            OutputType::Taproot { leaves, .. } => {
+                if leaf >= leaves.len() {
+                    return Err(ProtocolBuilderError::InvalidLeaf(input_index));
                 }
-                LeafSpec::Script(ref script) => {
-                    if !leaves.iter().any(|leaf| leaf.get_script() == script) {
-                        return Err(ProtocolBuilderError::InvalidLeaf(input_index));
-                    }
-                    script.clone()
-                }
-            },
+                leaves[leaf].get_script().clone()
+            }
             _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
         };
 
@@ -756,7 +767,7 @@ impl Protocol {
 
         if !control_block.verify_taproot_commitment(
             &secp,
-            spend_info.output_key().to_inner(),
+            spend_info.output_key().to_x_only_public_key(),
             &leaf,
         ) {
             return Err(ProtocolBuilderError::InvalidLeaf(input_index));

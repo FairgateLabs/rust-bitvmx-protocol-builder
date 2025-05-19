@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use config as settings;
 
-use crate::types::{input::LeafSpec, output::SpendMode};
+use crate::types::output::SpendMode;
 
 #[derive(Error, Debug)]
 pub enum UnspendableKeyError {
@@ -146,11 +146,8 @@ pub enum ProtocolBuilderError {
     #[error("Invalid spending script for input {0}")]
     InvalidLeaf(usize),
 
-    #[error("Invalid leaf spec {0}")]
-    InvalidLeafSpec(LeafSpec),
-
-    #[error("Missing taproot leaf for input {0}")]
-    MissingTaprootLeaf(usize),
+    #[error("Missing taproot leaf {0} for input {1}")]
+    MissingTaprootLeaf(usize, usize),
 
     #[error("Cannot create zero rounds")]
     InvalidZeroRounds,

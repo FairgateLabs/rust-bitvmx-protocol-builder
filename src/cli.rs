@@ -301,6 +301,7 @@ impl Cli {
             output_index,
             output_type,
             to,
+            &SpendMode::Segwit,
             &ecdsa_sighash_type,
         )?;
 

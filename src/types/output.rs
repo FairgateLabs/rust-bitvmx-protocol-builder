@@ -16,8 +16,6 @@ use crate::{
     types::input::Signature,
 };
 
-use super::input::LeafSpec;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageId {
     transaction: String,
@@ -79,11 +77,17 @@ pub enum SpendMode {
     /// Compute sighashes and signatures for all the script paths excluding the internal key.
     ScriptsOnly,
 
+    /// Compute sighashes and signatures for the specified script paths excluding the internal key.
+    Scripts { leaves: Vec<usize> },
+
     /// Compute sighashes and signatures for a specific script path.
-    Script { leaf: LeafSpec },
+    Script { leaf: usize },
 
     /// No sighashes or signatures are computed for any path.
     None,
+
+    /// Spend mode for P2WSH and P2WPKH.
+    Segwit,
 }
 
 impl Display for SpendMode {
@@ -97,7 +101,9 @@ impl Display for SpendMode {
             } => write!(f, "KeyOnly({})", key_path_sign_mode),
             SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
             SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
+            SpendMode::Scripts { leaves } => write!(f, "Scripts({:?})", leaves),
             SpendMode::None => write!(f, "None"),
+            SpendMode::Segwit => write!(f, "Segwit"),
         }
     }
 }
@@ -109,7 +115,6 @@ pub enum OutputType {
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
-        spend_mode: SpendMode,
         prevouts: Vec<TxOut>,
     },
     SegwitPublicKey {
@@ -133,7 +138,6 @@ impl OutputType {
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        spend_mode: &SpendMode,
         prevouts: &[TxOut],
     ) -> Result<Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
@@ -147,7 +151,6 @@ impl OutputType {
             internal_key: *internal_key,
             script_pubkey,
             leaves: leaves.to_vec(),
-            spend_mode: spend_mode.clone(),
             prevouts: prevouts.to_vec(),
         })
     }
@@ -242,6 +245,7 @@ impl OutputType {
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
+        spend_mode: &SpendMode,
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager,
         id: &str,
@@ -250,7 +254,6 @@ impl OutputType {
             OutputType::Taproot {
                 internal_key,
                 leaves,
-                spend_mode,
                 ..
             } => self.taproot_sighash(
                 transaction,
@@ -313,11 +316,13 @@ impl OutputType {
         Ok(messages)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn compute_taproot_signature(
         &self,
         transaction_name: &str,
         input_index: usize,
         hashed_messages: &[Option<Message>],
+        spend_mode: &SpendMode,
         tap_sighash_type: &TapSighashType,
         key_manager: &KeyManager,
         id: &str,
@@ -326,7 +331,6 @@ impl OutputType {
             OutputType::Taproot {
                 internal_key,
                 leaves,
-                spend_mode,
                 ..
             } => self.taproot_signature(
                 transaction_name,
@@ -409,17 +413,8 @@ impl OutputType {
         key_manager: &KeyManager,
         id: &str,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
-        let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All {
-                key_path_sign: key_path_sign_mode,
-            } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly {
-                key_path_sign: key_path_sign_mode,
-            } => (true, false, false, Some(key_path_sign_mode)),
-            SpendMode::ScriptsOnly => (false, true, false, None),
-            SpendMode::Script { .. } => (false, false, true, None),
-            SpendMode::None => (false, false, false, None),
-        };
+        let (key_path, scripts_path, key_path_sign_mode, selected_leaves) =
+            spend_mode_params(leaves, spend_mode)?;
 
         // Initialize the vector of hashed messages with None for all paths.
         let mut hashed_messages: Vec<Option<Message>> = vec![None; leaves.len() + 1];
@@ -431,7 +426,7 @@ impl OutputType {
                 input_index,
                 prevouts,
                 tap_sighash_type,
-                key_path_sign_mode.unwrap(),
+                &key_path_sign_mode.unwrap(),
                 internal_key,
                 leaves,
                 key_manager,
@@ -445,7 +440,7 @@ impl OutputType {
 
         if scripts_path {
             // Script path hashes
-            for (leaf_index, leaf) in leaves.iter().enumerate() {
+            for (leaf_index, leaf) in selected_leaves.as_ref().unwrap().iter() {
                 let hashed_message = self.taproot_script_only_sighash(
                     transaction,
                     transaction_name,
@@ -453,43 +448,15 @@ impl OutputType {
                     prevouts,
                     tap_sighash_type,
                     leaf,
-                    leaf_index,
+                    *leaf_index,
                     key_manager,
                     id,
                 )?;
 
                 // Push the script path hash to the correct position in the vector.
-                hashed_messages[leaf_index] = hashed_message;
+                hashed_messages[*leaf_index] = hashed_message;
             }
         };
-
-        if single_script_path {
-            match spend_mode {
-                SpendMode::Script { leaf, .. } => {
-                    let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
-
-                    let hashed_message = self.taproot_script_only_sighash(
-                        transaction,
-                        transaction_name,
-                        input_index,
-                        prevouts,
-                        tap_sighash_type,
-                        &leaf,
-                        leaf_index,
-                        key_manager,
-                        id,
-                    )?;
-
-                    hashed_messages[leaf_index] = hashed_message;
-                }
-                _ => {
-                    return Err(ProtocolBuilderError::InvalidSpendMode(
-                        "Script".to_string(),
-                        spend_mode.clone(),
-                    ));
-                }
-            };
-        }
 
         Ok(hashed_messages)
     }
@@ -639,17 +606,8 @@ impl OutputType {
             "Expected one message for each script and one for the key spend path"
         );
 
-        let (key_path, scripts_path, single_script_path, key_path_sign_mode) = match spend_mode {
-            SpendMode::All {
-                key_path_sign: key_path_sign_mode,
-            } => (true, true, false, Some(key_path_sign_mode)),
-            SpendMode::KeyOnly {
-                key_path_sign: key_path_sign_mode,
-            } => (true, false, false, Some(key_path_sign_mode)),
-            SpendMode::ScriptsOnly => (false, true, false, None),
-            SpendMode::Script { .. } => (false, false, true, None),
-            SpendMode::None => (false, false, false, None),
-        };
+        let (key_path, scripts_path, key_path_sign_mode, selected_leaves) =
+            spend_mode_params(leaves, spend_mode)?;
 
         // Initialize the vector of signatures with None for all paths.
         let mut signatures: Vec<Option<Signature>> = vec![None; leaves.len() + 1];
@@ -661,7 +619,7 @@ impl OutputType {
                 input_index,
                 hashed_messages,
                 tap_sighash_type,
-                key_path_sign_mode.unwrap(),
+                &key_path_sign_mode.unwrap(),
                 internal_key,
                 leaves,
                 key_manager,
@@ -675,47 +633,20 @@ impl OutputType {
 
         if scripts_path {
             // Script path signatures
-            for (leaf_index, leaf) in leaves.iter().enumerate() {
+            for (leaf_index, leaf) in selected_leaves.as_ref().unwrap().iter() {
                 let signature = self.taproot_script_only_signature(
                     transaction_name,
                     input_index,
                     hashed_messages,
                     tap_sighash_type,
                     leaf,
-                    leaf_index,
+                    *leaf_index,
                     key_manager,
                     id,
                 )?;
 
-                signatures[leaf_index] = signature;
+                signatures[*leaf_index] = signature;
             }
-        };
-
-        if single_script_path {
-            match spend_mode {
-                SpendMode::Script { leaf, .. } => {
-                    let (leaf, leaf_index) = leaf.script_and_index(leaves)?;
-
-                    let signature = self.taproot_script_only_signature(
-                        transaction_name,
-                        input_index,
-                        hashed_messages,
-                        tap_sighash_type,
-                        &leaf,
-                        leaf_index,
-                        key_manager,
-                        id,
-                    )?;
-
-                    signatures[leaf_index] = signature;
-                }
-                _ => {
-                    return Err(ProtocolBuilderError::InvalidSpendMode(
-                        "Script".to_string(),
-                        spend_mode.clone(),
-                    ));
-                }
-            };
         };
 
         Ok(signatures)
@@ -872,4 +803,60 @@ impl OutputType {
             vec![Some(signature)]
         })
     }
+}
+
+#[allow(clippy::type_complexity)]
+fn spend_mode_params(
+    leaves: &[ProtocolScript],
+    spend_mode: &SpendMode,
+) -> Result<
+    (
+        bool,
+        bool,
+        Option<SignMode>,
+        Option<Vec<(usize, ProtocolScript)>>,
+    ),
+    ProtocolBuilderError,
+> {
+    let (key_path, scripts_path, key_path_sign_mode, selected_leaves) = match spend_mode {
+        SpendMode::All {
+            key_path_sign: key_path_sign_mode,
+        } => (
+            true,
+            true,
+            Some(key_path_sign_mode.clone()),
+            Some(select_leaves(leaves, &[])),
+        ),
+        SpendMode::KeyOnly {
+            key_path_sign: key_path_sign_mode,
+        } => (true, false, Some(key_path_sign_mode.clone()), None),
+        SpendMode::ScriptsOnly => (false, true, None, Some(select_leaves(leaves, &[]))),
+        SpendMode::Scripts { leaves: indexes } => {
+            (false, true, None, Some(select_leaves(leaves, indexes)))
+        }
+        SpendMode::Script { leaf } => (false, true, None, Some(select_leaves(leaves, &[*leaf]))),
+        SpendMode::None => (false, false, None, None),
+        SpendMode::Segwit => {
+            return Err(ProtocolBuilderError::InvalidSpendMode(
+                "Taproot".to_string(),
+                spend_mode.clone(),
+            ))
+        }
+    };
+    Ok((key_path, scripts_path, key_path_sign_mode, selected_leaves))
+}
+
+fn select_leaves(leaves: &[ProtocolScript], indexes: &[usize]) -> Vec<(usize, ProtocolScript)> {
+    if indexes.is_empty() {
+        return leaves
+            .iter()
+            .cloned()
+            .enumerate()
+            .collect::<Vec<(usize, ProtocolScript)>>();
+    };
+
+    indexes
+        .iter()
+        .map(|&leaf_index| (leaf_index, leaves[leaf_index].clone()))
+        .collect::<Vec<(usize, ProtocolScript)>>()
 }

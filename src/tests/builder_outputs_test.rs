@@ -63,6 +63,7 @@ mod tests {
                 output_index,
                 output_type,
                 "op_return",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             .add_op_return_output(&mut protocol, "op_return", data.clone())?;
@@ -122,6 +123,7 @@ mod tests {
                 output_index,
                 output_type,
                 "keypath_origin",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             // This connection creates the output and input scripts for the taprootkeypath spend

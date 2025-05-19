@@ -13,8 +13,8 @@ use crate::{
     errors::GraphError,
     types::{
         connection::ConnectionType,
-        input::{InputInfo, InputSignatures, SighashType, Signature},
-        output::OutputType,
+        input::{InputType, InputSignatures, SighashType, Signature},
+        output::{OutputType, SpendMode},
     },
 };
 
@@ -23,7 +23,7 @@ pub(crate) struct Node {
     pub(crate) name: String,
     pub(crate) transaction: Transaction,
     pub(crate) outputs: Vec<OutputType>,
-    pub(crate) inputs: Vec<InputInfo>,
+    pub(crate) inputs: Vec<InputType>,
 }
 
 impl Node {
@@ -36,7 +36,7 @@ impl Node {
         }
     }
 
-    pub(crate) fn get_input(&self, input_index: usize) -> Result<&InputInfo, GraphError> {
+    pub(crate) fn get_input(&self, input_index: usize) -> Result<&InputType, GraphError> {
         self.inputs
             .get(input_index)
             .ok_or(GraphError::MissingInputInfo(self.name.clone(), input_index))
@@ -117,11 +117,12 @@ impl TransactionGraph {
         &mut self,
         name: &str,
         transaction: Transaction,
+        spend_mode: &SpendMode,
         sighash_type: &SighashType,
     ) -> Result<(), GraphError> {
         let node = self.get_node_mut(name)?;
         node.transaction = transaction;
-        node.inputs.push(InputInfo::new(sighash_type));
+        node.inputs.push(InputType::new(spend_mode, sighash_type));
         Ok(())
     }
 
@@ -293,7 +294,7 @@ impl TransactionGraph {
         result
     }
 
-    pub fn get_inputs(&self, name: &str) -> Result<Vec<InputInfo>, GraphError> {
+    pub fn get_inputs(&self, name: &str) -> Result<Vec<InputType>, GraphError> {
         Ok(self.get_node(name)?.inputs.clone())
     }
 
@@ -343,7 +344,7 @@ impl TransactionGraph {
         Ok(all_signatures)
     }
 
-    pub fn get_input(&self, name: &str, input_index: usize) -> Result<InputInfo, GraphError> {
+    pub fn get_input(&self, name: &str, input_index: usize) -> Result<InputType, GraphError> {
         Ok(self.get_node(name)?.get_input(input_index)?.clone())
     }
 
@@ -579,7 +580,7 @@ impl TransactionGraph {
         Ok(self.get_node(transaction_name)?.outputs[output_index].clone())
     }
 
-    fn get_transaction_inputs(&self) -> Result<HashMap<String, Vec<InputInfo>>, GraphError> {
+    fn get_transaction_inputs(&self) -> Result<HashMap<String, Vec<InputType>>, GraphError> {
         self.node_indexes
             .keys()
             .map(|name| {

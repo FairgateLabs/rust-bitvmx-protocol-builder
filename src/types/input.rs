@@ -1,21 +1,15 @@
-use std::fmt::Formatter;
-
-use bitcoin::{secp256k1::Message, EcdsaSighashType, ScriptBuf, TapSighashType};
+use bitcoin::{secp256k1::Message, EcdsaSighashType, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 
-use crate::{
-    errors::{GraphError, ProtocolBuilderError},
-    scripts::ProtocolScript,
-};
+use crate::errors::{GraphError, ProtocolBuilderError};
 
-use super::OutputType;
+use super::{output::SpendMode, OutputType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InputSpec {
     Index(usize),
-    SighashType(SighashType),
+    SighashType(SighashType, SpendMode),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,56 +73,15 @@ impl SighashType {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum LeafSpec {
-    Index(usize),
-    Script(ScriptBuf),
-}
-
-impl LeafSpec {
-    pub fn script_and_index(
-        &self,
-        leaves: &[ProtocolScript],
-    ) -> Result<(ProtocolScript, usize), ProtocolBuilderError> {
-        let result = match self {
-            LeafSpec::Index(index) => {
-                if *index >= leaves.len() {
-                    return Err(ProtocolBuilderError::InvalidLeafSpec(self.clone()));
-                };
-
-                (leaves[*index].clone(), *index)
-            }
-            LeafSpec::Script(ref script) => {
-                let leaf_index = leaves
-                    .iter()
-                    .position(|l| l.get_script() == script)
-                    .ok_or(ProtocolBuilderError::InvalidLeafSpec(self.clone()))?;
-                (leaves[leaf_index].clone(), leaf_index)
-            }
-        };
-
-        Ok(result)
-    }
-}
-
-impl Display for LeafSpec {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LeafSpec::Index(index) => write!(f, "LeafSpec::Index({})", index),
-            LeafSpec::Script(script) => write!(f, "LeafSpec::Script({:?})", script),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum InputArgs {
     TaprootKey { args: Vec<Vec<u8>> },
-    TaprootScript { args: Vec<Vec<u8>>, leaf: LeafSpec },
+    TaprootScript { args: Vec<Vec<u8>>, leaf: usize },
     Segwit { args: Vec<Vec<u8>> },
 }
 
 impl InputArgs {
-    pub fn new_taproot_script_args(leaf: LeafSpec) -> Self {
+    pub fn new_taproot_script_args(leaf: usize) -> Self {
         Self::TaprootScript { args: vec![], leaf }
     }
 
@@ -208,20 +161,22 @@ impl InputArgs {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InputInfo {
+pub struct InputType {
     output_type: Option<OutputType>,
     sighash_type: SighashType,
     hashed_messages: Vec<Option<Vec<u8>>>,
     signatures: Vec<Option<Signature>>,
+    spend_mode: SpendMode,
 }
 
-impl InputInfo {
-    pub(crate) fn new(sighash_type: &SighashType) -> Self {
+impl InputType {
+    pub(crate) fn new(spend_mode: &SpendMode, sighash_type: &SighashType) -> Self {
         Self {
             output_type: None,
             sighash_type: sighash_type.clone(),
             hashed_messages: vec![],
             signatures: vec![],
+            spend_mode: spend_mode.clone(),
         }
     }
 
@@ -265,6 +220,10 @@ impl InputInfo {
         self.signatures[signature_index] = signature;
 
         Ok(())
+    }
+
+    pub fn spend_mode(&self) -> &SpendMode {
+        &self.spend_mode
     }
 
     pub fn sighash_type(&self) -> &SighashType {

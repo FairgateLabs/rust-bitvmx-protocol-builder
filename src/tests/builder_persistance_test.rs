@@ -36,6 +36,7 @@ mod tests {
             output_index,
             output_type,
             "A",
+            &SpendMode::Segwit,
             &tc.ecdsa_sighash_type(),
         )?;
 

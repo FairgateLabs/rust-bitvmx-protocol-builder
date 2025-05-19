@@ -8,7 +8,7 @@ mod tests {
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
-            input::{InputArgs, LeafSpec},
+            input::InputArgs,
             output::{OutputType, SpendMode},
         },
     };
@@ -53,6 +53,7 @@ mod tests {
                 output_index,
                 output_type,
                 "start",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             .add_taproot_connection(
@@ -113,12 +114,12 @@ mod tests {
         protocol.build_and_sign(tc.key_manager(), "")?;
 
         let challenge_args = &[
-            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
-            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
         let response_args = &[
-            InputArgs::new_taproot_script_args(LeafSpec::Index(0)),
-            InputArgs::new_taproot_script_args(LeafSpec::Index(1)),
+            InputArgs::new_taproot_script_args(0),
+            InputArgs::new_taproot_script_args(1),
         ];
 
         let start = protocol.transaction_to_send("start", &[InputArgs::new_segwit_args()])?;
@@ -293,6 +294,7 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             .add_taproot_connection(
@@ -374,6 +376,7 @@ mod tests {
             output_index,
             output_type,
             "start",
+            &SpendMode::Segwit,
             &tc.ecdsa_sighash_type(),
         )?;
 
@@ -430,6 +433,7 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             .add_taproot_connection(
@@ -449,7 +453,7 @@ mod tests {
 
         protocol.build_and_sign(tc.key_manager(), "")?;
 
-        let args = [InputArgs::new_taproot_script_args(LeafSpec::Index(0))];
+        let args = [InputArgs::new_taproot_script_args(0)];
 
         let a = protocol.transaction_to_send("A", &[InputArgs::new_segwit_args()])?;
         let b0 = protocol.transaction_to_send("B_0", &args)?;
@@ -552,6 +556,7 @@ mod tests {
                 output_index,
                 output_type,
                 "A",
+                &SpendMode::Segwit,
                 &tc.ecdsa_sighash_type(),
             )?
             .add_taproot_connection(

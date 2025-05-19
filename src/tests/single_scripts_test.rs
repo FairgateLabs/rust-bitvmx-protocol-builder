@@ -64,42 +64,33 @@ mod tests {
         protocol.add_transaction("end")?;
 
         // Avoid generating the hashes and signatures for all the spend paths of the challenge output
-        let challenge_output = OutputType::taproot(
-            value,
-            &internal_key,
-            &challenge_leaves,
-            &SpendMode::None,
-            &[],
-        )?;
+        let challenge_output = OutputType::taproot(value, &internal_key, &challenge_leaves, &[])?;
         protocol.add_transaction_output("challenge", &challenge_output)?;
 
         // Create the transaction output types
         let external_output = OutputType::segwit_key(value, &public_key)?;
-        let start_challenge_output = OutputType::taproot(
-            value,
-            &internal_key,
-            &timeout_leaves,
-            &SpendMode::All {
-                key_path_sign: SignMode::Single,
-            },
-            &[],
-        )?;
+        let start_challenge_output =
+            OutputType::taproot(value, &internal_key, &timeout_leaves, &[])?;
 
-        // Conect the start transaction with an external transaction
+        // Connect the start transaction with an external transaction
         protocol.add_external_connection(
             txid,
             output_index,
             external_output,
             "start",
+            &SpendMode::Segwit,
             &tc.ecdsa_sighash_type(),
         )?;
 
-        // Connetc the start transaction with the challenge transaction
+        // Connect the start transaction with the challenge transaction
         protocol.add_connection(
             "protocol",
             "start",
             "challenge",
             &start_challenge_output,
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
             &tc.tr_sighash_type(),
         )?;
 
@@ -109,21 +100,21 @@ mod tests {
             "challenge",
             0,
             "response_op1",
-            InputSpec::SighashType(tc.tr_sighash_type()),
+            InputSpec::SighashType(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
         )?;
         protocol.connect(
             "protocol_op2",
             "challenge",
             0,
             "response_op2",
-            InputSpec::SighashType(tc.tr_sighash_type()),
+            InputSpec::SighashType(tc.tr_sighash_type(), SpendMode::Script { leaf: 1 }),
         )?;
         protocol.connect(
             "protocol_op3",
             "challenge",
             0,
             "response_op3",
-            InputSpec::SighashType(tc.tr_sighash_type()),
+            InputSpec::SighashType(tc.tr_sighash_type(), SpendMode::Script { leaf: 2 }),
         )?;
 
         // Add one extra non-spendable output to each challenge response transaction to ensure different txids
@@ -139,14 +130,14 @@ mod tests {
             .add_transaction_output("response_op3", &OutputType::segwit_unspendable(script_op3)?)?;
 
         // End the challenge avoiding the generation of the hashes and signatures for the response challenge output
-        let end_challenge_output =
-            OutputType::taproot(value, &internal_key, &timeout_leaves, &SpendMode::None, &[])?;
+        let end_challenge_output = OutputType::taproot(value, &internal_key, &timeout_leaves, &[])?;
 
         protocol.add_connection(
             "protocol_op1",
             "response_op1",
             "end",
             &end_challenge_output,
+            &SpendMode::Script { leaf: 0 },
             &tc.tr_sighash_type(),
         )?;
         protocol.add_connection(
@@ -154,6 +145,7 @@ mod tests {
             "response_op2",
             "end",
             &end_challenge_output,
+            &SpendMode::Script { leaf: 0 },
             &tc.tr_sighash_type(),
         )?;
         protocol.add_connection(
@@ -161,6 +153,7 @@ mod tests {
             "response_op3",
             "end",
             &end_challenge_output,
+            &SpendMode::Script { leaf: 0 },
             &tc.tr_sighash_type(),
         )?;
 
