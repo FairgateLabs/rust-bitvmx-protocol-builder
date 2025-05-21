@@ -885,6 +885,28 @@ mod tests {
     }
 
     #[test]
+    fn test_build_taproot_spend_info_no_scripts() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
+            &[],
+        )
+        .expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.merkle_root(), None);
+    }
+
+    #[test]
     fn test_build_taproot_spend_info_one_leaf() {
         // Arrange
         let secp = Secp256k1::new();
