@@ -13,7 +13,7 @@ use crate::{
     errors::GraphError,
     types::{
         connection::ConnectionType,
-        input::{InputType, InputSignatures, SighashType, Signature},
+        input::{InputSignatures, InputType, SighashType, Signature},
         output::{OutputType, SpendMode},
     },
 };
@@ -280,6 +280,22 @@ impl TransactionGraph {
             let connection = self.get_connection(edge)?;
             prevouts[connection.input_index as usize] =
                 Some(from.output[connection.output_index as usize].clone());
+        }
+
+        let inputs = &self.get_node(name)?.inputs;
+        for i in 0..prevouts.len() {
+            if prevouts[i].is_none() {
+                if inputs[i].output_type()?.has_prevouts() {
+                    let prev = inputs[i].output_type()?.get_prevouts();
+                    if prev.len() == prevouts.len() {
+                        //this is an all external outputs :/
+                        prevouts[i] = Some(prev[i].clone());
+                    } else {
+                        //this is mix of internal and external outputs
+                        prevouts[i] = Some(prev[0].clone());
+                    }
+                }
+            }
         }
 
         let result = prevouts

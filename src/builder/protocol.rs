@@ -595,11 +595,11 @@ impl Protocol {
 
                 let hashed_messages = match input.sighash_type() {
                     SighashType::Taproot(tap_sighash_type) => {
-                        let prevouts = if output_type.has_prevouts() {
-                            output_type.get_prevouts()
-                        } else {
-                            self.graph.get_prevouts(transaction_name)?
-                        };
+                        //let prevouts = if output_type.has_prevouts() {
+                        //    output_type.get_prevouts()
+                        //} else {
+                        let prevouts = self.graph.get_prevouts(transaction_name)?;
+                        //};
 
                         output_type.compute_taproot_sighash(
                             transaction,
