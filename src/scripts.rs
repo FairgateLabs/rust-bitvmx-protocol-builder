@@ -586,12 +586,12 @@ pub fn build_taproot_spend_info(
 ) -> Result<TaprootSpendInfo, ScriptError> {
     let scripts_count = leaves.len();
 
-    // For empty scripts, return error
-    if scripts_count == 0 {
-        return Err(ScriptError::NoScriptsProvided);
-    }
-
     let mut tr_builder = TaprootBuilder::new();
+
+    // For empty scripts finalize the tree
+    if scripts_count == 0 {
+        return tr_builder.finalize(secp, *internal_key).map_err(|_| ScriptError::TapTreeFinalizeError);
+    }
 
     // For a single script, add it at depth 0
     if scripts_count == 1 {

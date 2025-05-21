@@ -72,9 +72,6 @@ pub enum ScriptError {
     #[error("Failed to finalize taptree for given spending conditions")]
     TapTreeFinalizeError,
 
-    #[error("Failed to create taptree no scripts provided")]
-    NoScriptsProvided,
-
     #[error("Failed to build taptree for given spending conditions")]
     TapTreeError(#[from] TaprootBuilderError),
 
