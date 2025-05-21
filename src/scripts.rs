@@ -586,12 +586,12 @@ pub fn build_taproot_spend_info(
 ) -> Result<TaprootSpendInfo, ScriptError> {
     let scripts_count = leaves.len();
 
-    // For empty scripts, return error
-    if scripts_count == 0 {
-        return Err(ScriptError::NoScriptsProvided);
-    }
-
     let mut tr_builder = TaprootBuilder::new();
+
+    // For empty scripts finalize the tree
+    if scripts_count == 0 {
+        return tr_builder.finalize(secp, *internal_key).map_err(|_| ScriptError::TapTreeFinalizeError);
+    }
 
     // For a single script, add it at depth 0
     if scripts_count == 1 {
@@ -882,6 +882,28 @@ mod tests {
             script_bytes_hex,
             "6a1c000000000000024b7ac5496aee77c1ba1f0854206a26dda82a81d6d8"
         );
+    }
+
+    #[test]
+    fn test_build_taproot_spend_info_no_scripts() {
+        // Arrange
+        let secp = Secp256k1::new();
+        let pubkey_bytes =
+            hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
+                .expect("Decoding failed");
+        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
+        let internal_key = XOnlyPublicKey::from(public_key);
+
+        // Act
+        let taproot_spend_info = build_taproot_spend_info(
+            &secp,
+            &internal_key,
+            &[],
+        )
+        .expect("Failed to build taproot spend info");
+
+        // Assert
+        assert_eq!(taproot_spend_info.merkle_root(), None);
     }
 
     #[test]

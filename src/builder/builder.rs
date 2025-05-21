@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    check_params::{check_empty_scripts, check_zero_rounds},
+    check_params::check_zero_rounds, //check_empty_scripts
     Protocol,
 };
 
@@ -32,7 +32,7 @@ impl ProtocolBuilder {
         leaves: &[ProtocolScript],
         prevouts: &[TxOut],
     ) -> Result<&Self, ProtocolBuilderError> {
-        check_empty_scripts(leaves)?;
+        // check_empty_scripts(leaves)?;
 
         let output_type = OutputType::taproot(value, internal_key, leaves, prevouts)?;
         protocol.add_transaction_output(transaction_name, &output_type)?;
