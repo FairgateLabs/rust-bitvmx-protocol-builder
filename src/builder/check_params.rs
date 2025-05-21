@@ -1,4 +1,4 @@
-use crate::{errors::ProtocolBuilderError, scripts::ProtocolScript};
+use crate::errors::ProtocolBuilderError;
 
 // pub(crate) fn check_empty_scripts(scripts: &[ProtocolScript]) -> Result<(), ProtocolBuilderError> {
 //     if scripts.is_empty() {
