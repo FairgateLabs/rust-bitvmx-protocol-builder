@@ -9,7 +9,7 @@ use bitcoin::{
 use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
-use storage_backend::storage::Storage;
+use storage_backend::storage::{KeyValueStore, Storage};
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -40,17 +40,11 @@ impl Protocol {
     }
 
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        let protocol = match storage.read(name)? {
-            Some(protocol) => protocol,
-            None => return Ok(None),
-        };
-
-        let protocol: Protocol = serde_json::from_str(&protocol)?;
-        Ok(Some(protocol))
+        Ok(storage.get(&name)?)
     }
 
     pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
-        storage.write(&self.name, &serde_json::to_string(self)?)?;
+        storage.set(&self.name, &self, None)?;
         Ok(())
     }
 

@@ -11,8 +11,8 @@ name = "protocol_builder"
 
 [dependencies]
 anyhow = "1.0.98"
-bitcoin = { version = "0.32.4", features = ["std", "rand-std"]}
-clap = {version = "4.5.36", features = ["derive"]}
+bitcoin = { version = "0.32.4", features = ["std", "rand-std"] }
+clap = { version = "4.5.36", features = ["derive"] }
 config = "0.15.11"
 console = "0.15.8"
 crypto-hash = "0.3"
@@ -21,19 +21,18 @@ itertools = "0.14.0"
 lazy_static = "1.5.0"
 musig2 = { version = "0.2.0", features = ["secp256k1"] }
 serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
 thiserror = "2.0.12"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-petgraph = {version = "0.8.1", features = ["serde-1"]}
+petgraph = { version = "0.8.1", features = ["serde-1"] }
 
-bitcoincore-rpc = { version = "0.19.0"}
-bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "bitvmx"}
-bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx"}
+bitcoincore-rpc = { version = "0.19.0" }
+bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "bitvmx" }
+bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "bitvmx" }
 
 bitvmx-key-manager = { path = "../rust-bitvmx-key-manager" }
 bitvmx-bitcoin-rpc = { path = "../rust-bitvmx-bitcoin-rpc" }
-rust-bitvmx-storage-backend = {path = "../rust-bitvmx-storage-backend"}
+rust-bitvmx-storage-backend = { path = "../rust-bitvmx-storage-backend" }
 
 [[bin]]
 name = "protocol_builder"
