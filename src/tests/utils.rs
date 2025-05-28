@@ -109,8 +109,8 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     let key_manager = KeyManager::new(
         network,
         key_derivation_path,
-        key_derivation_seed,
-        winternitz_seed,
+        Some(key_derivation_seed),
+        Some(winternitz_seed),
         database_keystore,
         store,
     )?;
