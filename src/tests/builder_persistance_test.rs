@@ -8,7 +8,11 @@ mod tests {
         errors::ProtocolBuilderError,
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
-        types::output::{OutputType, SpendMode},
+        types::{
+            connection::{InputSpec, OutputSpec},
+            input::SpendMode,
+            output::OutputType,
+        },
     };
 
     #[test]
@@ -22,7 +26,6 @@ mod tests {
                 .expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
@@ -32,12 +35,11 @@ mod tests {
 
         builder.add_external_connection(
             &mut protocol,
+            "EXT",
             txid,
-            output_index,
-            output_type,
+            OutputSpec::Auto(output_type),
             "A",
-            &SpendMode::Segwit,
-            &tc.ecdsa_sighash_type(),
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
         )?;
 
         protocol.save(storage.clone())?;
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(tx.input.len(), 1);
 
         let transaction_names = protocol.transaction_names();
-        assert_eq!(&transaction_names, &["A"]);
+        assert_eq!(&transaction_names, &["EXT", "A"]);
 
         Ok(())
     }
@@ -174,7 +176,6 @@ mod tests {
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
-            &[],
             "B",
             &tc.tr_sighash_type(),
         )?;
@@ -232,7 +233,6 @@ mod tests {
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
-            &[],
             &tc.tr_sighash_type(),
         )?;
 

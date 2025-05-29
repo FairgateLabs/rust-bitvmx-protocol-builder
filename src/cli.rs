@@ -13,8 +13,9 @@ use crate::{
     config::Config,
     scripts::{ProtocolScript, SignMode},
     types::{
-        input::SighashType,
-        output::{OutputType, SpendMode},
+        connection::{ConnectionType, InputSpec, OutputSpec},
+        input::{SighashType, SpendMode},
+        output::OutputType,
     },
     unspendable::unspendable_key,
 };
@@ -44,6 +45,9 @@ enum Commands {
     BuildAndSign,
 
     ConnectWithExternalTransaction {
+        #[arg(short, long, help = "Node to connect from")]
+        from: String,
+
         #[arg(short, long, help = "Node to connect to")]
         to: String,
 
@@ -146,6 +150,7 @@ impl Cli {
                 self.build_and_sign(&menu.protocol_name, menu.graph_storage_path)?;
             }
             Commands::ConnectWithExternalTransaction {
+                from,
                 to,
                 value,
                 public_key,
@@ -153,6 +158,7 @@ impl Cli {
                 self.connect_with_external_transaction(
                     &menu.protocol_name,
                     menu.graph_storage_path,
+                    from,
                     to,
                     *value,
                     public_key,
@@ -277,6 +283,7 @@ impl Cli {
         &self,
         protocol_name: &str,
         graph_storage_path: PathBuf,
+        from: &str,
         to: &str,
         value: u64,
         data: &str,
@@ -285,7 +292,6 @@ impl Cli {
         let storage = Rc::new(Storage::new(&config).unwrap());
         let txid = Hash::all_zeros();
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
-        let output_index = 0;
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script =
@@ -293,18 +299,17 @@ impl Cli {
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let mut protocol = Protocol::new(protocol_name);
-        let builder = ProtocolBuilder {};
 
-        builder.add_external_connection(
-            &mut protocol,
+        let connection = ConnectionType::External {
             txid,
-            output_index,
-            output_type,
-            to,
-            &SpendMode::Segwit,
-            &ecdsa_sighash_type,
-        )?;
+            from: from.to_string(),
+            output: OutputSpec::Auto(output_type),
+            to: to.to_string(),
+            input: InputSpec::Auto(ecdsa_sighash_type.clone(), SpendMode::Segwit),
+            timelock: None,
+        };
 
+        protocol.add_connection("external", connection)?;
         protocol.save(storage)?;
 
         info!(
@@ -395,7 +400,6 @@ impl Cli {
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
-            &[],
             to,
             &sighash_type,
         )?;
@@ -446,7 +450,6 @@ impl Cli {
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
-            &[],
             to,
             blocks,
             &sighash_type,

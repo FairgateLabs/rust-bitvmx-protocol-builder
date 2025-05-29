@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use config as settings;
 
-use crate::types::output::SpendMode;
+use crate::types::input::SpendMode;
 
 #[derive(Error, Debug)]
 pub enum UnspendableKeyError {

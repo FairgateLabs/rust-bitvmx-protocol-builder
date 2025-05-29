@@ -1,15 +1,56 @@
+use std::fmt::{Display, Formatter};
+
 use bitcoin::{secp256k1::Message, EcdsaSighashType, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
 
-use crate::errors::{GraphError, ProtocolBuilderError};
+use crate::{
+    errors::{GraphError, ProtocolBuilderError},
+    scripts::SignMode,
+};
 
-use super::{output::SpendMode, OutputType};
+use super::OutputType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum InputSpec {
-    Index(usize),
-    SighashType(SighashType, SpendMode),
+pub enum SpendMode {
+    /// Compute sighashes and signatures for all script paths plus the internal key path.
+    All { key_path_sign: SignMode },
+
+    /// Compute sighashes and signatures only for the internal key path.
+    KeyOnly { key_path_sign: SignMode },
+
+    /// Compute sighashes and signatures for all the script paths excluding the internal key.
+    ScriptsOnly,
+
+    /// Compute sighashes and signatures for the specified script paths excluding the internal key.
+    Scripts { leaves: Vec<usize> },
+
+    /// Compute sighashes and signatures for a specific script path.
+    Script { leaf: usize },
+
+    /// No sighashes or signatures are computed for any path.
+    None,
+
+    /// Spend mode for P2WSH and P2WPKH.
+    Segwit,
+}
+
+impl Display for SpendMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SpendMode::All {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "All({})", key_path_sign_mode),
+            SpendMode::KeyOnly {
+                key_path_sign: key_path_sign_mode,
+            } => write!(f, "KeyOnly({})", key_path_sign_mode),
+            SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
+            SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
+            SpendMode::Scripts { leaves } => write!(f, "Scripts({:?})", leaves),
+            SpendMode::None => write!(f, "None"),
+            SpendMode::Segwit => write!(f, "Segwit"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

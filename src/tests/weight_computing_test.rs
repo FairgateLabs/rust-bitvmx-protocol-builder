@@ -9,8 +9,9 @@ mod tests {
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
-            input::InputArgs,
-            output::{OutputType, SpendMode},
+            connection::{InputSpec, OutputSpec},
+            input::{InputArgs, SpendMode},
+            output::OutputType,
         },
     };
 
@@ -22,7 +23,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let blocks = 100;
 
         let expired_from =
@@ -51,12 +51,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "start",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -68,7 +67,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "challenge",
                 &tc.tr_sighash_type(),
             )?
@@ -82,7 +80,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "challenge",
                 blocks,
                 &tc.tr_sighash_type(),
@@ -97,7 +94,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "response",
                 &tc.tr_sighash_type(),
             )?
@@ -111,7 +107,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "response",
                 blocks,
                 &tc.tr_sighash_type(),
