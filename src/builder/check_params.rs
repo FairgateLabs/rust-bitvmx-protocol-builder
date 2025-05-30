@@ -1,13 +1,5 @@
 use crate::errors::ProtocolBuilderError;
 
-// pub(crate) fn check_empty_scripts(scripts: &[ProtocolScript]) -> Result<(), ProtocolBuilderError> {
-//     if scripts.is_empty() {
-//         return Err(ProtocolBuilderError::EmptyScripts);
-//     }
-
-//     Ok(())
-// }
-
 pub(crate) fn check_empty_transaction_name(name: &str) -> Result<(), ProtocolBuilderError> {
     if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
         return Err(ProtocolBuilderError::MissingTransactionName);
@@ -18,7 +10,7 @@ pub(crate) fn check_empty_transaction_name(name: &str) -> Result<(), ProtocolBui
 
 pub(crate) fn check_empty_connection_name(name: &str) -> Result<(), ProtocolBuilderError> {
     if name.trim().is_empty() || name.chars().all(|c| c == '\t') {
-        return Err(ProtocolBuilderError::MissingTransactionName);
+        return Err(ProtocolBuilderError::MissingConnectionName);
     }
 
     Ok(())

@@ -8,16 +8,14 @@ use crate::{
     errors::ProtocolBuilderError,
     scripts::{self, ProtocolScript},
     types::{
-        input::{InputSpec, SighashType},
-        output::{OutputType, SpendMode},
+        connection::{InputSpec, OutputSpec},
+        input::{SighashType, SpendMode},
+        output::OutputType,
         Utxo,
     },
 };
 
-use super::{
-    check_params::check_zero_rounds, //check_empty_scripts
-    Protocol,
-};
+use super::{check_params::check_zero_rounds, Protocol};
 
 pub struct ProtocolBuilder {}
 
@@ -30,11 +28,8 @@ impl ProtocolBuilder {
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        prevouts: &[TxOut],
     ) -> Result<&Self, ProtocolBuilderError> {
-        // check_empty_scripts(leaves)?;
-
-        let output_type = OutputType::taproot(value, internal_key, leaves, prevouts)?;
+        let output_type = OutputType::taproot(value, internal_key, leaves)?;
         protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
@@ -93,7 +88,6 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         expired_script: &ProtocolScript,
         renew_script: &ProtocolScript,
-        prevouts: &[TxOut],
     ) -> Result<&Self, ProtocolBuilderError> {
         self.add_taproot_output(
             protocol,
@@ -101,7 +95,6 @@ impl ProtocolBuilder {
             value,
             internal_key,
             &[expired_script.clone(), renew_script.clone()],
-            prevouts,
         )
     }
 
@@ -188,30 +181,19 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
         spend_mode: &SpendMode,
-        prevouts: &[TxOut],
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_taproot_output(protocol, from, value, internal_key, leaves, prevouts)?;
-        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
-
-        protocol.add_transaction_input(
-            Hash::all_zeros(),
-            output_index,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            spend_mode,
-            sighash_type,
-        )?;
-        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
-
-        protocol.connect(
+        protocol.add_connection(
             connection_name,
             from,
-            output_index,
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves)?),
             to,
-            InputSpec::Index(input_index),
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            None,
+            None,
         )?;
+
         Ok(self)
     }
 
@@ -226,26 +208,16 @@ impl ProtocolBuilder {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_p2wpkh_output(protocol, from, value, public_key)?;
-        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
-
-        protocol.add_transaction_input(
-            Hash::all_zeros(),
-            output_index,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            &SpendMode::Segwit,
-            sighash_type,
-        )?;
-        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
-
-        protocol.connect(
+        protocol.add_connection(
             connection_name,
             from,
-            output_index,
+            OutputSpec::Auto(OutputType::segwit_key(value, public_key)?),
             to,
-            InputSpec::Index(input_index),
+            InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
+            None,
+            None,
         )?;
+
         Ok(self)
     }
 
@@ -260,25 +232,14 @@ impl ProtocolBuilder {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<(), ProtocolBuilderError> {
-        self.add_p2wsh_output(protocol, from, value, script)?;
-        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
-
-        protocol.add_transaction_input(
-            Hash::all_zeros(),
-            output_index,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            &SpendMode::Segwit,
-            sighash_type,
-        )?;
-        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
-
-        protocol.connect(
+        protocol.add_connection(
             connection_name,
             from,
-            output_index,
+            OutputSpec::Auto(OutputType::segwit_script(value, script)?),
             to,
-            InputSpec::Index(input_index),
+            InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
+            None,
+            None,
         )?;
         Ok(())
     }
@@ -293,32 +254,22 @@ impl ProtocolBuilder {
         expired_script: &ProtocolScript,
         renew_script: &ProtocolScript,
         spend_mode: &SpendMode,
-        prevouts: &[TxOut],
         to: &str,
         _expired_blocks: u16,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        self.add_timelock_output(
-            protocol,
-            from,
-            value,
-            internal_key,
-            expired_script,
-            renew_script,
-            prevouts,
-        )?;
-        let output_index = protocol.transaction_by_name(from)?.output.len() - 1;
-
-        // This input consumes the renew_script output, no need to use the expired_blocks
-        self.add_timelock_input(protocol, to, output_index, 0, spend_mode, sighash_type)?;
-        let input_index = protocol.transaction_by_name(to)?.input.len() - 1;
-
-        protocol.connect(
+        protocol.add_connection(
             "timelock",
             from,
-            output_index,
+            OutputSpec::Auto(OutputType::taproot(
+                value,
+                internal_key,
+                &[expired_script.clone(), renew_script.clone()],
+            )?),
             to,
-            InputSpec::Index(input_index),
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            Some(0), // This is not used in the current implementation
+            None,
         )?;
         Ok(self)
 
@@ -329,21 +280,14 @@ impl ProtocolBuilder {
     pub fn add_external_connection(
         &self,
         protocol: &mut Protocol,
+        from: &str,
         txid: Txid,
-        output_index: u32,
-        output_type: OutputType,
+        output: OutputSpec,
         to: &str,
-        spend_mode: &SpendMode,
-        sighash_type: &SighashType,
+        input: InputSpec,
     ) -> Result<&Self, ProtocolBuilderError> {
-        protocol.add_external_connection(
-            txid,
-            output_index,
-            output_type,
-            to,
-            spend_mode,
-            sighash_type,
-        )?;
+        protocol.add_connection("external", from, output, to, input, None, Some(txid))?;
+
         Ok(self)
     }
 
@@ -362,7 +306,6 @@ impl ProtocolBuilder {
         speedup_key: &PublicKey,
         internal_key: &PublicKey,
         spend_mode: &SpendMode,
-        prevouts: &[TxOut],
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
         self.add_taproot_connection(
@@ -373,7 +316,6 @@ impl ProtocolBuilder {
             internal_key,
             protocol_scripts,
             spend_mode,
-            prevouts,
             to,
             sighash_type,
         )?;
@@ -385,7 +327,6 @@ impl ProtocolBuilder {
             timelock_expired,
             timelock_renew,
             spend_mode,
-            prevouts,
             to,
             0,
             sighash_type,
@@ -424,14 +365,14 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Connection between the from and to transactions using the leaves_from.
-            let output_type = OutputType::taproot(value, internal_key, leaves_from, &[])?;
             protocol.add_connection(
                 connection_name,
                 &from_round,
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
                 &to_round,
-                &output_type,
-                spend_mode,
-                sighash_type,
+                InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+                None,
+                None,
             )?;
 
             // Create the new names for the intermediate transactions in the reverse connection (to -> from).
@@ -439,14 +380,14 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the leaves_to.
-            let output_type = OutputType::taproot(value, internal_key, leaves_to, &[])?;
             protocol.add_connection(
                 connection_name,
                 &to_round,
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_to)?),
                 &from_round,
-                &output_type,
-                spend_mode,
-                sighash_type,
+                InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+                None,
+                None,
             )?;
         }
 
@@ -456,14 +397,14 @@ impl ProtocolBuilder {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using leaves_from.
-        let output_type = OutputType::taproot(value, internal_key, leaves_from, &[])?;
         protocol.add_connection(
             connection_name,
             &from_round,
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
             &to_round,
-            &output_type,
-            spend_mode,
-            sighash_type,
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            None,
+            None,
         )?;
 
         Ok((format!("{0}_{1}", from, 0), to_round))

@@ -8,8 +8,9 @@ mod tests {
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
-            input::InputArgs,
-            output::{OutputType, SpendMode},
+            connection::{InputSpec, OutputSpec},
+            input::{InputArgs, SpendMode},
+            output::OutputType,
         },
     };
 
@@ -20,7 +21,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let blocks = 100;
 
         let expired_from =
@@ -46,15 +46,15 @@ mod tests {
         let mut protocol = Protocol::new("single_connection");
 
         let builder = ProtocolBuilder {};
+
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "start",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -66,7 +66,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "challenge",
                 &tc.tr_sighash_type(),
             )?
@@ -78,7 +77,6 @@ mod tests {
                 &expired_from,
                 &renew_from,
                 &SpendMode::ScriptsOnly,
-                &[],
                 "challenge",
                 blocks,
                 &tc.tr_sighash_type(),
@@ -93,7 +91,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "response",
                 &tc.tr_sighash_type(),
             )?
@@ -105,7 +102,6 @@ mod tests {
                 &expired_to,
                 &renew_to,
                 &SpendMode::ScriptsOnly,
-                &[],
                 "response",
                 blocks,
                 &tc.tr_sighash_type(),
@@ -248,7 +244,6 @@ mod tests {
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
-            &[],
             "A",
             &tc.tr_sighash_type(),
         )?;
@@ -275,7 +270,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
@@ -290,12 +284,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "A",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -307,7 +300,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "B",
                 &tc.tr_sighash_type(),
             )?
@@ -321,7 +313,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "C",
                 &tc.tr_sighash_type(),
             )?
@@ -335,7 +326,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "A",
                 &tc.tr_sighash_type(),
             )?;
@@ -362,7 +352,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
@@ -372,12 +361,11 @@ mod tests {
 
         builder.add_external_connection(
             &mut protocol,
+            "ext",
             txid,
-            output_index,
-            output_type,
+            OutputSpec::Auto(output_type),
             "start",
-            &SpendMode::Segwit,
-            &tc.ecdsa_sighash_type(),
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
         )?;
 
         protocol.build_and_sign(tc.key_manager(), "")?;
@@ -402,7 +390,6 @@ mod tests {
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
@@ -429,12 +416,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "A",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -446,7 +432,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 &from_rounds,
                 &tc.tr_sighash_type(),
             )?;
@@ -541,7 +526,6 @@ mod tests {
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
@@ -552,12 +536,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "external",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "A",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -569,7 +552,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "B",
                 &tc.tr_sighash_type(),
             )?
@@ -583,7 +565,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "C",
                 &tc.tr_sighash_type(),
             )?
@@ -597,7 +578,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "D",
                 &tc.tr_sighash_type(),
             )?
@@ -611,7 +591,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "D",
                 &tc.tr_sighash_type(),
             )?
@@ -625,7 +604,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "E",
                 &tc.tr_sighash_type(),
             )?
@@ -639,7 +617,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "F",
                 &tc.tr_sighash_type(),
             )?
@@ -653,7 +630,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "F",
                 &tc.tr_sighash_type(),
             )?
@@ -667,7 +643,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "G",
                 &tc.tr_sighash_type(),
             )?;
@@ -699,7 +674,6 @@ mod tests {
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 &from_rounds,
                 &tc.tr_sighash_type(),
             )?
@@ -711,7 +685,10 @@ mod tests {
 
         assert_eq!(
             &transaction_names,
-            &["A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2"]
+            &[
+                "A", "B", "C", "D", "E", "F", "G", "H_0", "H_1", "H_2", "I_0", "I_1", "I_2",
+                "external"
+            ]
         );
 
         let graph = protocol.visualize()?;

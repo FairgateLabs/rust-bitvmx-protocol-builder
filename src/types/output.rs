@@ -1,4 +1,4 @@
-use std::fmt::{self, Display, Formatter};
+use std::fmt;
 
 use bitcoin::{
     secp256k1::{self, Message},
@@ -15,6 +15,8 @@ use crate::{
     scripts::{self, ProtocolScript, SignMode},
     types::input::Signature,
 };
+
+use super::input::SpendMode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageId {
@@ -67,55 +69,12 @@ impl Utxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SpendMode {
-    /// Compute sighashes and signatures for all script paths plus the internal key path.
-    All { key_path_sign: SignMode },
-
-    /// Compute sighashes and signatures only for the internal key path.
-    KeyOnly { key_path_sign: SignMode },
-
-    /// Compute sighashes and signatures for all the script paths excluding the internal key.
-    ScriptsOnly,
-
-    /// Compute sighashes and signatures for the specified script paths excluding the internal key.
-    Scripts { leaves: Vec<usize> },
-
-    /// Compute sighashes and signatures for a specific script path.
-    Script { leaf: usize },
-
-    /// No sighashes or signatures are computed for any path.
-    None,
-
-    /// Spend mode for P2WSH and P2WPKH.
-    Segwit,
-}
-
-impl Display for SpendMode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SpendMode::All {
-                key_path_sign: key_path_sign_mode,
-            } => write!(f, "All({})", key_path_sign_mode),
-            SpendMode::KeyOnly {
-                key_path_sign: key_path_sign_mode,
-            } => write!(f, "KeyOnly({})", key_path_sign_mode),
-            SpendMode::ScriptsOnly => write!(f, "ScriptsOnly"),
-            SpendMode::Script { leaf } => write!(f, "Script({})", leaf),
-            SpendMode::Scripts { leaves } => write!(f, "Scripts({:?})", leaves),
-            SpendMode::None => write!(f, "None"),
-            SpendMode::Segwit => write!(f, "Segwit"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
     Taproot {
         value: Amount,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
-        prevouts: Vec<TxOut>,
     },
     SegwitPublicKey {
         value: Amount,
@@ -131,6 +90,9 @@ pub enum OutputType {
         value: Amount,
         script_pubkey: ScriptBuf,
     },
+    ExternalUnknown {
+        script_pubkey: ScriptBuf,
+    },
 }
 
 impl OutputType {
@@ -138,7 +100,6 @@ impl OutputType {
         value: u64,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
-        prevouts: &[TxOut],
     ) -> Result<Self, ProtocolBuilderError> {
         let secp = secp256k1::Secp256k1::new();
         let spend_info = Self::compute_spend_info(internal_key, leaves)?;
@@ -151,7 +112,6 @@ impl OutputType {
             internal_key: *internal_key,
             script_pubkey,
             leaves: leaves.to_vec(),
-            prevouts: prevouts.to_vec(),
         })
     }
 
@@ -192,6 +152,7 @@ impl OutputType {
             OutputType::SegwitPublicKey { .. } => "SegwitPublicKey",
             OutputType::SegwitScript { .. } => "SegwitScript",
             OutputType::SegwitUnspendable { .. } => "SegwitUnspendable",
+            OutputType::ExternalUnknown { .. } => "ExternalUnknown",
         }
     }
 
@@ -201,6 +162,9 @@ impl OutputType {
             | OutputType::SegwitPublicKey { value, .. }
             | OutputType::SegwitScript { value, .. }
             | OutputType::SegwitUnspendable { value, .. } => *value,
+            OutputType::ExternalUnknown { .. } => Amount::from_sat(0), /*TODO: FIX  {
+                                                                           panic!("Cannot get value of ExternalUnknown output type")
+                                                                       }*/
         }
     }
 
@@ -209,21 +173,8 @@ impl OutputType {
             OutputType::Taproot { script_pubkey, .. }
             | OutputType::SegwitPublicKey { script_pubkey, .. }
             | OutputType::SegwitScript { script_pubkey, .. }
+            | OutputType::ExternalUnknown { script_pubkey} //FIX
             | OutputType::SegwitUnspendable { script_pubkey, .. } => script_pubkey,
-        }
-    }
-
-    pub fn has_prevouts(&self) -> bool {
-        match self {
-            OutputType::Taproot { prevouts, .. } => !prevouts.is_empty(),
-            _ => false,
-        }
-    }
-
-    pub fn get_prevouts(&self) -> Vec<TxOut> {
-        match self {
-            OutputType::Taproot { prevouts, .. } => prevouts.clone(),
-            _ => vec![],
         }
     }
 

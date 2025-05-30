@@ -1,5 +1,4 @@
 use bitcoin::{
-    hashes::Hash,
     locktime,
     secp256k1::{self, Message},
     taproot::LeafVersion,
@@ -16,9 +15,9 @@ use crate::{
     graph::graph::TransactionGraph,
     scripts::ProtocolScript,
     types::{
-        connection::ConnectionType,
-        input::{InputArgs, InputSignatures, InputSpec, InputType, SighashType, Signature},
-        output::{OutputType, SpendMode},
+        connection::{ConnectionType, InputSpec, OutputSpec},
+        input::{InputArgs, InputSignatures, InputType, SighashType, Signature, SpendMode},
+        output::OutputType,
     },
     unspendable::unspendable_key,
 };
@@ -52,9 +51,31 @@ impl Protocol {
         &mut self,
         transaction_name: &str,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        check_empty_transaction_name(transaction_name)?;
+        self.get_or_create_transaction(transaction_name, false)?;
+        Ok(self)
+    }
 
-        self.get_or_create_transaction(transaction_name)?;
+    pub fn add_external_transaction(
+        &mut self,
+        transaction_name: &str,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.get_or_create_transaction(transaction_name, true)?;
+        Ok(self)
+    }
+
+    pub fn add_unkwnoun_outputs(
+        &mut self,
+        transaction_name: &str,
+        count: u32,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        for _ in 0..count {
+            self.add_transaction_output(
+                transaction_name,
+                &OutputType::ExternalUnknown {
+                    script_pubkey: ScriptBuf::default(),
+                },
+            )?;
+        }
         Ok(self)
     }
 
@@ -69,7 +90,7 @@ impl Protocol {
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
-        let mut transaction = self.get_or_create_transaction(transaction_name)?;
+        let mut transaction = self.get_or_create_transaction(transaction_name, false)?;
 
         transaction.input.push(transaction::TxIn {
             previous_output: OutPoint {
@@ -98,7 +119,7 @@ impl Protocol {
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
 
-        let mut transaction = self.get_or_create_transaction(transaction_name)?;
+        let mut transaction = self.get_or_create_transaction(transaction_name, false)?;
 
         transaction.output.push(transaction::TxOut {
             value: output_type.get_value(),
@@ -111,151 +132,108 @@ impl Protocol {
         Ok(self)
     }
 
-    //TODO: Consider best way to unify this with add_connection to support timelock
-    // as we need to connect a second transaction with the lock don't add the output ot the previous one again
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_connection_with_timelock(
-        &mut self,
-        connection_name: &str,
-        from: &str,
-        to: &str,
-        _output_type: &OutputType,
-        spend_mode: &SpendMode,
-        sighash_type: &SighashType,
-        timelock: u16,
-    ) -> Result<&mut Self, ProtocolBuilderError> {
-        //self.add_transaction_output(from, output_type)?;
-        let output_index = (self.transaction_by_name(from)?.output.len() - 1) as u32;
-
-        self.add_transaction_input(
-            Hash::all_zeros(),
-            output_index as usize,
-            to,
-            Sequence::from_height(timelock),
-            spend_mode,
-            sighash_type,
-        )?;
-        let input_index = self.transaction_by_name(to)?.input.len() - 1;
-
-        self.connect(
-            connection_name,
-            from,
-            output_index as usize,
-            to,
-            InputSpec::Index(input_index),
-        )
-    }
-
     pub fn add_connection(
         &mut self,
         connection_name: &str,
         from: &str,
+        output: OutputSpec,
         to: &str,
-        output_type: &OutputType,
-        spend_mode: &SpendMode,
-        sighash_type: &SighashType,
+        input: InputSpec,
+        timelock: Option<u16>,
+        txid: Option<Txid>,
     ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_transaction_output(from, output_type)?;
-        let output_index = (self.transaction_by_name(from)?.output.len() - 1) as u32;
+        let connection_type = match txid {
+            Some(txid) => ConnectionType::external(txid, from, output, to, input, timelock),
+            None => ConnectionType::internal(from, output, to, input, timelock),
+        };
 
-        self.add_transaction_input(
-            Hash::all_zeros(),
-            output_index as usize,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            spend_mode,
-            sighash_type,
-        )?;
-        let input_index = self.transaction_by_name(to)?.input.len() - 1;
-
-        self.connect(
-            connection_name,
-            from,
-            output_index as usize,
-            to,
-            InputSpec::Index(input_index),
-        )
+        self.add_connection_aux(connection_name, connection_type)
     }
 
-    pub fn add_external_connection(
-        &mut self,
-        txid: Txid,
-        output_index: u32,
-        output_type: OutputType,
-        to: &str,
-        spend_mode: &SpendMode,
-        sighash_type: &SighashType,
-    ) -> Result<&mut Self, ProtocolBuilderError> {
-        self.add_transaction_input(
-            txid,
-            output_index as usize,
-            to,
-            Sequence::ENABLE_RBF_NO_LOCKTIME,
-            spend_mode,
-            sighash_type,
-        )?;
-
-        self.graph.connect(ConnectionType::External {
-            to: to.to_string(),
-            output_type,
-        })?;
-        Ok(self)
-    }
-
-    pub fn connect(
+    fn add_connection_aux(
         &mut self,
         connection_name: &str,
-        from: &str,
-        output_index: usize,
-        to: &str,
-        input_index: InputSpec,
+        connection_type: ConnectionType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_connection_name(connection_name)?;
-        check_empty_transaction_name(from)?;
-        check_empty_transaction_name(to)?;
+        check_empty_transaction_name(connection_type.from())?;
+        check_empty_transaction_name(connection_type.to())?;
 
-        let from_tx = self.transaction_by_name(from)?;
-        let to_tx = self.transaction_by_name(to)?;
+        let from_tx = self.get_or_create_transaction(
+            connection_type.from(),
+            connection_type.external_connection(),
+        )?;
 
-        if output_index >= from_tx.output.len() {
-            return Err(ProtocolBuilderError::MissingOutput(
-                from.to_string(),
-                output_index,
-            ));
-        }
+        let to_tx = self.get_or_create_transaction(connection_type.to(), false)?;
 
-        let input_index = match input_index {
-            InputSpec::Index(index) => {
-                if index >= to_tx.input.len() {
-                    return Err(ProtocolBuilderError::MissingInput(to.to_string(), index));
+        let output_index = match connection_type.output() {
+            OutputSpec::Index(index) => {
+                // Check if the specified output index exists in the transaction
+                if *index >= from_tx.output.len() {
+                    return Err(ProtocolBuilderError::MissingOutput(
+                        connection_type.from().to_string(),
+                        *index,
+                    ));
                 }
 
-                index
+                *index
             }
-            InputSpec::SighashType(sighash_type, spend_mode) => {
-                // If input_index is not present, add a new input with the specified
-                // sighash type to the "to" transaction and return its index
-                self.add_transaction_input(
-                    Hash::all_zeros(),
-                    output_index,
-                    to,
-                    Sequence::ENABLE_RBF_NO_LOCKTIME,
-                    &spend_mode,
-                    &sighash_type,
-                )?;
-
-                self.transaction_by_name(to)?.input.len() - 1
+            OutputSpec::Auto(output_type) => {
+                // Automatically add the output to the transaction
+                self.add_transaction_output(connection_type.from(), output_type)?;
+                self.transaction_by_name(connection_type.from())?
+                    .output
+                    .len()
+                    - 1
+            }
+            OutputSpec::Last => {
+                // Automatically point to the last output of the transaction
+                let len = self
+                    .transaction_by_name(connection_type.from())?
+                    .output
+                    .len();
+                if len == 0 {
+                    return Err(ProtocolBuilderError::MissingOutput(
+                        connection_type.from().to_string(),
+                        0,
+                    ));
+                }
+                len - 1
             }
         };
 
-        self.graph.connect(ConnectionType::Internal {
-            name: connection_name.to_string(),
-            from: from.to_string(),
+        let input_index = match connection_type.input() {
+            InputSpec::Index(index) => {
+                // Check if the specified input index exists in the transaction
+                if *index >= to_tx.input.len() {
+                    return Err(ProtocolBuilderError::MissingInput(
+                        connection_type.to().to_string(),
+                        *index,
+                    ));
+                }
+                *index
+            }
+            InputSpec::Auto(sighash_type, spend_mode) => {
+                // Automatically add the input to the "to" transaction
+                self.add_transaction_input(
+                    connection_type.txid(),
+                    output_index,
+                    connection_type.to(),
+                    connection_type.sequence(),
+                    spend_mode,
+                    sighash_type,
+                )?;
+                self.transaction_by_name(connection_type.to())?.input.len() - 1
+            }
+        };
+
+        self.graph.connect(
+            connection_name,
+            connection_type.from(),
             output_index,
-            to: to.to_string(),
+            connection_type.to(),
             input_index,
-        })?;
+        )?;
 
         Ok(self)
     }
@@ -536,10 +514,14 @@ impl Protocol {
     fn get_or_create_transaction(
         &mut self,
         transaction_name: &str,
+        external: bool,
     ) -> Result<Transaction, ProtocolBuilderError> {
+        check_empty_transaction_name(transaction_name)?;
+
         if !self.graph.contains_transaction(transaction_name) {
             let transaction = Protocol::transaction_template();
-            self.graph.add_transaction(transaction_name, transaction)?;
+            self.graph
+                .add_transaction(transaction_name, transaction, external)?;
         };
 
         Ok(self

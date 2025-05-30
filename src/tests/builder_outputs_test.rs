@@ -14,8 +14,9 @@ mod tests {
         scripts::{self, ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
-            input::InputArgs,
-            output::{OutputType, SpendMode},
+            connection::{InputSpec, OutputSpec},
+            input::{InputArgs, SpendMode},
+            output::OutputType,
         },
     };
 
@@ -25,7 +26,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let pubkey_bytes =
             hex::decode("02c6047f9441ed7d6d3045406e95c07cd85a6a6d4c90d35b8c6a568f07cfd511fd")
                 .expect("Decoding failed");
@@ -59,12 +59,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "op_return",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             .add_op_return_output(&mut protocol, "op_return", data.clone())?;
 
@@ -101,7 +100,6 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let output_index = 0;
         let public_key = tc.key_manager().derive_keypair(0).unwrap();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
@@ -119,12 +117,11 @@ mod tests {
         builder
             .add_external_connection(
                 &mut protocol,
+                "ext",
                 txid,
-                output_index,
-                output_type,
+                OutputSpec::Auto(output_type),
                 "keypath_origin",
-                &SpendMode::Segwit,
-                &tc.ecdsa_sighash_type(),
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             )?
             // This connection creates the output and input scripts for the taprootkeypath spend
             .add_taproot_connection(
@@ -137,7 +134,6 @@ mod tests {
                 &SpendMode::KeyOnly {
                     key_path_sign: SignMode::Single,
                 },
-                &[],
                 "keypath_spend",
                 &tc.tr_sighash_type(),
             )?

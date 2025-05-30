@@ -12,7 +12,7 @@ mod test {
     fn create_node() {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx);
+        let node = Node::new("test_tx", tx, false);
 
         assert_eq!(node.name, "test_tx");
         assert_eq!(node.outputs.len(), 0);
@@ -45,7 +45,7 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
 
-        graph.add_transaction("tx1", tx.clone()).unwrap();
+        graph.add_transaction("tx1", tx.clone(), false).unwrap();
 
         assert!(graph.contains_transaction("tx1"));
         assert_eq!(graph._get_node_count(), 1);
@@ -57,7 +57,7 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
 
-        assert!(graph.add_transaction("", tx.clone()).is_err());
+        assert!(graph.add_transaction("", tx.clone(), false).is_err());
     }
 
     #[test]
@@ -65,8 +65,8 @@ mod test {
         let mut graph = TransactionGraph::default();
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        graph.add_transaction("tx1", tx.clone()).unwrap();
-        assert!(graph.add_transaction("tx1", tx.clone()).is_err());
+        graph.add_transaction("tx1", tx.clone(), false).unwrap();
+        assert!(graph.add_transaction("tx1", tx.clone(), false).is_err());
 
         assert!(graph.contains_transaction("tx1"));
         assert!(!graph.contains_transaction("tx2"));
@@ -79,8 +79,8 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
 
-        graph.add_transaction("tx1", tx.clone()).unwrap();
-        graph.add_transaction("tx2", tx).unwrap();
+        graph.add_transaction("tx1", tx.clone(), false).unwrap();
+        graph.add_transaction("tx2", tx, false).unwrap();
 
         let sorted = graph.sort().unwrap();
         assert_eq!(sorted.len(), 2);
@@ -96,7 +96,7 @@ mod test {
     fn test_missing_input_info() {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx);
+        let node = Node::new("test_tx", tx, false);
 
         let result = node.get_input(0);
         assert!(result.is_err());

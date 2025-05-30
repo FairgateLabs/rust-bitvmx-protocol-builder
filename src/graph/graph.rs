@@ -12,9 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::GraphError,
     types::{
-        connection::ConnectionType,
-        input::{InputSignatures, InputType, SighashType, Signature},
-        output::{OutputType, SpendMode},
+        input::{InputSignatures, InputType, SighashType, Signature, SpendMode},
+        output::OutputType,
     },
 };
 
@@ -24,15 +23,17 @@ pub(crate) struct Node {
     pub(crate) transaction: Transaction,
     pub(crate) outputs: Vec<OutputType>,
     pub(crate) inputs: Vec<InputType>,
+    pub(crate) external: bool,
 }
 
 impl Node {
-    pub(crate) fn new(name: &str, transaction: Transaction) -> Self {
+    pub(crate) fn new(name: &str, transaction: Transaction, external: bool) -> Self {
         Node {
             name: name.to_string(),
             transaction,
             outputs: vec![],
             inputs: vec![],
+            external,
         }
     }
 
@@ -87,6 +88,7 @@ impl TransactionGraph {
         &mut self,
         name: &str,
         transaction: Transaction,
+        external: bool,
     ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
@@ -96,7 +98,7 @@ impl TransactionGraph {
             return Err(GraphError::TransactionAlreadyExists(name.to_string()));
         }
 
-        let node = Node::new(name, transaction);
+        let node = Node::new(name, transaction, external);
         let node_index = self.graph.add_node(node.clone());
 
         self.node_indexes.insert(name.to_string(), node_index);
@@ -138,32 +140,25 @@ impl TransactionGraph {
         Ok(())
     }
 
-    pub fn connect(&mut self, connection: ConnectionType) -> Result<(), GraphError> {
-        match connection {
-            ConnectionType::Internal {
-                name,
-                from,
-                output_index,
-                to,
-                input_index,
-            } => {
-                let from_node_index = self.get_node_index(&from)?;
-                let to_node_index = self.get_node_index(&to)?;
-                let output_type = self.get_output_type(&from, output_index)?;
+    pub fn connect(
+        &mut self,
+        connection_name: &str,
+        from: &str,
+        output_index: usize,
+        to: &str,
+        input_index: usize,
+    ) -> Result<(), GraphError> {
+        let from_node_index = self.get_node_index(from)?;
+        let to_node_index = self.get_node_index(to)?;
+        let output_type = self.get_output_type(from, output_index)?;
 
-                let connection = Connection::new(&name, input_index, output_index);
+        let connection = Connection::new(connection_name, input_index, output_index);
 
-                self.graph
-                    .add_edge(from_node_index, to_node_index, connection.clone());
+        self.graph
+            .add_edge(from_node_index, to_node_index, connection.clone());
 
-                let to_node = self.get_node_mut(&to)?;
-                to_node.inputs[input_index].set_output_type(output_type)?;
-            }
-            ConnectionType::External { to, output_type } => {
-                let to_node = self.get_node_mut(&to)?;
-                to_node.inputs[to_node.transaction.input.len() - 1].set_output_type(output_type)?;
-            }
-        }
+        let to_node = self.get_node_mut(to)?;
+        to_node.inputs[input_index].set_output_type(output_type)?;
 
         Ok(())
     }
@@ -280,22 +275,6 @@ impl TransactionGraph {
             let connection = self.get_connection(edge)?;
             prevouts[connection.input_index as usize] =
                 Some(from.output[connection.output_index as usize].clone());
-        }
-
-        let inputs = &self.get_node(name)?.inputs;
-        for i in 0..prevouts.len() {
-            if prevouts[i].is_none() {
-                if inputs[i].output_type()?.has_prevouts() {
-                    let prev = inputs[i].output_type()?.get_prevouts();
-                    if prev.len() == prevouts.len() {
-                        //this is an all external outputs :/
-                        prevouts[i] = Some(prev[i].clone());
-                    } else {
-                        //this is mix of internal and external outputs
-                        prevouts[i] = Some(prev[0].clone());
-                    }
-                }
-            }
         }
 
         let result = prevouts
@@ -449,6 +428,10 @@ impl TransactionGraph {
         let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
         let result = sorted
             .iter()
+            .filter(|node_index| {
+                let node = self.graph.node_weight(**node_index).unwrap();
+                !node.external // Filter out external nodes
+            })
             .map(|node_index| {
                 let node = self.graph.node_weight(*node_index).unwrap();
                 node.name.clone()
@@ -462,6 +445,10 @@ impl TransactionGraph {
         let sorted = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
         let result = sorted
             .iter()
+            .filter(|node_index| {
+                let node = self.graph.node_weight(**node_index).unwrap();
+                !node.external // Filter out external nodes
+            })
             .map(|node_index| {
                 let node = self.graph.node_weight(*node_index).unwrap();
                 (node.transaction.clone(), node.name.clone())
