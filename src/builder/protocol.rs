@@ -135,6 +135,24 @@ impl Protocol {
     pub fn add_connection(
         &mut self,
         connection_name: &str,
+        from: &str,
+        output: OutputSpec,
+        to: &str,
+        input: InputSpec,
+        timelock: Option<u16>,
+        txid: Option<Txid>,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        let connection_type = match txid {
+            Some(txid) => ConnectionType::external(txid, from, output, to, input, timelock),
+            None => ConnectionType::internal(from, output, to, input, timelock),
+        };
+
+        self.add_connection_aux(connection_name, connection_type)
+    }
+
+    fn add_connection_aux(
+        &mut self,
+        connection_name: &str,
         connection_type: ConnectionType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_connection_name(connection_name)?;

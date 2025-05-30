@@ -13,7 +13,7 @@ use crate::{
     config::Config,
     scripts::{ProtocolScript, SignMode},
     types::{
-        connection::{ConnectionType, InputSpec, OutputSpec},
+        connection::InputSpec,
         input::{SighashType, SpendMode},
         output::OutputType,
     },
@@ -300,16 +300,15 @@ impl Cli {
 
         let mut protocol = Protocol::new(protocol_name);
 
-        let connection = ConnectionType::External {
-            txid,
-            from: from.to_string(),
-            output: OutputSpec::Auto(output_type),
-            to: to.to_string(),
-            input: InputSpec::Auto(ecdsa_sighash_type.clone(), SpendMode::Segwit),
-            timelock: None,
-        };
-
-        protocol.add_connection("external", connection)?;
+        protocol.add_connection(
+            "external",
+            from,
+            output_type.into(),
+            to,
+            InputSpec::Auto(ecdsa_sighash_type.clone(), SpendMode::Segwit),
+            None,
+            Some(txid),
+        )?;
         protocol.save(storage)?;
 
         info!(

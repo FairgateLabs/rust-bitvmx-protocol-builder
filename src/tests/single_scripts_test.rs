@@ -8,7 +8,7 @@ mod tests {
         scripts::{self, ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
-            connection::{ConnectionType, InputSpec, OutputSpec},
+            connection::{InputSpec, OutputSpec},
             input::SpendMode,
             OutputType,
         },
@@ -77,58 +77,62 @@ mod tests {
         // Add the
 
         // Connect the start transaction with an external transaction
-        let connection = ConnectionType::External {
-            txid,
-            from: "ext".to_string(),
-            output: OutputSpec::Auto(external_output),
-            to: "start".to_string(),
-            input: InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
-            timelock: None,
-        };
-        protocol.add_connection("protocol", connection)?;
+        protocol.add_connection(
+            "protocol",
+            "ext",
+            external_output.into(),
+            "start",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            Some(txid),
+        )?;
 
         // Connect the start transaction with the challenge transaction
-        let connection = ConnectionType::Internal {
-            from: "start".to_string(),
-            output: OutputSpec::Auto(start_challenge_output),
-            to: "challenge".to_string(),
-            input: InputSpec::Auto(
+        protocol.add_connection(
+            "protocol",
+            "start",
+            OutputSpec::Auto(start_challenge_output),
+            "challenge",
+            InputSpec::Auto(
                 tc.tr_sighash_type(),
                 SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
             ),
-            timelock: None,
-        };
-        protocol.add_connection("protocol", connection)?;
+            None,
+            None,
+        )?;
 
         // Connect each challenge response option with the challenge transaction
-        let connection = ConnectionType::Internal {
-            from: "challenge".to_string(),
-            output: OutputSpec::Index(0),
-            to: "response_op1".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op1", connection)?;
+        protocol.add_connection(
+            "protocol_op1",
+            "challenge",
+            OutputSpec::Index(0),
+            "response_op1",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
+            None,
+            None,
+        )?;
 
-        let connection = ConnectionType::Internal {
-            from: "challenge".to_string(),
-            output: OutputSpec::Index(0),
-            to: "response_op2".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 1 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op2", connection)?;
+        protocol.add_connection(
+            "protocol_op2",
+            "challenge",
+            OutputSpec::Index(0),
+            "response_op2",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 1 }),
+            None,
+            None,
+        )?;
 
-        let connection = ConnectionType::Internal {
-            from: "challenge".to_string(),
-            output: OutputSpec::Index(0),
-            to: "response_op3".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 2 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op3", connection)?;
+        protocol.add_connection(
+            "protocol_op3",
+            "challenge",
+            OutputSpec::Index(0),
+            "response_op3",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 2 }),
+            None,
+            None,
+        )?;
 
         // Add one extra non-spendable output to each challenge response transaction to ensure different txids
         let script_op1 = scripts::op_return_script(vec![0x00])?.get_script().clone();
@@ -146,34 +150,37 @@ mod tests {
         let end_challenge_output = OutputType::taproot(value, &internal_key, &timeout_leaves)?;
 
         // Connect the response transaction from op1 to the end transaction
-        let connection = ConnectionType::Internal {
-            from: "response_op1".to_string(),
-            output: OutputSpec::Auto(end_challenge_output.clone()),
-            to: "end".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op1", connection)?;
+        protocol.add_connection(
+            "protocol_op1",
+            "response_op1",
+            OutputSpec::Auto(end_challenge_output.clone()),
+            "end",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
+            None,
+            None,
+        )?;
 
         // Connect the response transaction from op2 to the end transaction
-        let connection = ConnectionType::Internal {
-            from: "response_op2".to_string(),
-            output: OutputSpec::Auto(end_challenge_output.clone()),
-            to: "end".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op2", connection)?;
+        protocol.add_connection(
+            "protocol_op2",
+            "response_op2",
+            OutputSpec::Auto(end_challenge_output.clone()),
+            "end",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
+            None,
+            None,
+        )?;
 
         // Connect the response transaction from op3 to the end transaction
-        let connection = ConnectionType::Internal {
-            from: "response_op3".to_string(),
-            output: OutputSpec::Auto(end_challenge_output),
-            to: "end".to_string(),
-            input: InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
-            timelock: None,
-        };
-        protocol.add_connection("protocol_op3", connection)?;
+        protocol.add_connection(
+            "protocol_op3",
+            "response_op3",
+            OutputSpec::Auto(end_challenge_output),
+            "end",
+            InputSpec::Auto(tc.tr_sighash_type(), SpendMode::Script { leaf: 0 }),
+            None,
+            None,
+        )?;
 
         protocol.build(tc.key_manager(), "")?;
 

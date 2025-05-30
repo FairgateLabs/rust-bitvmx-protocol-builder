@@ -8,7 +8,7 @@ use crate::{
     errors::ProtocolBuilderError,
     scripts::{self, ProtocolScript},
     types::{
-        connection::{ConnectionType, InputSpec, OutputSpec},
+        connection::{InputSpec, OutputSpec},
         input::{SighashType, SpendMode},
         output::OutputType,
         Utxo,
@@ -184,15 +184,16 @@ impl ProtocolBuilder {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let connection_type = ConnectionType::Internal {
-            from: from.to_string(),
-            output: OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves)?),
-            to: to.to_string(),
-            input: InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-            timelock: None,
-        };
+        protocol.add_connection(
+            connection_name,
+            from,
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves)?),
+            to,
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            None,
+            None,
+        )?;
 
-        protocol.add_connection(connection_name, connection_type)?;
         Ok(self)
     }
 
@@ -207,15 +208,16 @@ impl ProtocolBuilder {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let connection_type = ConnectionType::Internal {
-            from: from.to_string(),
-            output: OutputSpec::Auto(OutputType::segwit_key(value, public_key)?),
-            to: to.to_string(),
-            input: InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
-            timelock: None,
-        };
+        protocol.add_connection(
+            connection_name,
+            from,
+            OutputSpec::Auto(OutputType::segwit_key(value, public_key)?),
+            to,
+            InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
 
-        protocol.add_connection(connection_name, connection_type)?;
         Ok(self)
     }
 
@@ -230,15 +232,15 @@ impl ProtocolBuilder {
         to: &str,
         sighash_type: &SighashType,
     ) -> Result<(), ProtocolBuilderError> {
-        let connection_type = ConnectionType::Internal {
-            from: from.to_string(),
-            output: OutputSpec::Auto(OutputType::segwit_script(value, script)?),
-            to: to.to_string(),
-            input: InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
-            timelock: None,
-        };
-
-        protocol.add_connection(connection_name, connection_type)?;
+        protocol.add_connection(
+            connection_name,
+            from,
+            OutputSpec::Auto(OutputType::segwit_script(value, script)?),
+            to,
+            InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
         Ok(())
     }
 
@@ -256,19 +258,19 @@ impl ProtocolBuilder {
         _expired_blocks: u16,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let connection_type = ConnectionType::Internal {
-            from: from.to_string(),
-            output: OutputSpec::Auto(OutputType::taproot(
+        protocol.add_connection(
+            "timelock",
+            from,
+            OutputSpec::Auto(OutputType::taproot(
                 value,
                 internal_key,
                 &[expired_script.clone(), renew_script.clone()],
             )?),
-            to: to.to_string(),
-            input: InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-            timelock: Some(0), // This is not used in the current implementation
-        };
-
-        protocol.add_connection("timelock", connection_type)?;
+            to,
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            Some(0), // This is not used in the current implementation
+            None,
+        )?;
         Ok(self)
 
         // TODO use expired_blocks to create a transaction that consumes the expired_script
@@ -284,16 +286,8 @@ impl ProtocolBuilder {
         to: &str,
         input: InputSpec,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let connection_type = ConnectionType::External {
-            txid,
-            from: from.to_string(),
-            output,
-            to: to.to_string(),
-            input,
-            timelock: None,
-        };
+        protocol.add_connection("external", from, output, to, input, None, Some(txid))?;
 
-        protocol.add_connection("external", connection_type)?;
         Ok(self)
     }
 
@@ -371,30 +365,30 @@ impl ProtocolBuilder {
             to_round = format!("{0}_{1}", to, round);
 
             // Connection between the from and to transactions using the leaves_from.
-            let connection = ConnectionType::Internal {
-                from: from_round.clone(),
-                output: OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
-                to: to_round.clone(),
-                input: InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-                timelock: None,
-            };
-
-            protocol.add_connection(connection_name, connection)?;
+            protocol.add_connection(
+                connection_name,
+                &from_round,
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
+                &to_round,
+                InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+                None,
+                None,
+            )?;
 
             // Create the new names for the intermediate transactions in the reverse connection (to -> from).
             from_round = format!("{0}_{1}", from, round + 1);
             to_round = format!("{0}_{1}", to, round);
 
             // Reverse connection between the to and from transactions using the leaves_to.
-            let connection = ConnectionType::Internal {
-                from: to_round.clone(),
-                output: OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_to)?),
-                to: from_round.clone(),
-                input: InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-                timelock: None,
-            };
-
-            protocol.add_connection(connection_name, connection)?;
+            protocol.add_connection(
+                connection_name,
+                &to_round,
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_to)?),
+                &from_round,
+                InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+                None,
+                None,
+            )?;
         }
 
         // We don't need the last reverse connection, thus why we perform the last direct connection outside the loop.
@@ -403,15 +397,15 @@ impl ProtocolBuilder {
         to_round = format!("{0}_{1}", to, rounds - 1);
 
         // Last direct connection using leaves_from.
-        let connection = ConnectionType::Internal {
-            from: from_round.clone(),
-            output: OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
-            to: to_round.clone(),
-            input: InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-            timelock: None,
-        };
-
-        protocol.add_connection(connection_name, connection)?;
+        protocol.add_connection(
+            connection_name,
+            &from_round,
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
+            &to_round,
+            InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
+            None,
+            None,
+        )?;
 
         Ok((format!("{0}_{1}", from, 0), to_round))
     }
