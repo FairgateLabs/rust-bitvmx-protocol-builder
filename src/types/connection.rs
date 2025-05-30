@@ -16,6 +16,25 @@ pub enum InputSpec {
 pub enum OutputSpec {
     Index(usize),
     Auto(OutputType),
+    Last,
+}
+
+impl Into<OutputSpec> for OutputType {
+    fn into(self) -> OutputSpec {
+        OutputSpec::Auto(self)
+    }
+}
+
+impl Into<OutputSpec> for usize {
+    fn into(self) -> OutputSpec {
+        OutputSpec::Index(self)
+    }
+}
+
+impl Into<InputSpec> for usize {
+    fn into(self) -> InputSpec {
+        InputSpec::Index(self)
+    }
 }
 
 pub enum ConnectionType {
@@ -38,16 +57,16 @@ pub enum ConnectionType {
 
 impl ConnectionType {
     pub fn internal(
-        from: String,
+        from: &str,
         output: OutputSpec,
-        to: String,
+        to: &str,
         input: InputSpec,
         timelock: Option<u16>,
     ) -> Self {
         ConnectionType::Internal {
-            from,
+            from: from.to_string(),
             output,
-            to,
+            to: to.to_string(),
             input,
             timelock,
         }
@@ -55,17 +74,17 @@ impl ConnectionType {
 
     pub fn external(
         txid: Txid,
-        from: String,
+        from: &str,
         output: OutputSpec,
-        to: String,
+        to: &str,
         input: InputSpec,
         timelock: Option<u16>,
     ) -> Self {
         ConnectionType::External {
             txid,
-            from,
+            from: from.to_string(),
             output,
-            to,
+            to: to.to_string(),
             input,
             timelock,
         }

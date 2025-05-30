@@ -63,6 +63,22 @@ impl Protocol {
         Ok(self)
     }
 
+    pub fn add_unkwnoun_outputs(
+        &mut self,
+        transaction_name: &str,
+        count: u32,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        for _ in 0..count {
+            self.add_transaction_output(
+                transaction_name,
+                &OutputType::ExternalUnknown {
+                    script_pubkey: ScriptBuf::default(),
+                },
+            )?;
+        }
+        Ok(self)
+    }
+
     pub fn add_transaction_input(
         &mut self,
         previous_txid: Txid,
@@ -151,6 +167,20 @@ impl Protocol {
                     .output
                     .len()
                     - 1
+            }
+            OutputSpec::Last => {
+                // Automatically point to the last output of the transaction
+                let len = self
+                    .transaction_by_name(connection_type.from())?
+                    .output
+                    .len();
+                if len == 0 {
+                    return Err(ProtocolBuilderError::MissingOutput(
+                        connection_type.from().to_string(),
+                        0,
+                    ));
+                }
+                len - 1
             }
         };
 

@@ -90,6 +90,9 @@ pub enum OutputType {
         value: Amount,
         script_pubkey: ScriptBuf,
     },
+    ExternalUnknown {
+        script_pubkey: ScriptBuf,
+    },
 }
 
 impl OutputType {
@@ -149,6 +152,7 @@ impl OutputType {
             OutputType::SegwitPublicKey { .. } => "SegwitPublicKey",
             OutputType::SegwitScript { .. } => "SegwitScript",
             OutputType::SegwitUnspendable { .. } => "SegwitUnspendable",
+            OutputType::ExternalUnknown { .. } => "ExternalUnknown",
         }
     }
 
@@ -158,6 +162,9 @@ impl OutputType {
             | OutputType::SegwitPublicKey { value, .. }
             | OutputType::SegwitScript { value, .. }
             | OutputType::SegwitUnspendable { value, .. } => *value,
+            OutputType::ExternalUnknown { .. } => Amount::from_sat(0), /*TODO: FIX  {
+                                                                           panic!("Cannot get value of ExternalUnknown output type")
+                                                                       }*/
         }
     }
 
@@ -166,6 +173,7 @@ impl OutputType {
             OutputType::Taproot { script_pubkey, .. }
             | OutputType::SegwitPublicKey { script_pubkey, .. }
             | OutputType::SegwitScript { script_pubkey, .. }
+            | OutputType::ExternalUnknown { script_pubkey} //FIX
             | OutputType::SegwitUnspendable { script_pubkey, .. } => script_pubkey,
         }
     }
