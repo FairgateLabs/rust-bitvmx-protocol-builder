@@ -123,9 +123,9 @@ impl ProtocolBuilder {
         Ok(self)
     }
 
-    pub fn speedup_transaction(
+    pub fn speedup_transactions(
         &self,
-        transaction_to_speedup_utxo: Utxo,
+        transaction_to_speedup_utxos: &[Utxo],
         funding_transaction_utxo: Utxo,
         change_address: Address,
         speedup_fee: u64,
@@ -135,7 +135,9 @@ impl ProtocolBuilder {
         let mut speedup_transaction = Protocol::transaction_template();
 
         // The speedup input to consume the speedup output of the transaction to speedup
-        push_input(&mut speedup_transaction, &transaction_to_speedup_utxo);
+        for utxo in transaction_to_speedup_utxos {
+            push_input(&mut speedup_transaction, utxo);
+        }
 
         // The speedup input to consume the funding output of the funding transaction
         push_input(&mut speedup_transaction, &funding_transaction_utxo);
@@ -150,14 +152,16 @@ impl ProtocolBuilder {
 
         let mut sighasher = SighashCache::new(speedup_transaction.clone());
 
-        // Witness for the speedup input 0
-        push_witness(
-            &mut speedup_transaction,
-            transaction_to_speedup_utxo,
-            0,
-            key_manager,
-            &mut sighasher,
-        )?;
+        // Witness for all inputs
+        for (index, utxo) in transaction_to_speedup_utxos.iter().enumerate() {
+            push_witness(
+                &mut speedup_transaction,
+                utxo.clone(),
+                index,
+                key_manager,
+                &mut sighasher,
+            )?;
+        }
 
         // Witness for the funding input 1
         push_witness(
@@ -467,7 +471,6 @@ fn push_witness(
         sighash_type: EcdsaSighashType::All,
     };
     let witness = Witness::p2wpkh(&input_signature, &utxo.pub_key.inner);
-
     transaction.input[input_index].witness = witness;
     Ok(())
 }
