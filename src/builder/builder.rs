@@ -163,11 +163,11 @@ impl ProtocolBuilder {
             )?;
         }
 
-        // Witness for the funding input 1
+        // Witness for the funding input (last)
         push_witness(
             &mut speedup_transaction,
             funding_transaction_utxo,
-            1,
+            transaction_to_speedup_utxos.len(),
             key_manager,
             &mut sighasher,
         )?;
