@@ -637,6 +637,21 @@ pub fn build_taproot_spend_info(
         .map_err(|_| ScriptError::TapTreeFinalizeError)
 }
 
+pub fn operator_hashed_slot_preimage(
+    public_key: PublicKey,
+    slot_preimage: Vec<u8>,
+) -> ProtocolScript {
+    let script = script!(
+        { XOnlyPublicKey::from(public_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        OP_SHA256
+        { slot_preimage }
+        OP_EQUAL
+    );
+
+    ProtocolScript::new(script, &public_key, SignMode::Single)
+}
+
 #[cfg(test)]
 mod tests {
     use bitcoin::{
