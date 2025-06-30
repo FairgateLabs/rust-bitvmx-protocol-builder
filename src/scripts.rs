@@ -5,6 +5,7 @@ use std::{
 
 use bitcoin::{
     key::{Secp256k1, UntweakedPublicKey},
+    opcodes::all::OP_PUSHNUM_1,
     secp256k1::All,
     taproot::{TaprootBuilder, TaprootSpendInfo},
     PublicKey, ScriptBuf, XOnlyPublicKey,
@@ -12,7 +13,7 @@ use bitcoin::{
 
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
-use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
+use key_manager::winternitz::{self, WinternitzPublicKey, WinternitzType};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
@@ -126,10 +127,10 @@ impl ProtocolScript {
     pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
         let original_script = self.script.clone();
         self.script = script!(
-                    { leaf_id }
-                    OP_EQUALVERIFY
-                    { original_script }
-                );
+            { leaf_id }
+            OP_EQUALVERIFY
+            { original_script }
+        );
     }
 
     pub fn get_script(&self) -> &ScriptBuf {
@@ -590,7 +591,9 @@ pub fn build_taproot_spend_info(
 
     // For empty scripts finalize the tree
     if scripts_count == 0 {
-        return tr_builder.finalize(secp, *internal_key).map_err(|_| ScriptError::TapTreeFinalizeError);
+        return tr_builder
+            .finalize(secp, *internal_key)
+            .map_err(|_| ScriptError::TapTreeFinalizeError);
     }
 
     // For a single script, add it at depth 0
@@ -650,6 +653,65 @@ pub fn operator_hashed_slot_preimage(
     );
 
     ProtocolScript::new(script, &public_key, SignMode::Single)
+}
+
+pub fn start_dispute_core(
+    dispute_pubkey: PublicKey,
+    pegout_id_pubkey: &WinternitzPublicKey,
+    bit0_pubkey: &WinternitzPublicKey,
+    bit1_pubkey: &WinternitzPublicKey,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(dispute_pubkey).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+
+        { ots_checksig(&pegout_id_pubkey, false)? }
+        { ots_checksig(&bit1_pubkey, true)? }
+        // TODO compare the message with BIT1 (1)
+        OP_IF
+            OP_PUSHNUM_1
+        OP_ELSE
+            { ots_checksig(&bit0_pubkey, true)? }
+            // TODO compare the message with BIT0 0)
+        OP_ENDIF
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, &dispute_pubkey, SignMode::Single);
+    protocol_script.add_key(
+        "ot_pegout_id",
+        pegout_id_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(pegout_id_pubkey.key_type()),
+        0,
+    )?;
+
+    protocol_script.add_key(
+        "ot_bit1",
+        bit1_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(bit1_pubkey.key_type()),
+        1,
+    )?;
+
+    protocol_script.add_key(
+        "bit0_pubkey",
+        pegout_id_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(bit0_pubkey.key_type()),
+        2,
+    )?;
+
+    Ok(protocol_script)
+}
+
+pub fn verify_signature(
+    public_key: &PublicKey,
+    sign_mode: SignMode,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(*public_key).serialize().to_vec() }
+        OP_CHECKSIG
+    );
+
+    let protocol_script = ProtocolScript::new(script, public_key, sign_mode);
+    Ok(protocol_script)
 }
 
 #[cfg(test)]
@@ -910,12 +972,8 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(
-            &secp,
-            &internal_key,
-            &[],
-        )
-        .expect("Failed to build taproot spend info");
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, &[])
+            .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.merkle_root(), None);
