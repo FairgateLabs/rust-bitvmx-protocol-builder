@@ -422,7 +422,7 @@ fn push_input(transaction: &mut Transaction, utxo: &Utxo) {
             vout: utxo.vout,
         },
         script_sig: ScriptBuf::new(),
-        sequence: Sequence::MAX,
+        sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
         witness: Witness::new(),
     });
 }
