@@ -57,6 +57,17 @@ pub struct Utxo {
     pub pub_key: PublicKey,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeedupData {
+    pub utxo: Utxo,
+}
+
+impl SpeedupData {
+    pub fn new(utxo: Utxo) -> Self {
+        Self { utxo }
+    }
+}
+
 impl Utxo {
     pub fn new(txid: Txid, vout: u32, amount: u64, pub_key: &PublicKey) -> Self {
         Utxo {
