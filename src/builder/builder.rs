@@ -10,7 +10,7 @@ use crate::{
     types::{
         connection::{InputSpec, OutputSpec},
         input::{SighashType, SpendMode},
-        output::OutputType,
+        output::{OutputType, SpeedupData},
         Utxo,
     },
 };
@@ -125,7 +125,7 @@ impl ProtocolBuilder {
 
     pub fn speedup_transactions(
         &self,
-        transaction_to_speedup_utxos: &[Utxo],
+        speedups_data: &[SpeedupData],
         funding_transaction_utxo: Utxo,
         change_address: Address,
         speedup_fee: u64,
@@ -135,8 +135,8 @@ impl ProtocolBuilder {
         let mut speedup_transaction = Protocol::transaction_template();
 
         // The speedup input to consume the speedup output of the transaction to speedup
-        for utxo in transaction_to_speedup_utxos {
-            push_input(&mut speedup_transaction, utxo);
+        for speedup_data in speedups_data {
+            push_input(&mut speedup_transaction, &speedup_data.utxo);
         }
 
         // The speedup input to consume the funding output of the funding transaction
@@ -153,10 +153,10 @@ impl ProtocolBuilder {
         let mut sighasher = SighashCache::new(speedup_transaction.clone());
 
         // Witness for all inputs
-        for (index, utxo) in transaction_to_speedup_utxos.iter().enumerate() {
+        for (index, speedup_data) in speedups_data.iter().enumerate() {
             push_witness(
                 &mut speedup_transaction,
-                utxo.clone(),
+                speedup_data.utxo.clone(),
                 index,
                 key_manager,
                 &mut sighasher,
@@ -167,7 +167,7 @@ impl ProtocolBuilder {
         push_witness(
             &mut speedup_transaction,
             funding_transaction_utxo,
-            transaction_to_speedup_utxos.len(),
+            speedups_data.len(),
             key_manager,
             &mut sighasher,
         )?;
