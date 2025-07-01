@@ -5,7 +5,6 @@ use std::{
 
 use bitcoin::{
     key::{Secp256k1, UntweakedPublicKey},
-    opcodes::all::OP_PUSHNUM_1,
     secp256k1::All,
     taproot::{TaprootBuilder, TaprootSpendInfo},
     PublicKey, ScriptBuf, XOnlyPublicKey,
@@ -13,7 +12,7 @@ use bitcoin::{
 
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
-use key_manager::winternitz::{self, WinternitzPublicKey, WinternitzType};
+use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
