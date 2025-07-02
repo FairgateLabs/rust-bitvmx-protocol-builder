@@ -126,10 +126,10 @@ impl ProtocolScript {
     pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
         let original_script = self.script.clone();
         self.script = script!(
-                    { leaf_id }
-                    OP_EQUALVERIFY
-                    { original_script }
-                );
+            { leaf_id }
+            OP_EQUALVERIFY
+            { original_script }
+        );
     }
 
     pub fn get_script(&self) -> &ScriptBuf {
@@ -173,17 +173,17 @@ pub fn op_return_script(data: Vec<u8>) -> Result<ProtocolScript, ScriptError> {
     Ok(protocol_script)
 }
 
-pub fn verify_winternitz_signatures(
+pub fn verify_winternitz_signatures<T: AsRef<str>>(
     verifying_key: &PublicKey,
-    public_keys: &Vec<(&str, &WinternitzPublicKey)>,
+    public_keys: &Vec<(T, &WinternitzPublicKey)>,
     sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
     verify_winternitz_signatures_aux(verifying_key, public_keys, sign_mode, false, None)
 }
 
-pub fn verify_winternitz_signatures_aux(
+pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
     verifying_key: &PublicKey,
-    public_keys: &Vec<(&str, &WinternitzPublicKey)>,
+    public_keys: &Vec<(T, &WinternitzPublicKey)>,
     sign_mode: SignMode,
     keep_message: bool,
     extra_check_script: Option<Vec<ScriptBuf>>,
@@ -208,11 +208,11 @@ pub fn verify_winternitz_signatures_aux(
     );
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
-    for i in 0..public_keys.len() {
+    for (i, (name, key)) in public_keys.iter().enumerate() {
         protocol_script.add_key(
-            public_keys[i].0,
-            public_keys[i].1.derivation_index()?,
-            KeyType::WinternitzKey(public_keys[i].1.key_type()),
+            name.as_ref(),
+            key.derivation_index()?,
+            KeyType::WinternitzKey(key.key_type()),
             i as u32,
         )?;
     }
@@ -590,7 +590,9 @@ pub fn build_taproot_spend_info(
 
     // For empty scripts finalize the tree
     if scripts_count == 0 {
-        return tr_builder.finalize(secp, *internal_key).map_err(|_| ScriptError::TapTreeFinalizeError);
+        return tr_builder
+            .finalize(secp, *internal_key)
+            .map_err(|_| ScriptError::TapTreeFinalizeError);
     }
 
     // For a single script, add it at depth 0
@@ -910,12 +912,8 @@ mod tests {
         let internal_key = XOnlyPublicKey::from(public_key);
 
         // Act
-        let taproot_spend_info = build_taproot_spend_info(
-            &secp,
-            &internal_key,
-            &[],
-        )
-        .expect("Failed to build taproot spend info");
+        let taproot_spend_info = build_taproot_spend_info(&secp, &internal_key, &[])
+            .expect("Failed to build taproot spend info");
 
         // Assert
         assert_eq!(taproot_spend_info.merkle_root(), None);
