@@ -132,6 +132,11 @@ impl Protocol {
         Ok(self)
     }
 
+    pub fn get_output_count(&self, transaction_name: &str) -> Result<u32, ProtocolBuilderError> {
+        let transaction = self.transaction_by_name(transaction_name)?;
+        Ok(transaction.output.len() as u32)
+    }
+
     pub fn add_connection(
         &mut self,
         connection_name: &str,
