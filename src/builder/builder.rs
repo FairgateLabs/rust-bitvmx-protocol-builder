@@ -6,6 +6,7 @@ use bitcoin::{
 };
 use bitcoin_scriptexec::scriptint_vec;
 use key_manager::key_manager::KeyManager;
+use tracing::debug;
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -135,6 +136,10 @@ impl ProtocolBuilder {
         key_manager: &Rc<KeyManager>,
     ) -> Result<Transaction, ProtocolBuilderError> {
         let mut protocol = Protocol::new("speedup_tx");
+        debug!(
+            "Building speedup transaction with {:?} speedups and funding UTXO: {:?}, {}",
+            speedups_data, funding_transaction_utxo, speedup_fee
+        );
 
         for (idx, speedup_data) in speedups_data.iter().enumerate() {
             let tx_name = &format!("tx_to_speedup_{idx}");
@@ -224,6 +229,7 @@ impl ProtocolBuilder {
             spending_args.push_ecdsa_signature(signature)?;
             args_for_all_inputs.push(spending_args);
         }
+        debug!("{}", protocol.visualize()?);
 
         let result = protocol.transaction_to_send("cpfp", &args_for_all_inputs)?;
         Ok(result)
