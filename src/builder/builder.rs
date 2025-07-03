@@ -1,7 +1,10 @@
+use std::rc::Rc;
+
 use bitcoin::{
     hashes::Hash, secp256k1::Message, sighash::SighashCache, Address, Amount, EcdsaSighashType,
     OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut, Txid, Witness,
 };
+use bitcoin_scriptexec::scriptint_vec;
 use key_manager::key_manager::KeyManager;
 
 use crate::{
@@ -11,7 +14,7 @@ use crate::{
         connection::{InputSpec, OutputSpec},
         input::{SighashType, SpendMode},
         output::{OutputType, SpeedupData},
-        Utxo,
+        InputArgs, Utxo,
     },
 };
 
@@ -127,6 +130,109 @@ impl ProtocolBuilder {
         &self,
         speedups_data: &[SpeedupData],
         funding_transaction_utxo: Utxo,
+        change_address: &PublicKey,
+        speedup_fee: u64,
+        key_manager: &Rc<KeyManager>,
+    ) -> Result<Transaction, ProtocolBuilderError> {
+        let mut protocol = Protocol::new("speedup_tx");
+
+        for (idx, speedup_data) in speedups_data.iter().enumerate() {
+            let tx_name = &format!("tx_to_speedup_{idx}");
+            protocol.add_external_transaction(&tx_name)?;
+
+            if let Some(utxo) = &speedup_data.utxo {
+                let external_output = OutputType::segwit_key(utxo.amount, &utxo.pub_key)?;
+                protocol.add_connection(
+                    &format!("speedup_{idx}"),
+                    &tx_name,
+                    external_output.into(),
+                    "cpfp",
+                    InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
+                    None,
+                    Some(utxo.txid),
+                )?;
+            } else {
+                let partial_utxo = speedup_data.partial_utxo.as_ref().unwrap();
+                protocol.add_connection(
+                    &format!("speedup_{idx}"),
+                    &tx_name,
+                    speedup_data.output_type.as_ref().unwrap().clone().into(),
+                    "cpfp",
+                    InputSpec::Auto(
+                        SighashType::taproot_all(),
+                        SpendMode::Script {
+                            leaf: speedup_data.leaf_index.unwrap(),
+                        },
+                    ),
+                    None,
+                    Some(partial_utxo.0),
+                )?;
+            }
+        }
+
+        let external_output = OutputType::segwit_key(
+            funding_transaction_utxo.amount,
+            &funding_transaction_utxo.pub_key,
+        )?;
+        protocol.add_connection(
+            "speedup_funding",
+            "funding",
+            external_output.into(),
+            "cpfp",
+            InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
+            None,
+            Some(funding_transaction_utxo.txid),
+        )?;
+
+        protocol.add_transaction_output(
+            "cpfp",
+            &OutputType::segwit_key(
+                funding_transaction_utxo.amount - speedup_fee,
+                change_address,
+            )?,
+        )?;
+
+        protocol.build_and_sign(key_manager, "id")?;
+
+        let mut args_for_all_inputs = vec![];
+
+        let total = speedups_data.len() + 1; // +1 for the funding input
+
+        for idx in 0..total {
+            if idx < speedups_data.len() {
+                let speedup_data = &speedups_data[idx];
+                if speedup_data.utxo.is_none() {
+                    let leaf_index = speedup_data.leaf_index.unwrap();
+                    let signature = protocol
+                        .input_taproot_script_spend_signature("cpfp", idx, leaf_index)?
+                        .unwrap();
+                    let mut spending_args = InputArgs::new_taproot_script_args(leaf_index);
+                    for wots in speedup_data.wots_sigs.as_ref().unwrap().iter() {
+                        spending_args.push_winternitz_signature(wots.clone());
+                    }
+                    spending_args.push_taproot_signature(signature)?;
+                    if speedup_data.leaf_identification {
+                        spending_args.push_slice(scriptint_vec(leaf_index as i64).as_slice());
+                    }
+                    args_for_all_inputs.push(spending_args);
+
+                    continue;
+                }
+            }
+            let signature = protocol.input_ecdsa_signature("cpfp", idx)?.unwrap();
+            let mut spending_args = InputArgs::new_segwit_args();
+            spending_args.push_ecdsa_signature(signature)?;
+            args_for_all_inputs.push(spending_args);
+        }
+
+        let result = protocol.transaction_to_send("cpfp", &args_for_all_inputs)?;
+        Ok(result)
+    }
+
+    pub fn speedup_transactions_old(
+        &self,
+        speedups_data: &[SpeedupData],
+        funding_transaction_utxo: Utxo,
         change_address: Address,
         speedup_fee: u64,
         key_manager: &KeyManager,
@@ -136,7 +242,10 @@ impl ProtocolBuilder {
 
         // The speedup input to consume the speedup output of the transaction to speedup
         for speedup_data in speedups_data {
-            push_input(&mut speedup_transaction, &speedup_data.utxo);
+            push_input(
+                &mut speedup_transaction,
+                speedup_data.utxo.as_ref().unwrap(),
+            );
         }
 
         // The speedup input to consume the funding output of the funding transaction
@@ -156,7 +265,7 @@ impl ProtocolBuilder {
         for (index, speedup_data) in speedups_data.iter().enumerate() {
             push_witness(
                 &mut speedup_transaction,
-                speedup_data.utxo.clone(),
+                speedup_data.utxo.as_ref().unwrap().clone(),
                 index,
                 key_manager,
                 &mut sighasher,

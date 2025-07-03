@@ -7,7 +7,9 @@ use bitcoin::{
     Amount, EcdsaSighashType, PublicKey, ScriptBuf, TapLeafHash, TapSighashType, TapTweakHash,
     Transaction, TxOut, Txid, WScriptHash, XOnlyPublicKey,
 };
-use key_manager::{key_manager::KeyManager, verifier::SignatureVerifier};
+use key_manager::{
+    key_manager::KeyManager, verifier::SignatureVerifier, winternitz::WinternitzSignature,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -59,12 +61,41 @@ pub struct Utxo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeedupData {
-    pub utxo: Utxo,
+    pub utxo: Option<Utxo>,
+    pub partial_utxo: Option<(Txid, u32, u64)>,
+    pub output_type: Option<OutputType>,
+    pub wots_sigs: Option<Vec<WinternitzSignature>>,
+    pub leaf_index: Option<usize>,
+    pub leaf_identification: bool,
 }
 
 impl SpeedupData {
     pub fn new(utxo: Utxo) -> Self {
-        Self { utxo }
+        Self {
+            utxo: Some(utxo),
+            partial_utxo: None,
+            output_type: None,
+            wots_sigs: None,
+            leaf_index: None,
+            leaf_identification: false,
+        }
+    }
+
+    pub fn new_with_input(
+        partial_utxo: (Txid, u32, u64),
+        output_type: &OutputType,
+        wots_sigs: Vec<WinternitzSignature>,
+        leaf_index: usize,
+        leaf_id: bool,
+    ) -> Self {
+        Self {
+            utxo: None,
+            partial_utxo: Some(partial_utxo),
+            output_type: Some(output_type.clone()),
+            wots_sigs: Some(wots_sigs),
+            leaf_index: Some(leaf_index),
+            leaf_identification: leaf_id,
+        }
     }
 }
 
@@ -76,6 +107,11 @@ impl Utxo {
             amount,
             pub_key: *pub_key,
         }
+    }
+}
+impl Into<SpeedupData> for Utxo {
+    fn into(self) -> SpeedupData {
+        SpeedupData::new(self)
     }
 }
 
