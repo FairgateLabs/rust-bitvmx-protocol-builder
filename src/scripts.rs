@@ -700,6 +700,30 @@ pub fn start_dispute_core(
     Ok(protocol_script)
 }
 
+pub fn verify_bit(
+    take_pubkey: PublicKey,
+    bit_pubkey: &WinternitzPublicKey,
+    bit_value: Vec<u8>,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+
+        { ots_checksig(&bit_pubkey, true)? }
+        // TODO compare the message with bit_value
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, &take_pubkey, SignMode::Single);
+    protocol_script.add_key(
+        "ot_bit",
+        bit_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(bit_pubkey.key_type()),
+        0,
+    )?;
+
+    Ok(protocol_script)
+}
+
 pub fn verify_signature(
     public_key: &PublicKey,
     sign_mode: SignMode,
