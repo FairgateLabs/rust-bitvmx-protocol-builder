@@ -343,6 +343,14 @@ impl TransactionGraph {
         Ok(self.get_node(name)?.get_input(input_index)?.clone())
     }
 
+    pub fn get_output(
+        &self,
+        name: &str,
+        output_index: usize,
+    ) -> Result<Option<&OutputType>, GraphError> {
+        Ok(self.get_node(name)?.outputs.get(output_index))
+    }
+
     pub fn get_ecdsa_signature(
         &self,
         name: &str,

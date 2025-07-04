@@ -476,6 +476,28 @@ impl Protocol {
         Ok(input_signature)
     }
 
+    pub fn get_script_from_output(
+        &self,
+        transaction_name: &str,
+        output_index: u32,
+    ) -> Result<(&OutputType, &Vec<ProtocolScript>), ProtocolBuilderError> {
+        if let Some(output_type) = self
+            .graph
+            .get_output(transaction_name, output_index as usize)?
+        {
+            match output_type {
+                OutputType::Taproot { leaves, .. } => return Ok((output_type, &leaves)),
+                _ => {}
+            }
+        }
+        return Err(ProtocolBuilderError::CannotGetScriptForOutputType(
+            transaction_name.to_string(),
+            output_index,
+            0,
+            "Output not found".to_string(),
+        ));
+    }
+
     pub fn get_script_to_spend(
         &self,
         transaction_name: &str,
