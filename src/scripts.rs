@@ -703,7 +703,7 @@ pub fn start_dispute_core(
 pub fn verify_bit(
     take_pubkey: PublicKey,
     bit_pubkey: &WinternitzPublicKey,
-    bit_value: Vec<u8>,
+    _bit_value: Vec<u8>,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
