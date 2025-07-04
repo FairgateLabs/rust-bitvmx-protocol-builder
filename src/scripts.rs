@@ -59,7 +59,7 @@ impl ScriptKey {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 // Controls how the script is signed using the verifying key
 pub enum SignMode {
     // No signature is required
