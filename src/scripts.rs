@@ -657,67 +657,67 @@ pub fn operator_hashed_slot_preimage(
 pub fn start_dispute_core(
     dispute_pubkey: PublicKey,
     pegout_id_pubkey: &WinternitzPublicKey,
-    bit0_pubkey: &WinternitzPublicKey,
-    bit1_pubkey: &WinternitzPublicKey,
+    value_0_pubkey: &WinternitzPublicKey,
+    value_1_pubkey: &WinternitzPublicKey,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(dispute_pubkey).serialize().to_vec() }
         OP_CHECKSIGVERIFY
 
         { ots_checksig(&pegout_id_pubkey, false)? }
-        { ots_checksig(&bit1_pubkey, true)? }
+        { ots_checksig(&value_1_pubkey, true)? }
         // TODO compare the message with BIT1 (1)
         OP_IF
             OP_PUSHNUM_1
         OP_ELSE
-            { ots_checksig(&bit0_pubkey, true)? }
+            { ots_checksig(&value_0_pubkey, true)? }
             // TODO compare the message with BIT0 0)
         OP_ENDIF
     );
 
     let mut protocol_script = ProtocolScript::new(script, &dispute_pubkey, SignMode::Single);
     protocol_script.add_key(
-        "ot_pegout_id",
+        "pegout_id",
         pegout_id_pubkey.derivation_index()?,
         KeyType::WinternitzKey(pegout_id_pubkey.key_type()),
         0,
     )?;
 
     protocol_script.add_key(
-        "ot_bit1",
-        bit1_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(bit1_pubkey.key_type()),
+        "value_1",
+        value_1_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(value_1_pubkey.key_type()),
         1,
     )?;
 
     protocol_script.add_key(
-        "bit0_pubkey",
-        pegout_id_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(bit0_pubkey.key_type()),
+        "value_0",
+        value_0_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(value_0_pubkey.key_type()),
         2,
     )?;
 
     Ok(protocol_script)
 }
 
-pub fn verify_bit(
+pub fn verify_value(
     take_pubkey: PublicKey,
-    bit_pubkey: &WinternitzPublicKey,
-    _bit_value: Vec<u8>,
+    value_pubkey: &WinternitzPublicKey,
+    value: Vec<u8>,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
         OP_CHECKSIGVERIFY
 
-        { ots_checksig(&bit_pubkey, true)? }
-        // TODO compare the message with bit_value
+        { ots_checksig(&value_pubkey, true)? }
+        // TODO compare the message with value
     );
 
     let mut protocol_script = ProtocolScript::new(script, &take_pubkey, SignMode::Single);
     protocol_script.add_key(
-        "ot_bit",
-        bit_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(bit_pubkey.key_type()),
+        "value",
+        value_pubkey.derivation_index()?,
+        KeyType::WinternitzKey(value_pubkey.key_type()),
         0,
     )?;
 
