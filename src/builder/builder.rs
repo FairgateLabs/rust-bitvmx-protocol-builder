@@ -159,6 +159,7 @@ impl ProtocolBuilder {
                 )?;
             } else {
                 let partial_utxo = speedup_data.partial_utxo.as_ref().unwrap();
+                protocol.add_unkwnoun_outputs(&tx_name, partial_utxo.1)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
                     &tx_name,

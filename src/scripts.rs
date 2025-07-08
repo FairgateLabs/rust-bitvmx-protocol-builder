@@ -703,7 +703,7 @@ pub fn start_dispute_core(
 pub fn verify_value(
     take_pubkey: PublicKey,
     value_pubkey: &WinternitzPublicKey,
-    value: Vec<u8>,
+    _value: Vec<u8>,
 ) -> Result<ProtocolScript, ScriptError> {
     let script = script!(
         { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
