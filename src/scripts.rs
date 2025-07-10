@@ -664,13 +664,13 @@ pub fn start_dispute_core(
         { XOnlyPublicKey::from(dispute_pubkey).serialize().to_vec() }
         OP_CHECKSIGVERIFY
 
-        { ots_checksig(&pegout_id_pubkey, false)? }
-        { ots_checksig(&value_1_pubkey, true)? }
+        { ots_checksig(pegout_id_pubkey, false)? }
+        { ots_checksig(value_1_pubkey, true)? }
         // TODO compare the message with BIT1 (1)
         OP_IF
             OP_PUSHNUM_1
         OP_ELSE
-            { ots_checksig(&value_0_pubkey, true)? }
+            { ots_checksig(value_0_pubkey, true)? }
             // TODO compare the message with BIT0 0)
         OP_ENDIF
     );
@@ -709,7 +709,7 @@ pub fn verify_value(
         { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
         OP_CHECKSIGVERIFY
 
-        { ots_checksig(&value_pubkey, true)? }
+        { ots_checksig(value_pubkey, true)? }
         // TODO compare the message with value
     );
 

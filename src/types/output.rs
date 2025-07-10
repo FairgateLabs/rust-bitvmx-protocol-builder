@@ -281,8 +281,13 @@ impl OutputType {
         transaction: &Transaction,
         _transaction_name: &str,
         input_index: usize,
+        spend_mode: &SpendMode,
         ecdsa_sighash_type: &EcdsaSighashType,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
+        if spend_mode.is_none() {
+            return Ok(vec![None]);
+        }
+
         let messages = match self {
             OutputType::SegwitPublicKey {
                 value, public_key, ..
@@ -357,9 +362,14 @@ impl OutputType {
         _transaction_name: &str,
         _input_index: usize,
         hashed_messages: &[Option<Message>],
+        spend_mode: &SpendMode,
         ecdsa_sighash_type: &EcdsaSighashType,
         key_manager: &KeyManager,
     ) -> Result<Vec<Option<Signature>>, ProtocolBuilderError> {
+        if spend_mode.is_none() {
+            return Ok(vec![None]);
+        }
+
         let signatures = match self {
             OutputType::SegwitPublicKey { public_key, .. } => self.ecdsa_key_signature(
                 hashed_messages,
@@ -822,12 +832,12 @@ fn spend_mode_params(
         } => (
             true,
             true,
-            Some(key_path_sign_mode.clone()),
+            Some(*key_path_sign_mode),
             Some(select_leaves(leaves, &[])),
         ),
         SpendMode::KeyOnly {
             key_path_sign: key_path_sign_mode,
-        } => (true, false, Some(key_path_sign_mode.clone()), None),
+        } => (true, false, Some(*key_path_sign_mode), None),
         SpendMode::ScriptsOnly => (false, true, None, Some(select_leaves(leaves, &[]))),
         SpendMode::Scripts { leaves: indexes } => {
             (false, true, None, Some(select_leaves(leaves, indexes)))

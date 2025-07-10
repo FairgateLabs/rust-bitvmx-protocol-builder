@@ -619,6 +619,7 @@ impl Protocol {
                         transaction,
                         transaction_name,
                         input_index,
+                        input.spend_mode(),
                         ecdsa_sighash_type,
                     )?,
                 };
@@ -660,6 +661,7 @@ impl Protocol {
                         transaction_name,
                         input_index,
                         &input.hashed_messages(),
+                        input.spend_mode(),
                         ecdsa_sighash_type,
                         key_manager,
                     )?,

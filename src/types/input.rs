@@ -28,11 +28,11 @@ pub enum SpendMode {
     /// Compute sighashes and signatures for a specific script path.
     Script { leaf: usize },
 
-    /// No sighashes or signatures are computed for any path.
-    None,
-
     /// Spend mode for P2WSH and P2WPKH.
     Segwit,
+
+    /// No sighashes or signatures are computed for any path.
+    None,
 }
 
 impl Display for SpendMode {
@@ -50,6 +50,36 @@ impl Display for SpendMode {
             SpendMode::None => write!(f, "None"),
             SpendMode::Segwit => write!(f, "Segwit"),
         }
+    }
+}
+
+impl SpendMode {
+    pub fn is_all(&self) -> bool {
+        matches!(self, SpendMode::All { .. })
+    }
+
+    pub fn is_key_only(&self) -> bool {
+        matches!(self, SpendMode::KeyOnly { .. })
+    }
+
+    pub fn is_scripts_only(&self) -> bool {
+        matches!(self, SpendMode::ScriptsOnly)
+    }
+
+    pub fn is_scripts(&self) -> bool {
+        matches!(self, SpendMode::Scripts { .. })
+    }
+
+    pub fn is_script(&self) -> bool {
+        matches!(self, SpendMode::Script { .. })
+    }
+
+    pub fn is_segwit(&self) -> bool {
+        matches!(self, SpendMode::Segwit)
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, SpendMode::None)
     }
 }
 
