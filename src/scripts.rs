@@ -675,7 +675,7 @@ pub fn start_dispute_core(
         OP_ENDIF
     );
 
-    let mut protocol_script = ProtocolScript::new(script, &dispute_pubkey, SignMode::Single);
+    let mut protocol_script = ProtocolScript::new(script, &dispute_pubkey, SignMode::Aggregate);
     protocol_script.add_key(
         "pegout_id",
         pegout_id_pubkey.derivation_index()?,
@@ -713,7 +713,7 @@ pub fn verify_value(
         // TODO compare the message with value
     );
 
-    let mut protocol_script = ProtocolScript::new(script, &take_pubkey, SignMode::Single);
+    let mut protocol_script = ProtocolScript::new(script, &take_pubkey, SignMode::Aggregate);
     protocol_script.add_key(
         "value",
         value_pubkey.derivation_index()?,
