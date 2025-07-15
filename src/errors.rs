@@ -102,7 +102,7 @@ pub enum ProtocolBuilderError {
     #[error("Transaction with name {0} missing in protocol {1}")]
     MissingTransaction(String, String),
 
-    #[error("Transaction with name {0} does not contained ouput with index {1}")]
+    #[error("Transaction with name {0} does not contained output with index {1}")]
     MissingOutput(String, usize),
 
     #[error("Transaction with name {0} does not contained input with index {1}")]
@@ -194,7 +194,7 @@ pub enum ProtocolBuilderError {
     #[error("Failed to generate signature for script spend path in taproot output. Transaction: {0}, input index: {1}, script index: {2}")]
     ScriptSpendSignatureGenerationFailed(String, usize, usize),
 
-    #[error("Failed to get script for transaction {0}, input index {1} and script index {2}. Ouput must be TaprootScript or SegwitScript but it is {3}")]
+    #[error("Failed to get script for transaction {0}, input index {1} and script index {2}. Output must be TaprootScript or SegwitScript but it is {3}")]
     CannotGetScriptForOutputType(String, u32, u32, String),
 
     #[error("Failed to generate nonce for MuSig2 signature aggregation")]
