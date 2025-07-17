@@ -63,7 +63,7 @@ impl Protocol {
         Ok(self)
     }
 
-    pub fn add_unkwnoun_outputs(
+    pub fn add_unknown_outputs(
         &mut self,
         transaction_name: &str,
         count: u32,
