@@ -146,7 +146,7 @@ impl ProtocolBuilder {
             protocol.add_external_transaction(&tx_name)?;
 
             if let Some(utxo) = &speedup_data.utxo {
-                protocol.add_unkwnoun_outputs(&tx_name, utxo.vout)?;
+                protocol.add_unknown_outputs(&tx_name, utxo.vout)?;
                 let external_output = OutputType::segwit_key(utxo.amount, &utxo.pub_key)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
@@ -159,7 +159,7 @@ impl ProtocolBuilder {
                 )?;
             } else {
                 let partial_utxo = speedup_data.partial_utxo.as_ref().unwrap();
-                protocol.add_unkwnoun_outputs(&tx_name, partial_utxo.1)?;
+                protocol.add_unknown_outputs(&tx_name, partial_utxo.1)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
                     &tx_name,
@@ -178,7 +178,7 @@ impl ProtocolBuilder {
         }
 
         protocol.add_external_transaction("funding")?;
-        protocol.add_unkwnoun_outputs("funding", funding_transaction_utxo.vout)?;
+        protocol.add_unknown_outputs("funding", funding_transaction_utxo.vout)?;
         let external_output = OutputType::segwit_key(
             funding_transaction_utxo.amount,
             &funding_transaction_utxo.pub_key,
