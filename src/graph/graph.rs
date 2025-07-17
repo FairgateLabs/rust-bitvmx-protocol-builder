@@ -513,8 +513,12 @@ impl TransactionGraph {
                 //result.push_str(&format!( "{}:o{} -> {}:i{} [label={}]\n", from.name, connection.output_index, to.name, connection.input_index, connection.name,));
                 //Detailed from-to:in
                 result.push_str(&format!(
-                    "{} -> {}:i{} [label={}]\n",
-                    from.name, to.name, connection.input_index, connection.name,
+                    "{}:o{}:e -> {}:i{}:w [label={}]\n",
+                    from.name,
+                    connection.output_index,
+                    to.name,
+                    connection.input_index,
+                    connection.name,
                 ));
             }
         }
