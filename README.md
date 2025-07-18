@@ -1,6 +1,11 @@
 # Protocol Builder
 Protocol Builder is a Rust library designed to construct and manage Directed Acyclic Graphs (DAGs) of BitVMX pre-signed transactions (protocols). A protocol is an abstraction layer encapsulating all the necessary information about the generated pre-signed transactions. The library provides a suite of tools for creating DAGs of transactions, computing its signature hashes and signatures and generating input witnesses.
 
+## ⚠️ Disclaimer
+
+This library is currently under development and may not be fully stable.
+It is not production-ready, has not been audited, and future updates may introduce breaking changes without preserving backward compatibility.
+
 ## Features
 
 🛠 Create transactions: Automatically create transactions when adding inputs or outputs.  
