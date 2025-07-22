@@ -12,7 +12,7 @@ use storage_backend::storage::{KeyValueStore, Storage};
 
 use crate::{
     errors::ProtocolBuilderError,
-    graph::graph::TransactionGraph,
+    graph::graph::{GraphOptions, TransactionGraph},
     scripts::ProtocolScript,
     types::{
         connection::{ConnectionType, InputSpec, OutputSpec},
@@ -525,8 +525,8 @@ impl Protocol {
         Ok(script)
     }
 
-    pub fn visualize(&self) -> Result<String, ProtocolBuilderError> {
-        Ok(self.graph.visualize()?)
+    pub fn visualize(&self, options: GraphOptions) -> Result<String, ProtocolBuilderError> {
+        Ok(self.graph.visualize(options)?)
     }
 
     pub(crate) fn transaction_template() -> Transaction {

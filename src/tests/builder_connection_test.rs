@@ -5,6 +5,7 @@ mod tests {
     use crate::{
         builder::{Protocol, ProtocolBuilder},
         errors::ProtocolBuilderError,
+        graph::graph::GraphOptions,
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
@@ -691,7 +692,7 @@ mod tests {
             ]
         );
 
-        let graph = protocol.visualize()?;
+        let graph = protocol.visualize(GraphOptions::Default)?;
         println!("{}", graph);
 
         Ok(())
