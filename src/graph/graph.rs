@@ -73,6 +73,12 @@ impl Default for TransactionGraph {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GraphOptions {
+    Default,
+    EdgeArrows,
+}
+
 impl TransactionGraph {
     pub fn new() -> Self {
         let graph = Graph::new();
@@ -466,7 +472,7 @@ impl TransactionGraph {
         Ok(result)
     }
 
-    pub fn visualize(&self) -> Result<String, GraphError> {
+    pub fn visualize(&self, options: GraphOptions) -> Result<String, GraphError> {
         let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=record]\n".to_owned();
 
         for node_index in self.graph.node_indices() {
@@ -512,10 +518,21 @@ impl TransactionGraph {
                 //Detailed from:vout-to:in (graph view gets messy)
                 //result.push_str(&format!( "{}:o{} -> {}:i{} [label={}]\n", from.name, connection.output_index, to.name, connection.input_index, connection.name,));
                 //Detailed from-to:in
-                result.push_str(&format!(
-                    "{} -> {}:i{} [label={}]\n",
-                    from.name, to.name, connection.input_index, connection.name,
-                ));
+                if options == GraphOptions::EdgeArrows {
+                    result.push_str(&format!(
+                        "{}:o{}:e -> {}:i{}:w [label={}]\n",
+                        from.name,
+                        connection.output_index,
+                        to.name,
+                        connection.input_index,
+                        connection.name,
+                    ));
+                } else {
+                    result.push_str(&format!(
+                        "{} -> {}:i{} [label={}]\n",
+                        from.name, to.name, connection.input_index, connection.name,
+                    ));
+                }
             }
         }
 

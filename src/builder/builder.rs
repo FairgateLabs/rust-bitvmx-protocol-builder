@@ -10,6 +10,7 @@ use tracing::debug;
 
 use crate::{
     errors::ProtocolBuilderError,
+    graph::graph::GraphOptions,
     scripts::{self, ProtocolScript},
     types::{
         connection::{InputSpec, OutputSpec},
@@ -233,7 +234,7 @@ impl ProtocolBuilder {
             spending_args.push_ecdsa_signature(signature)?;
             args_for_all_inputs.push(spending_args);
         }
-        debug!("{}", protocol.visualize()?);
+        debug!("{}", protocol.visualize(GraphOptions::Default)?);
 
         let result = protocol.transaction_to_send("cpfp", &args_for_all_inputs)?;
         Ok(result)
