@@ -5,7 +5,7 @@ use bitcoin::{
     Network,
 };
 use key_manager::{errors::ConfigError, key_manager::KeyManager, key_store::KeyStore};
-use std::{env, fs, path::PathBuf, rc::Rc};
+use std::{env, fs, path::PathBuf, sync::Arc};
 use storage_backend::{storage::Storage, storage_config::StorageConfig};
 
 use crate::types::input::SighashType;
@@ -44,7 +44,7 @@ impl Drop for TemporaryDir {
 
 pub struct TestContext {
     test_dir: TemporaryDir,
-    key_manager: Rc<KeyManager>,
+    key_manager: Arc<KeyManager>,
     _network: Network,
 }
 
@@ -69,7 +69,7 @@ impl TestContext {
         SighashType::taproot_all()
     }
 
-    pub fn key_manager(&self) -> &Rc<KeyManager> {
+    pub fn key_manager(&self) -> &Arc<KeyManager> {
         &self.key_manager
     }
 
@@ -80,7 +80,7 @@ impl TestContext {
     }
 }
 
-pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyManager>, Error> {
+pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Arc<KeyManager>, Error> {
     let test_dir = TemporaryDir::new(path_prefix);
     let keystore_path = test_dir.path("keystore");
     let musig2_path = test_dir.path("musig2data");
@@ -88,7 +88,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     let key_derivation_path = "m/101/1/0/0/";
     let keystore_password = "secret_password".to_string();
     let config = StorageConfig::new(musig2_path.to_str().unwrap().to_string(), None);
-    let store: Rc<Storage> = Rc::new(Storage::new(&config).unwrap());
+    let store = Arc::new(Storage::new(&config).unwrap());
 
     let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
     let key_derivation_seed: [u8; 32] = bytes
@@ -104,7 +104,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
         keystore_path.to_str().unwrap().to_string(),
         Some(keystore_password),
     );
-    let storage_keystore = Rc::new(Storage::new(&config)?);
+    let storage_keystore = Arc::new(Storage::new(&config)?);
     let database_keystore = KeyStore::new(storage_keystore);
     let key_manager = KeyManager::new(
         network,
@@ -115,7 +115,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
         store,
     )?;
 
-    Ok(Rc::new(key_manager))
+    Ok(Arc::new(key_manager))
 }
 
 pub fn clear_test_directories() {

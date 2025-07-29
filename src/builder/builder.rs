@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use bitcoin::{
     hashes::Hash, secp256k1::Message, sighash::SighashCache, Address, Amount, EcdsaSighashType,
@@ -134,7 +134,7 @@ impl ProtocolBuilder {
         funding_transaction_utxo: Utxo,
         change_address: &PublicKey,
         speedup_fee: u64,
-        key_manager: &Rc<KeyManager>,
+        key_manager: &Arc<KeyManager>,
     ) -> Result<Transaction, ProtocolBuilderError> {
         let mut protocol = Protocol::new("speedup_tx");
         debug!(

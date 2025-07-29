@@ -7,7 +7,7 @@ use bitcoin::{
 };
 use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, rc::Rc, vec};
+use std::{collections::HashMap, sync::Arc, vec};
 use storage_backend::storage::{KeyValueStore, Storage};
 
 use crate::{
@@ -38,11 +38,11 @@ impl Protocol {
         }
     }
 
-    pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
+    pub fn load(name: &str, storage: Arc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
         Ok(storage.get(&name)?)
     }
 
-    pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
+    pub fn save(&self, storage: Arc<Storage>) -> Result<(), ProtocolBuilderError> {
         storage.set(&self.name, &self, None)?;
         Ok(())
     }
@@ -245,7 +245,7 @@ impl Protocol {
 
     pub fn build(
         &mut self,
-        key_manager: &Rc<KeyManager>,
+        key_manager: &Arc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;
@@ -255,7 +255,7 @@ impl Protocol {
 
     pub fn sign(
         &mut self,
-        key_manager: &Rc<KeyManager>,
+        key_manager: &Arc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.compute_signatures(key_manager, id)?;
@@ -265,7 +265,7 @@ impl Protocol {
     // To be used only when we don't need musig2
     pub fn build_and_sign(
         &mut self,
-        key_manager: &Rc<KeyManager>,
+        key_manager: &Arc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
         self.update_transaction_ids()?;

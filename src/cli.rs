@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Ok, Result};
 
@@ -246,8 +246,8 @@ impl Cli {
 
     fn build(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
-        let key_manager = Rc::new(self.key_manager()?);
+        let storage = Arc::new(Storage::new(&config).unwrap());
+        let key_manager = Arc::new(self.key_manager()?);
 
         let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
             Some(protocol) => protocol,
@@ -263,8 +263,8 @@ impl Cli {
 
     fn build_and_sign(&self, protocol_name: &str, graph_storage_path: PathBuf) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
-        let key_manager = Rc::new(self.key_manager()?);
+        let storage = Arc::new(Storage::new(&config).unwrap());
+        let key_manager = Arc::new(self.key_manager()?);
 
         let mut protocol = match Protocol::load(protocol_name, storage.clone())? {
             Some(protocol) => protocol,
@@ -289,7 +289,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
         let txid = Hash::all_zeros();
         let ecdsa_sighash_type = SighashType::Ecdsa(EcdsaSighashType::All);
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
@@ -327,7 +327,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
@@ -351,7 +351,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
 
         let mut protocol = Protocol::new(protocol_name);
         let builder = ProtocolBuilder {};
@@ -376,7 +376,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
 
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = unspendable_key(&mut rng)?;
@@ -424,7 +424,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
 
         let mut rng = secp256k1::rand::thread_rng();
         let internal_key = unspendable_key(&mut rng)?;
@@ -472,7 +472,7 @@ impl Cli {
         data: &str,
     ) -> Result<()> {
         let config = StorageConfig::new(graph_storage_path.to_str().unwrap().to_string(), None);
-        let storage = Rc::new(Storage::new(&config).unwrap());
+        let storage = Arc::new(Storage::new(&config).unwrap());
 
         let pubkey_bytes = hex::decode(data).expect("Decoding failed");
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
@@ -512,13 +512,13 @@ impl Cli {
     }
 
     fn key_manager(&self) -> Result<KeyManager> {
-        let store = Rc::new(Storage::new(&self.config.key_storage)?);
+        let store = Arc::new(Storage::new(&self.config.key_storage)?);
         let keystore = KeyStore::new(store);
 
         // TODO read from config
         let path = PathBuf::from("/tmp/store".to_string());
         let config = StorageConfig::new(path.to_str().unwrap().to_string(), None);
-        let store = Rc::new(Storage::new(&config).unwrap());
+        let store = Arc::new(Storage::new(&config).unwrap());
 
         Ok(create_key_manager_from_config(
             &self.config.key_manager,
