@@ -113,8 +113,8 @@ pub enum ProtocolBuilderError {
     )]
     MissingMessage(String, u32),
 
-    #[error("Missing protocol")]
-    MissingProtocol,
+    #[error("Missing protocol: {0}")]
+    MissingProtocol(String),
 
     #[error("Failed to hash transaction")]
     TaprootSighashError(#[from] TaprootError),
