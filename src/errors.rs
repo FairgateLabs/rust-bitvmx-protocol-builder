@@ -45,6 +45,9 @@ pub enum GraphError {
     #[error("Missing output type information for {0}")]
     MissingOutputTypeForInput(String),
 
+    #[error("Missing output {1} in transaction {0}")]
+    MissingOutput(String, usize),
+
     #[error("Missing input information in transaction {0} for input {1}")]
     MissingInputInfo(String, usize),
 

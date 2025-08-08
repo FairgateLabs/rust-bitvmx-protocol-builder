@@ -248,6 +248,7 @@ impl Protocol {
         key_manager: &Rc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
+        self.compute_minimum_output_values()?;
         self.update_transaction_ids()?;
         self.compute_sighashes(key_manager, id)?;
         Ok(self.clone())
@@ -268,6 +269,7 @@ impl Protocol {
         key_manager: &Rc<KeyManager>,
         id: &str,
     ) -> Result<Self, ProtocolBuilderError> {
+        self.compute_minimum_output_values()?;
         self.update_transaction_ids()?;
         self.compute_sighashes(key_manager, id)?;
         self.compute_signatures(key_manager, id)?;
@@ -582,6 +584,11 @@ impl Protocol {
             }
         }
 
+        Ok(())
+    }
+
+    fn compute_minimum_output_values(&mut self) -> Result<(), ProtocolBuilderError> {
+        self.graph.compute_minimum_output_values()?;
         Ok(())
     }
 

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, vec};
 
-use bitcoin::{secp256k1::Message, Transaction, TxOut, Txid};
+use bitcoin::{secp256k1::Message, Amount, Transaction, TxOut, Txid};
 use petgraph::{
     algo::toposort,
     graph::{EdgeIndex, NodeIndex},
@@ -16,6 +16,13 @@ use crate::{
         output::OutputType,
     },
 };
+
+macro_rules! max {
+    ($x:expr) => ($x);
+    ($x:expr, $($xs:expr),+) => (
+        std::cmp::max($x, max!($($xs),+))
+    )
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Node {
@@ -470,6 +477,140 @@ impl TransactionGraph {
             .collect();
 
         Ok(result)
+    }
+
+    /// Computes and sets the minimum required value for each output of each node
+    pub fn compute_minimum_output_values(&mut self) -> Result<(), GraphError> {
+        let order = toposort(&self.graph, None).map_err(|_| GraphError::GraphCycleDetected)?;
+        let mut amounts = HashMap::<String, Amount>::new();
+        let mut recover_outputs = HashMap::<String, NodeIndex>::new();
+
+        // Compute output values for all outputs in the graph
+        for node in order.iter().rev() {
+            // Compute values for all node outputs
+            let mut total_amount = 0;
+
+            let (transaction_name, outputs) = {
+                let weight = self
+                    .graph
+                    .node_weight(*node)
+                    .ok_or(GraphError::MissingTransaction("".to_string()))?;
+                (&weight.name, &weight.outputs)
+            };
+
+            for (index, output_type) in outputs.iter().enumerate() {
+                let key = format!("{}:{}", transaction_name, index);
+
+                // Save recover outputs to set the full parents value at the end
+                if output_type.recover_value() {
+                    recover_outputs.insert(key.clone(), *node);
+                }
+
+                let amount = amounts.entry(key).or_insert_with(|| {
+                    if output_type.auto_value() || output_type.recover_value() {
+                        output_type.dust_limit()
+                    } else {
+                        output_type.get_value()
+                    }
+                });
+
+                total_amount += amount.to_sat();
+            }
+
+            // compute values for outputs of the parent nodes, if any
+            let parent_connections = self.find_incoming_edges(*node);
+
+            if !parent_connections.is_empty() {
+                let parent_amount = total_amount / parent_connections.len() as u64;
+
+                for connection in parent_connections {
+                    let parent = self.get_from_node(connection)?;
+                    let output_index = self.get_connection(connection)?.output_index as usize;
+                    let output = parent.outputs[output_index].clone();
+
+                    let parent_key = format!("{}:{}", parent.name, output_index);
+
+                    let amount = if output.auto_value() {
+                        amounts
+                            .get(&parent_key)
+                            .map(|v| max!(v.to_sat(), parent_amount, output.dust_limit().to_sat()))
+                            .unwrap_or(parent_amount)
+                    } else {
+                        output.get_value().to_sat()
+                    };
+
+                    amounts.insert(parent_key, Amount::from_sat(amount));
+                }
+            }
+        }
+
+        // Update transactions with computed values
+        for (key, amount) in amounts {
+            let parts: Vec<&str> = key.split(':').collect();
+            let transaction_name = parts[0];
+            let output_index: usize = parts[1].parse().unwrap();
+
+            // Update OutputType value
+            self.update_output_value(transaction_name, output_index, amount)?;
+        }
+
+        // Set recover outputs to the sum of their parents values
+        for (key, node_index) in recover_outputs {
+            let parts: Vec<&str> = key.split(':').collect();
+            let recovering_transaction_name = parts[0];
+            let recovering_output_index: usize = parts[1].parse().unwrap();
+            let recovering_transaction = &self.get_node(recovering_transaction_name)?.transaction;
+
+            // Collect parents outputs amount before mutably borrowing self
+            let parent_connections = self.find_incoming_edges(node_index);
+            let total_parents_amount =
+                parent_connections
+                    .iter()
+                    .try_fold(0u64, |acc, &connection| {
+                        let parent = self.get_from_node(connection)?;
+                        let output_index = self.get_connection(connection)?.output_index as usize;
+                        Ok(acc + parent.outputs[output_index].get_value().to_sat())
+                    })?;
+
+            // Collect the transaction outputs amount, excluding the recovering output
+            let total_transaction_amount = recovering_transaction
+                .output
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != recovering_output_index)
+                .map(|(_, txout)| txout.value.to_sat())
+                .sum::<u64>();
+
+            let recover_amount = Amount::from_sat(total_parents_amount - total_transaction_amount);
+
+            // Update OutputType value
+            self.update_output_value(
+                recovering_transaction_name,
+                recovering_output_index,
+                recover_amount,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn update_output_value(
+        &mut self,
+        transaction_name: &str,
+        output_index: usize,
+        value: Amount,
+    ) -> Result<(), GraphError> {
+        let node = self.get_node_mut(transaction_name)?;
+        if output_index >= node.outputs.len() {
+            return Err(GraphError::MissingOutput(
+                transaction_name.to_string(),
+                output_index,
+            ));
+        }
+        node.outputs[output_index].set_value(value);
+        node.transaction.output[output_index].value = value;
+
+        Ok(())
     }
 
     pub fn visualize(&self, options: GraphOptions) -> Result<String, GraphError> {

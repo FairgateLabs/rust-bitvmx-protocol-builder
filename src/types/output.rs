@@ -20,6 +20,9 @@ use crate::{
 
 use super::input::SpendMode;
 
+pub const AUTO_AMOUNT: u64 = 1;
+pub const RECOVER_AMOUNT: u64 = 2;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageId {
     transaction: String,
@@ -193,6 +196,16 @@ impl OutputType {
         })
     }
 
+    pub fn dust_limit(&self) -> Amount {
+        match self {
+            OutputType::Taproot { .. } => Amount::from_sat(540),
+            OutputType::SegwitPublicKey { .. } => Amount::from_sat(540),
+            OutputType::SegwitScript { .. } => Amount::from_sat(540),
+            OutputType::SegwitUnspendable { .. } => Amount::from_sat(540),
+            OutputType::ExternalUnknown { .. } => Amount::from_sat(540),
+        }
+    }
+
     pub fn get_name(&self) -> &'static str {
         match self {
             OutputType::Taproot { .. } => "TaprootScript",
@@ -212,6 +225,36 @@ impl OutputType {
             OutputType::ExternalUnknown { .. } => Amount::from_sat(0), /*TODO: FIX  {
                                                                            panic!("Cannot get value of ExternalUnknown output type")
                                                                        }*/
+        }
+    }
+
+    pub fn set_value(&mut self, new_value: Amount) {
+        match self {
+            OutputType::Taproot { value, .. } => *value = new_value,
+            OutputType::SegwitPublicKey { value, .. } => *value = new_value,
+            OutputType::SegwitScript { value, .. } => *value = new_value,
+            OutputType::SegwitUnspendable { value, .. } => *value = new_value,
+            OutputType::ExternalUnknown { .. } => { /* No value field to set */ }
+        }
+    }
+
+    pub fn auto_value(&self) -> bool {
+        match self {
+            OutputType::Taproot { value, .. }
+            | OutputType::SegwitPublicKey { value, .. }
+            | OutputType::SegwitScript { value, .. }
+            | OutputType::SegwitUnspendable { value, .. } => value.to_sat() == AUTO_AMOUNT,
+            OutputType::ExternalUnknown { .. } => false,
+        }
+    }
+
+    pub fn recover_value(&self) -> bool {
+        match self {
+            OutputType::Taproot { value, .. }
+            | OutputType::SegwitPublicKey { value, .. }
+            | OutputType::SegwitScript { value, .. }
+            | OutputType::SegwitUnspendable { value, .. } => value.to_sat() == RECOVER_AMOUNT,
+            OutputType::ExternalUnknown { .. } => false,
         }
     }
 
