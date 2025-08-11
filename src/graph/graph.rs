@@ -486,65 +486,12 @@ impl TransactionGraph {
         let mut recover_outputs = HashMap::<String, NodeIndex>::new();
 
         // Compute output values for all outputs in the graph
-        for node_index in order.iter().rev() {
-            // Compute values for all node outputs
-            let transaction_amount =
-                self.compute_transaction_outputs(node_index, &mut amounts, &mut recover_outputs)?;
-
-            // let mut total_amount = 0;
-
-            // let (transaction_name, outputs) = {
-            //     let weight = self
-            //         .graph
-            //         .node_weight(*node_index)
-            //         .ok_or(GraphError::MissingTransaction("".to_string()))?;
-            //     (&weight.name, &weight.outputs)
-            // };
-
-            // for (index, output_type) in outputs.iter().enumerate() {
-            //     let key = format!("{}:{}", transaction_name, index);
-
-            //     // Save recover outputs to set the full parents value at the end
-            //     if output_type.recover_value() {
-            //         recover_outputs.insert(key.clone(), *node_index);
-            //     }
-
-            //     let amount = amounts.entry(key).or_insert_with(|| {
-            //         if output_type.auto_value() || output_type.recover_value() {
-            //             output_type.dust_limit()
-            //         } else {
-            //             output_type.get_value()
-            //         }
-            //     });
-
-            //     total_amount += amount.to_sat();
-            // }
+        for index in order.iter().rev() {
+            // Compute values for outputs in transaction
+            let child_amount = self.compute_tx_amount(index, &mut amounts, &mut recover_outputs)?;
 
             // compute values for outputs of the parent nodes, if any
-            let parent_connections = self.find_incoming_edges(*node_index);
-
-            if !parent_connections.is_empty() {
-                let parent_amount = transaction_amount / parent_connections.len() as u64;
-
-                for connection in parent_connections {
-                    let parent = self.get_from_node(connection)?;
-                    let output_index = self.get_connection(connection)?.output_index as usize;
-                    let output = parent.outputs[output_index].clone();
-
-                    let parent_key = format!("{}:{}", parent.name, output_index);
-
-                    let amount = if output.auto_value() {
-                        amounts
-                            .get(&parent_key)
-                            .map(|v| max!(v.to_sat(), parent_amount, output.dust_limit().to_sat()))
-                            .unwrap_or(parent_amount)
-                    } else {
-                        output.get_value().to_sat()
-                    };
-
-                    amounts.insert(parent_key, Amount::from_sat(amount));
-                }
-            }
+            self.compute_parent_amount(index, child_amount, &mut amounts)?;
         }
 
         // Update transactions with computed values
@@ -616,7 +563,7 @@ impl TransactionGraph {
         Ok(())
     }
 
-    fn compute_transaction_outputs(
+    fn compute_tx_amount(
         &self,
         node_index: &NodeIndex,
         amounts: &mut HashMap<String, Amount>,
@@ -627,7 +574,7 @@ impl TransactionGraph {
         let transaction_name = &node.name;
         let outputs = &node.outputs;
 
-        // If the transaction has no outputs, return 0
+        // Compute the total outputs amount.
         for (index, output_type) in outputs.iter().enumerate() {
             let key = format!("{}:{}", transaction_name, index);
 
@@ -649,6 +596,40 @@ impl TransactionGraph {
         }
 
         Ok(transaction_amount)
+    }
+
+    fn compute_parent_amount(
+        &self,
+        child_index: &NodeIndex,
+        child_amount: u64,
+        amounts: &mut HashMap<String, Amount>,
+    ) -> Result<(), GraphError> {
+        let parent_connections = self.find_incoming_edges(*child_index);
+
+        if !parent_connections.is_empty() {
+            let parent_amount = child_amount / parent_connections.len() as u64;
+
+            for connection in parent_connections {
+                let parent = self.get_from_node(connection)?;
+                let output_index = self.get_connection(connection)?.output_index as usize;
+                let output = parent.outputs[output_index].clone();
+
+                let parent_key = format!("{}:{}", parent.name, output_index);
+
+                let amount = if output.auto_value() {
+                    amounts
+                        .get(&parent_key)
+                        .map(|v| max!(v.to_sat(), parent_amount, output.dust_limit().to_sat()))
+                        .unwrap_or(parent_amount)
+                } else {
+                    output.get_value().to_sat()
+                };
+
+                amounts.insert(parent_key, Amount::from_sat(amount));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn visualize(&self, options: GraphOptions) -> Result<String, GraphError> {
