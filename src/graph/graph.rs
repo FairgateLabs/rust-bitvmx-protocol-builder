@@ -489,9 +489,9 @@ impl TransactionGraph {
         for index in order.iter().rev() {
             // Compute values for outputs in transaction
             let child_amount = self.compute_tx_amount(index, &mut amounts, &mut recover_outputs)?;
-
+            let fee = 560;
             // compute values for outputs of the parent nodes, if any
-            self.compute_parent_amount(index, child_amount, &mut amounts)?;
+            self.compute_parent_amount(index, child_amount + fee, &mut amounts)?;
         }
 
         // Update transactions with computed values
