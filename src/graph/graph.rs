@@ -486,42 +486,45 @@ impl TransactionGraph {
         let mut recover_outputs = HashMap::<String, NodeIndex>::new();
 
         // Compute output values for all outputs in the graph
-        for node in order.iter().rev() {
+        for node_index in order.iter().rev() {
             // Compute values for all node outputs
-            let mut total_amount = 0;
+            let transaction_amount =
+                self.compute_transaction_outputs(node_index, &mut amounts, &mut recover_outputs)?;
 
-            let (transaction_name, outputs) = {
-                let weight = self
-                    .graph
-                    .node_weight(*node)
-                    .ok_or(GraphError::MissingTransaction("".to_string()))?;
-                (&weight.name, &weight.outputs)
-            };
+            // let mut total_amount = 0;
 
-            for (index, output_type) in outputs.iter().enumerate() {
-                let key = format!("{}:{}", transaction_name, index);
+            // let (transaction_name, outputs) = {
+            //     let weight = self
+            //         .graph
+            //         .node_weight(*node_index)
+            //         .ok_or(GraphError::MissingTransaction("".to_string()))?;
+            //     (&weight.name, &weight.outputs)
+            // };
 
-                // Save recover outputs to set the full parents value at the end
-                if output_type.recover_value() {
-                    recover_outputs.insert(key.clone(), *node);
-                }
+            // for (index, output_type) in outputs.iter().enumerate() {
+            //     let key = format!("{}:{}", transaction_name, index);
 
-                let amount = amounts.entry(key).or_insert_with(|| {
-                    if output_type.auto_value() || output_type.recover_value() {
-                        output_type.dust_limit()
-                    } else {
-                        output_type.get_value()
-                    }
-                });
+            //     // Save recover outputs to set the full parents value at the end
+            //     if output_type.recover_value() {
+            //         recover_outputs.insert(key.clone(), *node_index);
+            //     }
 
-                total_amount += amount.to_sat();
-            }
+            //     let amount = amounts.entry(key).or_insert_with(|| {
+            //         if output_type.auto_value() || output_type.recover_value() {
+            //             output_type.dust_limit()
+            //         } else {
+            //             output_type.get_value()
+            //         }
+            //     });
+
+            //     total_amount += amount.to_sat();
+            // }
 
             // compute values for outputs of the parent nodes, if any
-            let parent_connections = self.find_incoming_edges(*node);
+            let parent_connections = self.find_incoming_edges(*node_index);
 
             if !parent_connections.is_empty() {
-                let parent_amount = total_amount / parent_connections.len() as u64;
+                let parent_amount = transaction_amount / parent_connections.len() as u64;
 
                 for connection in parent_connections {
                     let parent = self.get_from_node(connection)?;
@@ -613,6 +616,41 @@ impl TransactionGraph {
         Ok(())
     }
 
+    fn compute_transaction_outputs(
+        &self,
+        node_index: &NodeIndex,
+        amounts: &mut HashMap<String, Amount>,
+        recover_outputs: &mut HashMap<String, NodeIndex>,
+    ) -> Result<u64, GraphError> {
+        let mut transaction_amount = 0;
+        let node = self.get_node_by_index(*node_index)?;
+        let transaction_name = &node.name;
+        let outputs = &node.outputs;
+
+        // If the transaction has no outputs, return 0
+        for (index, output_type) in outputs.iter().enumerate() {
+            let key = format!("{}:{}", transaction_name, index);
+
+            // Save recover outputs to set the full parents value at the end
+            if output_type.recover_value() {
+                recover_outputs.insert(key.clone(), *node_index);
+            }
+
+            // If the output is auto or recover value, set the dust limit, otherwise use the output value
+            let amount = amounts.entry(key).or_insert_with(|| {
+                if output_type.auto_value() || output_type.recover_value() {
+                    output_type.dust_limit()
+                } else {
+                    output_type.get_value()
+                }
+            });
+
+            transaction_amount += amount.to_sat();
+        }
+
+        Ok(transaction_amount)
+    }
+
     pub fn visualize(&self, options: GraphOptions) -> Result<String, GraphError> {
         let mut result = "digraph {\ngraph [rankdir=LR]\nnode [shape=record]\n".to_owned();
 
@@ -699,6 +737,12 @@ impl TransactionGraph {
             .node_weight(node_index)
             .ok_or(GraphError::MissingTransaction(name.to_string()))?;
         Ok(node)
+    }
+
+    fn get_node_by_index(&self, node_index: NodeIndex) -> Result<&Node, GraphError> {
+        self.graph
+            .node_weight(node_index)
+            .ok_or(GraphError::MissingTransaction("".to_string()))
     }
 
     fn get_node_index(&self, name: &str) -> Result<petgraph::graph::NodeIndex, GraphError> {

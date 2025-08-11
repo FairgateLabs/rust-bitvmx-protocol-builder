@@ -640,7 +640,7 @@ impl OutputType {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn taproot_signature(
+    pub fn taproot_signature(
         &self,
         transaction_name: &str,
         input_index: usize,

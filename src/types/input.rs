@@ -144,6 +144,15 @@ impl SighashType {
     }
 }
 
+impl Display for SighashType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SighashType::Taproot(tap_sighash) => write!(f, "Taproot({:?})", tap_sighash),
+            SighashType::Ecdsa(ecdsa_sighash) => write!(f, "Ecdsa({:?})", ecdsa_sighash),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum InputArgs {
     TaprootKey { args: Vec<Vec<u8>> },
