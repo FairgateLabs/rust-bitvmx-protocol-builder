@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::GraphError,
+    graph::estimate::estimate_min_relay_fee,
     types::{
         input::{InputSignatures, InputType, SighashType, Signature, SpendMode},
         output::OutputType,
@@ -531,7 +532,18 @@ impl TransactionGraph {
                 .map(|(_, txout)| txout.value.to_sat())
                 .sum::<u64>();
 
-            let recover_amount = Amount::from_sat(total_parents_amount - total_transaction_amount);
+            let node = self.get_node_by_index(node_index)?;
+            let minimum_relay_fee = estimate_min_relay_fee(
+                recovering_transaction,
+                recovering_transaction_name,
+                &node.inputs,
+                1,
+                10,
+            )?;
+
+            let recover_amount = Amount::from_sat(
+                total_parents_amount - total_transaction_amount - minimum_relay_fee,
+            );
 
             // Update OutputType value
             self.update_output_value(
@@ -595,7 +607,9 @@ impl TransactionGraph {
             transaction_amount += amount.to_sat();
         }
 
-        Ok(transaction_amount)
+        let min_relay_fee =
+            estimate_min_relay_fee(&node.transaction, &node.name, &node.inputs, 1, 10)?;
+        Ok(transaction_amount + min_relay_fee)
     }
 
     fn compute_parent_amount(

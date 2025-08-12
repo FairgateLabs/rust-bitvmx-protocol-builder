@@ -81,11 +81,39 @@ impl Display for SignMode {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StackItem {
+    /// Schnorr signature (64 bytes +1 if non-default sighash).
+    SchnorrSig { non_default_sighash: bool },
+    /// DER-encoded ECDSA signature (use 73B worst case) +1 if non-default sighash.
+    EcdsaSig { non_default_sighash: bool },
+    /// Winternitz signature (size depends on the key type).
+    WinternitzSig { size: usize },
+    /// Raw item of a known length (e.g., pubkeys, data pushes).
+    Raw { size: usize },
+}
+
+impl StackItem {
+    pub fn size(&self) -> usize {
+        match self {
+            StackItem::SchnorrSig {
+                non_default_sighash,
+            } => 64 + usize::from(*non_default_sighash),
+            StackItem::EcdsaSig {
+                non_default_sighash,
+            } => 73 + usize::from(*non_default_sighash),
+            StackItem::WinternitzSig { size } => *size,
+            StackItem::Raw { size } => *size,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: Option<PublicKey>,
     sign_mode: SignMode,
+    items: Vec<StackItem>,
 }
 
 impl ProtocolScript {
@@ -95,6 +123,7 @@ impl ProtocolScript {
             keys: HashMap::new(),
             verifying_key: Some(*verifying_key),
             sign_mode,
+            items: Vec::new(),
         }
     }
 
@@ -104,6 +133,7 @@ impl ProtocolScript {
             keys: HashMap::new(),
             verifying_key: None,
             sign_mode: SignMode::Skip,
+            items: Vec::new(),
         }
     }
 
@@ -123,19 +153,6 @@ impl ProtocolScript {
         Ok(())
     }
 
-    pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
-        let original_script = self.script.clone();
-        self.script = script!(
-            { leaf_id }
-            OP_EQUALVERIFY
-            { original_script }
-        );
-    }
-
-    pub fn get_script(&self) -> &ScriptBuf {
-        &self.script
-    }
-
     pub fn get_key(&self, name: &str) -> Option<ScriptKey> {
         self.keys.get(name).cloned()
     }
@@ -153,6 +170,18 @@ impl ProtocolScript {
         self.verifying_key
     }
 
+    pub fn get_script(&self) -> &ScriptBuf {
+        &self.script
+    }
+
+    pub fn add_stack_item(&mut self, item: StackItem) {
+        self.items.push(item);
+    }
+
+    pub fn stack_items(&self) -> Vec<StackItem> {
+        self.items.clone()
+    }
+
     pub fn skip_signing(&self) -> bool {
         self.sign_mode == SignMode::Skip
     }
@@ -163,6 +192,15 @@ impl ProtocolScript {
 
     pub fn aggregate_signing(&self) -> bool {
         self.sign_mode == SignMode::Aggregate
+    }
+
+    pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
+        let original_script = self.script.clone();
+        self.script = script!(
+            { leaf_id }
+            OP_EQUALVERIFY
+            { original_script }
+        );
     }
 }
 

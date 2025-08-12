@@ -343,4 +343,8 @@ impl InputType {
             .get(index)
             .ok_or(GraphError::MissingSignature)
     }
+
+    pub fn annex_len(&self) -> usize {
+        0 // Placeholder for future use, currently no annex length is calculated.
+    }
 }
