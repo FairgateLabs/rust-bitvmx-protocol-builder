@@ -3,7 +3,6 @@ use std::cmp;
 use bitcoin::consensus::Encodable;
 use bitcoin::taproot::LeafVersion;
 use bitcoin::{Transaction, Witness};
-use tracing::info;
 
 use crate::errors::GraphError;
 use crate::types::input::InputType;
