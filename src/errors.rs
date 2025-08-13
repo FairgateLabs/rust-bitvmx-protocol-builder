@@ -86,6 +86,9 @@ pub enum ScriptError {
 
     #[error("Script name cannot be empty")]
     EmptyScriptName,
+
+    #[error("Invalid key type. Expected {0}, got {1}")]
+    InvalidKeyType(String, String),
 }
 
 #[derive(Error, Debug)]

@@ -196,6 +196,7 @@ impl OutputType {
         })
     }
 
+    // TODO: for a more precise estimation we can set different dust limits for different output types
     pub fn dust_limit(&self) -> Amount {
         match self {
             OutputType::Taproot { .. } => Amount::from_sat(540),
