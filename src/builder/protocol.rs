@@ -274,85 +274,127 @@ impl Protocol {
         Ok(self.clone())
     }
 
-    pub fn sign_input(
+    pub fn sign_ecdsa_input(
         &mut self,
         transaction_name: &str,
         input_index: usize,
-        leaf: Option<usize>,
         key_manager: &KeyManager,
-        id: &str,
-    ) -> Result<(), ProtocolBuilderError> {
+    ) -> Result<bitcoin::ecdsa::Signature, ProtocolBuilderError> {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
         let output_type = input.output_type().unwrap();
+        let transaction = self.transaction_by_name(transaction_name)?;
 
-        let (signature, signature_index) = match input.sighash_type() {
-            SighashType::Taproot(tap_sighash_type) => {
-                let leaves = match output_type {
-                    OutputType::Taproot { leaves, .. } => leaves,
-                    _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
-                };
-
-                let (leaf, leaf_index) =
-                    match leaf {
-                        Some(leaf_index) => (
-                            leaves.get(leaf_index).ok_or(
-                                ProtocolBuilderError::MissingTaprootLeaf(leaf_index, input_index),
-                            )?,
-                            leaf_index,
-                        ),
-                        None => {
-                            return Err(ProtocolBuilderError::InvalidLeaf(input_index));
-                        }
-                    };
-
-                (
-                    output_type.taproot_script_only_signature(
-                        transaction_name,
-                        input_index,
-                        &input.hashed_messages(),
-                        tap_sighash_type,
-                        leaf,
-                        leaf_index,
-                        key_manager,
-                        id,
-                    )?,
-                    leaf_index,
-                )
+        let ecdsa_sighash_type = match input.sighash_type() {
+            SighashType::Ecdsa(ecdsa_sighash_type) => ecdsa_sighash_type,
+            _ => {
+                return Err(ProtocolBuilderError::InvalidSighashType(
+                    transaction_name.to_string(),
+                    input_index,
+                    "SighashType::Ecdsa".to_string(),
+                    input.sighash_type().to_string(),
+                ))
             }
-
-            SighashType::Ecdsa(ecdsa_sighash_type) => match output_type {
-                OutputType::SegwitPublicKey { public_key, .. } => (
-                    output_type.ecdsa_key_signature(
-                        &input.hashed_messages(),
-                        ecdsa_sighash_type,
-                        key_manager,
-                        public_key,
-                    )?[0]
-                        .clone(),
-                    0,
-                ),
-                OutputType::SegwitScript { script, .. } => (
-                    output_type.ecdsa_script_signature(
-                        &input.hashed_messages(),
-                        ecdsa_sighash_type,
-                        key_manager,
-                        script,
-                    )?[0]
-                        .clone(),
-                    0,
-                ),
-                _ => return Err(ProtocolBuilderError::InvalidOutputTypeForSighashType),
-            },
         };
+
+        let hashed_messages = output_type.compute_ecdsa_sighash(
+            transaction,
+            transaction_name,
+            input_index,
+            &SpendMode::Segwit,
+            ecdsa_sighash_type,
+        )?;
+
+        let signature = output_type.compute_ecdsa_signature(
+            transaction_name,
+            input_index,
+            hashed_messages.as_slice(),
+            &SpendMode::Segwit,
+            ecdsa_sighash_type,
+            key_manager,
+        )?[0]
+            .clone();
+
+        let signature_index = 0;
 
         self.graph.update_input_signature(
             transaction_name,
             input_index as u32,
-            signature,
+            signature.clone(),
             signature_index,
         )?;
 
-        Ok(())
+        match signature {
+            Some(Signature::Ecdsa(ecdsa_signature)) => Ok(ecdsa_signature),
+            _ => Err(ProtocolBuilderError::MissingSignature),
+        }
+    }
+
+    pub fn sign_taproot_input(
+        &mut self,
+        transaction_name: &str,
+        input_index: usize,
+        spend_mode: &SpendMode,
+        key_manager: &KeyManager,
+        id: &str,
+    ) -> Result<Vec<Option<bitcoin::taproot::Signature>>, ProtocolBuilderError> {
+        let input = &self.graph.get_inputs(transaction_name)?[input_index];
+        let output_type = input.output_type().unwrap();
+        let transaction = self.transaction_by_name(transaction_name)?;
+
+        let tap_sighash_type = match input.sighash_type() {
+            SighashType::Taproot(tap_sighash_type) => tap_sighash_type,
+            _ => {
+                return Err(ProtocolBuilderError::InvalidSighashType(
+                    transaction_name.to_string(),
+                    input_index,
+                    "SighashType::Taproot".to_string(),
+                    input.sighash_type().to_string(),
+                ))
+            }
+        };
+
+        let prevouts = self.graph.get_prevouts(transaction_name)?;
+        let hashed_messages = output_type.compute_taproot_sighash(
+            transaction,
+            transaction_name,
+            input_index,
+            &prevouts,
+            spend_mode,
+            tap_sighash_type,
+            key_manager,
+            id,
+        )?;
+
+        let signatures = output_type.compute_taproot_signature(
+            transaction_name,
+            input_index,
+            hashed_messages.as_slice(),
+            spend_mode,
+            tap_sighash_type,
+            key_manager,
+            id,
+        )?;
+
+        self.graph.update_input_signatures(
+            transaction_name,
+            input_index as u32,
+            signatures.clone(),
+        )?;
+
+        let taproot_signatures = signatures
+            .into_iter()
+            .map(|signature| {
+                signature.map(|s| {
+                    if let Signature::Taproot(taproot_signature) = s {
+                        taproot_signature
+                    } else {
+                        panic!("Expected Taproot signature")
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(taproot_signatures)
     }
 
     pub fn update_input_signatures(
@@ -582,6 +624,11 @@ impl Protocol {
             }
         }
 
+        Ok(())
+    }
+
+    pub fn compute_minimum_output_values(&mut self) -> Result<(), ProtocolBuilderError> {
+        self.graph.compute_minimum_output_values()?;
         Ok(())
     }
 

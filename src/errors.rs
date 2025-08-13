@@ -45,6 +45,12 @@ pub enum GraphError {
     #[error("Missing output type information for {0}")]
     MissingOutputTypeForInput(String),
 
+    #[error("Missing output {1} in transaction {0}")]
+    MissingOutput(String, usize),
+
+    #[error("Invalid taproot information for input {1} in transaction {0}")]
+    InvalidTaprootInfo(String, usize),
+
     #[error("Missing input information in transaction {0} for input {1}")]
     MissingInputInfo(String, usize),
 
@@ -80,6 +86,9 @@ pub enum ScriptError {
 
     #[error("Script name cannot be empty")]
     EmptyScriptName,
+
+    #[error("Invalid key type. Expected {0}, got {1}")]
+    InvalidKeyType(String, String),
 }
 
 #[derive(Error, Debug)]

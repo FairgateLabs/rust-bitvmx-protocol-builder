@@ -144,6 +144,15 @@ impl SighashType {
     }
 }
 
+impl Display for SighashType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SighashType::Taproot(tap_sighash) => write!(f, "Taproot({:?})", tap_sighash),
+            SighashType::Ecdsa(ecdsa_sighash) => write!(f, "Ecdsa({:?})", ecdsa_sighash),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum InputArgs {
     TaprootKey { args: Vec<Vec<u8>> },
@@ -227,6 +236,14 @@ impl InputArgs {
             Self::TaprootKey { args } => args.iter(),
             Self::TaprootScript { args, .. } => args.iter(),
             Self::Segwit { args } => args.iter(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::TaprootKey { args } => args.len(),
+            Self::TaprootScript { args, .. } => args.len(),
+            Self::Segwit { args } => args.len(),
         }
     }
 }
@@ -333,5 +350,9 @@ impl InputType {
         self.signatures
             .get(index)
             .ok_or(GraphError::MissingSignature)
+    }
+
+    pub fn annex_len(&self) -> usize {
+        0 // Placeholder for future use, currently no annex length is calculated.
     }
 }

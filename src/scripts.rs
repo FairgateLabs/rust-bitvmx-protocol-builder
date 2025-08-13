@@ -17,11 +17,49 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
 
+const SCHNORR_SIG_SIZE: usize = 64;
+const ECDSA_SIG_SIZE: usize = 73;
+const WINTERNITZ_SIG_OVERHEAD_FACTOR: usize = 25;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
     EcdsaKey,
     XOnlyKey,
-    WinternitzKey(WinternitzType),
+    WinternitzKey {
+        key_type: WinternitzType,
+        message_size: usize,
+    },
+}
+
+impl KeyType {
+    pub fn ecdsa() -> Self {
+        KeyType::EcdsaKey
+    }
+
+    pub fn x_only() -> Self {
+        KeyType::XOnlyKey
+    }
+
+    pub fn winternitz(key: &WinternitzPublicKey) -> Result<Self, ScriptError> {
+        Ok(KeyType::WinternitzKey {
+            key_type: key.key_type(),
+            message_size: key.message_size()?,
+        })
+    }
+
+    pub fn winternitz_message_size(&self) -> Result<usize, ScriptError> {
+        match self {
+            KeyType::WinternitzKey { message_size, .. } => Ok(*message_size),
+            KeyType::EcdsaKey => Err(ScriptError::InvalidKeyType(
+                "Winternitz".to_string(),
+                "EcdsaKey".to_string(),
+            )),
+            KeyType::XOnlyKey => Err(ScriptError::InvalidKeyType(
+                "Winternitz".to_string(),
+                "XOnlyKey".to_string(),
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -81,11 +119,63 @@ impl Display for SignMode {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StackItem {
+    /// Schnorr signature (64 bytes +1 if non-default sighash).
+    SchnorrSig { non_default_sighash: bool },
+    /// DER-encoded ECDSA signature (use 73B worst case) +1 if non-default sighash.
+    EcdsaSig { non_default_sighash: bool },
+    /// Winternitz signature (size depends on the key type).
+    WinternitzSig { size: usize },
+    /// Raw item of a known length (e.g., pubkeys, data pushes).
+    Raw { size: usize },
+}
+
+impl StackItem {
+    pub fn new_schnorr_sig(non_default_sighash: bool) -> Self {
+        StackItem::SchnorrSig {
+            non_default_sighash,
+        }
+    }
+
+    pub fn new_ecdsa_sig(non_default_sighash: bool) -> Self {
+        StackItem::EcdsaSig {
+            non_default_sighash,
+        }
+    }
+
+    pub fn new_winternitz_sig(winternitz_pubkey: &WinternitzPublicKey) -> Self {
+        let extra_data = winternitz_pubkey.extra_data().unwrap();
+        let size = (extra_data.message_size() + extra_data.checksum_size())
+            * WINTERNITZ_SIG_OVERHEAD_FACTOR;
+
+        StackItem::WinternitzSig { size }
+    }
+
+    pub fn new_raw(size: usize) -> Self {
+        StackItem::Raw { size }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            StackItem::SchnorrSig {
+                non_default_sighash,
+            } => SCHNORR_SIG_SIZE + usize::from(*non_default_sighash),
+            StackItem::EcdsaSig {
+                non_default_sighash,
+            } => ECDSA_SIG_SIZE + usize::from(*non_default_sighash),
+            StackItem::WinternitzSig { size } => *size,
+            StackItem::Raw { size } => *size,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProtocolScript {
     script: ScriptBuf,
     keys: HashMap<String, ScriptKey>,
     verifying_key: Option<PublicKey>,
     sign_mode: SignMode,
+    items: Vec<StackItem>,
 }
 
 impl ProtocolScript {
@@ -95,6 +185,7 @@ impl ProtocolScript {
             keys: HashMap::new(),
             verifying_key: Some(*verifying_key),
             sign_mode,
+            items: Vec::new(),
         }
     }
 
@@ -104,6 +195,7 @@ impl ProtocolScript {
             keys: HashMap::new(),
             verifying_key: None,
             sign_mode: SignMode::Skip,
+            items: Vec::new(),
         }
     }
 
@@ -123,19 +215,6 @@ impl ProtocolScript {
         Ok(())
     }
 
-    pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
-        let original_script = self.script.clone();
-        self.script = script!(
-            { leaf_id }
-            OP_EQUALVERIFY
-            { original_script }
-        );
-    }
-
-    pub fn get_script(&self) -> &ScriptBuf {
-        &self.script
-    }
-
     pub fn get_key(&self, name: &str) -> Option<ScriptKey> {
         self.keys.get(name).cloned()
     }
@@ -153,6 +232,18 @@ impl ProtocolScript {
         self.verifying_key
     }
 
+    pub fn get_script(&self) -> &ScriptBuf {
+        &self.script
+    }
+
+    pub fn add_stack_item(&mut self, item: StackItem) {
+        self.items.push(item);
+    }
+
+    pub fn stack_items(&self) -> Vec<StackItem> {
+        self.items.clone()
+    }
+
     pub fn skip_signing(&self) -> bool {
         self.sign_mode == SignMode::Skip
     }
@@ -163,6 +254,15 @@ impl ProtocolScript {
 
     pub fn aggregate_signing(&self) -> bool {
         self.sign_mode == SignMode::Aggregate
+    }
+
+    pub fn set_assert_leaf_id(&mut self, leaf_id: u32) {
+        let original_script = self.script.clone();
+        self.script = script!(
+            { leaf_id }
+            OP_EQUALVERIFY
+            { original_script }
+        );
     }
 }
 
@@ -212,7 +312,7 @@ pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
         protocol_script.add_key(
             name.as_ref(),
             key.derivation_index()?,
-            KeyType::WinternitzKey(key.key_type()),
+            KeyType::winternitz(key)?,
             i as u32,
         )?;
     }
@@ -236,7 +336,7 @@ pub fn verify_winternitz_signature(
     protocol_script.add_key(
         "value",
         public_key.derivation_index()?,
-        KeyType::WinternitzKey(public_key.key_type()),
+        KeyType::winternitz(public_key)?,
         0,
     )?;
 
@@ -305,19 +405,19 @@ pub fn kickoff(
     protocol_script.add_key(
         "input",
         input_key.derivation_index()?,
-        KeyType::WinternitzKey(input_key.key_type()),
+        KeyType::winternitz(input_key)?,
         0,
     )?;
     protocol_script.add_key(
         "ending_state",
         ending_state_key.derivation_index()?,
-        KeyType::WinternitzKey(ending_state_key.key_type()),
+        KeyType::winternitz(ending_state_key)?,
         1,
     )?;
     protocol_script.add_key(
         "ending_step_number",
         ending_step_number_key.derivation_index()?,
-        KeyType::WinternitzKey(ending_step_number_key.key_type()),
+        KeyType::winternitz(ending_step_number_key)?,
         2,
     )?;
     Ok(protocol_script)
@@ -345,7 +445,7 @@ pub fn initial_stages(
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
             key.derivation_index()?,
-            KeyType::WinternitzKey(key.key_type()),
+            KeyType::winternitz(key)?,
             index as u32,
         )?;
     }
@@ -353,7 +453,7 @@ pub fn initial_stages(
     protocol_script.add_key(
         format!("selection_{}", stage).as_str(),
         selection_key.derivation_index()?,
-        KeyType::WinternitzKey(selection_key.key_type()),
+        KeyType::winternitz(selection_key)?,
         interval_keys.len() as u32,
     )?;
     Ok(protocol_script)
@@ -383,7 +483,7 @@ pub fn stage_from_3_and_upward(
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
             key.derivation_index()?,
-            KeyType::WinternitzKey(key.key_type()),
+            KeyType::winternitz(key)?,
             index as u32,
         )?;
     }
@@ -391,13 +491,13 @@ pub fn stage_from_3_and_upward(
     protocol_script.add_key(
         format!("selection_{}", stage).as_str(),
         key_previous_selection_bob.derivation_index()?,
-        KeyType::WinternitzKey(key_previous_selection_bob.key_type()),
+        KeyType::winternitz(key_previous_selection_bob)?,
         interval_keys.len() as u32,
     )?;
     protocol_script.add_key(
         format!("selection_{}", stage).as_str(),
         key_previous_selection_alice.derivation_index()?,
-        KeyType::WinternitzKey(key_previous_selection_alice.key_type()),
+        KeyType::winternitz(key_previous_selection_alice)?,
         interval_keys.len() as u32,
     )?;
 
@@ -420,7 +520,7 @@ pub fn linked_message_challenge(
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
-        KeyType::WinternitzKey(xc_key.key_type()),
+        KeyType::winternitz(xc_key)?,
         0,
     )?;
 
@@ -447,19 +547,19 @@ pub fn linked_message_response(
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
-        KeyType::WinternitzKey(xc_key.key_type()),
+        KeyType::winternitz(xc_key)?,
         0,
     )?;
     protocol_script.add_key(
         "xp",
         xp_key.derivation_index()?,
-        KeyType::WinternitzKey(xp_key.key_type()),
+        KeyType::winternitz(xp_key)?,
         1,
     )?;
     protocol_script.add_key(
         "yp",
         yp_key.derivation_index()?,
-        KeyType::WinternitzKey(yp_key.key_type()),
+        KeyType::winternitz(yp_key)?,
         2,
     )?;
 
@@ -654,76 +754,6 @@ pub fn operator_hashed_slot_preimage(
     ProtocolScript::new(script, &public_key, SignMode::Single)
 }
 
-pub fn start_dispute_core(
-    dispute_pubkey: PublicKey,
-    pegout_id_pubkey: &WinternitzPublicKey,
-    value_0_pubkey: &WinternitzPublicKey,
-    value_1_pubkey: &WinternitzPublicKey,
-) -> Result<ProtocolScript, ScriptError> {
-    let script = script!(
-        { XOnlyPublicKey::from(dispute_pubkey).serialize().to_vec() }
-        OP_CHECKSIGVERIFY
-
-        { ots_checksig(pegout_id_pubkey, false)? }
-        { ots_checksig(value_1_pubkey, true)? }
-        // TODO compare the message with BIT1 (1)
-        OP_IF
-            OP_PUSHNUM_1
-        OP_ELSE
-            { ots_checksig(value_0_pubkey, true)? }
-            // TODO compare the message with BIT0 0)
-        OP_ENDIF
-    );
-
-    let mut protocol_script = ProtocolScript::new(script, &dispute_pubkey, SignMode::Aggregate);
-    protocol_script.add_key(
-        "pegout_id",
-        pegout_id_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(pegout_id_pubkey.key_type()),
-        0,
-    )?;
-
-    protocol_script.add_key(
-        "value_1",
-        value_1_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(value_1_pubkey.key_type()),
-        1,
-    )?;
-
-    protocol_script.add_key(
-        "value_0",
-        value_0_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(value_0_pubkey.key_type()),
-        2,
-    )?;
-
-    Ok(protocol_script)
-}
-
-pub fn verify_value(
-    take_pubkey: PublicKey,
-    value_pubkey: &WinternitzPublicKey,
-    _value: Vec<u8>,
-) -> Result<ProtocolScript, ScriptError> {
-    let script = script!(
-        { XOnlyPublicKey::from(take_pubkey).serialize().to_vec() }
-        OP_CHECKSIGVERIFY
-
-        { ots_checksig(value_pubkey, true)? }
-        // TODO compare the message with value
-    );
-
-    let mut protocol_script = ProtocolScript::new(script, &take_pubkey, SignMode::Aggregate);
-    protocol_script.add_key(
-        "value",
-        value_pubkey.derivation_index()?,
-        KeyType::WinternitzKey(value_pubkey.key_type()),
-        0,
-    )?;
-
-    Ok(protocol_script)
-}
-
 pub fn verify_signature(
     public_key: &PublicKey,
     sign_mode: SignMode,
@@ -859,7 +889,10 @@ mod tests {
         let winternitz_key = ScriptKey::new(
             "winternitz_key",
             1,
-            KeyType::WinternitzKey(WinternitzType::HASH160),
+            KeyType::WinternitzKey {
+                key_type: WinternitzType::HASH160,
+                message_size: 10,
+            },
             0,
         );
 
@@ -867,7 +900,10 @@ mod tests {
         assert_eq!(ecdsa_key.key_type(), KeyType::EcdsaKey);
         assert_eq!(
             winternitz_key.key_type(),
-            KeyType::WinternitzKey(WinternitzType::HASH160)
+            KeyType::WinternitzKey {
+                key_type: WinternitzType::HASH160,
+                message_size: 10,
+            },
         );
         assert_ne!(winternitz_key.key_type(), ecdsa_key.key_type());
     }
