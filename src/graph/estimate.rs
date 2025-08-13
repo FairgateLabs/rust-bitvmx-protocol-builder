@@ -142,10 +142,5 @@ pub fn estimate_min_relay_fee(
     let vbytes = vbytes_from_parts(stripped, total_witness);
     let estimation = feerate_sat_per_vb * vbytes * (100 + safety_margin_percent) / 100;
 
-    info!(
-        "Estimated min relay fee for {}: {} vbytes, {} sats",
-        transaction_name, vbytes, estimation
-    );
-
     Ok(estimation)
 }
