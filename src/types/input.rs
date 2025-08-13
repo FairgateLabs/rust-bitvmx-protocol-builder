@@ -204,7 +204,6 @@ impl InputArgs {
     ) -> Result<&mut Self, ProtocolBuilderError> {
         match self {
             Self::Segwit { .. } => self.push_slice(&ecdsa_signature.serialize()),
-            Self::TaprootScript { .. } => self.push_slice(&ecdsa_signature.serialize()),
             _ => return Err(ProtocolBuilderError::InvalidSignatureType),
         };
 
@@ -237,6 +236,14 @@ impl InputArgs {
             Self::TaprootKey { args } => args.iter(),
             Self::TaprootScript { args, .. } => args.iter(),
             Self::Segwit { args } => args.iter(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::TaprootKey { args } => args.len(),
+            Self::TaprootScript { args, .. } => args.len(),
+            Self::Segwit { args } => args.len(),
         }
     }
 }

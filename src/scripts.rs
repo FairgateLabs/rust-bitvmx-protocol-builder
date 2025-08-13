@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
 
+const SCHNORR_SIG_SIZE: usize = 64;
+const ECDSA_SIG_SIZE: usize = 73;
+const WINTERNITZ_SIG_OVERHEAD_FACTOR: usize = 25;
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
     EcdsaKey,
@@ -93,14 +97,38 @@ pub enum StackItem {
 }
 
 impl StackItem {
+    pub fn new_schnorr_sig(non_default_sighash: bool) -> Self {
+        StackItem::SchnorrSig {
+            non_default_sighash,
+        }
+    }
+
+    pub fn new_ecdsa_sig(non_default_sighash: bool) -> Self {
+        StackItem::EcdsaSig {
+            non_default_sighash,
+        }
+    }
+
+    pub fn new_winternitz_sig(winternitz_pubkey: &WinternitzPublicKey) -> Self {
+        let extra_data = winternitz_pubkey.extra_data().unwrap();
+        let size = (extra_data.message_size() + extra_data.checksum_size())
+            * WINTERNITZ_SIG_OVERHEAD_FACTOR;
+
+        StackItem::WinternitzSig { size }
+    }
+
+    pub fn new_raw(size: usize) -> Self {
+        StackItem::Raw { size }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             StackItem::SchnorrSig {
                 non_default_sighash,
-            } => 64 + usize::from(*non_default_sighash),
+            } => SCHNORR_SIG_SIZE + usize::from(*non_default_sighash),
             StackItem::EcdsaSig {
                 non_default_sighash,
-            } => 73 + usize::from(*non_default_sighash),
+            } => ECDSA_SIG_SIZE + usize::from(*non_default_sighash),
             StackItem::WinternitzSig { size } => *size,
             StackItem::Raw { size } => *size,
         }
