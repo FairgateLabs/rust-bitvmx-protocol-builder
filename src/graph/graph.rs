@@ -654,6 +654,21 @@ impl TransactionGraph {
             //Converts the tx in a box to show the inputs and outputs and values
             let inputs = from.transaction.input.len();
             let outputs = from.transaction.output.len();
+
+            let sum_in = from
+                .inputs
+                .iter()
+                .map(|i| i.output_type().unwrap().get_value().to_sat())
+                .sum::<u64>();
+            let sum_out = from
+                .transaction
+                .output
+                .iter()
+                .map(|o| o.value.to_sat())
+                .sum::<u64>();
+
+            let fee = sum_in.saturating_sub(sum_out);
+
             let total = inputs.max(outputs);
             let mut inout = String::new();
             for i in 0..total {
@@ -679,8 +694,8 @@ impl TransactionGraph {
             }
 
             result.push_str(&format!(
-                "{} [label=\"{{ {} }} | {}  \"] \n",
-                from.name, from.name, inout,
+                "{} [label=\"{{ {} [{}] }} | {}  \"] \n",
+                from.name, from.name, fee, inout,
             ));
 
             for edge in self.graph.edges(node_index) {
