@@ -537,7 +537,7 @@ impl TransactionGraph {
                 recovering_transaction_name,
                 &node.inputs,
                 1,
-                10,
+                5,
             )?;
 
             let recover_amount = Amount::from_sat(
