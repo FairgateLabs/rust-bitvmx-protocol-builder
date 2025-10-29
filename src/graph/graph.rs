@@ -569,6 +569,7 @@ impl TransactionGraph {
             ));
         }
         node.outputs[output_index].set_value(value);
+        // TODO: Update outputs referenced by inputs.
         node.transaction.output[output_index].value = value;
 
         Ok(())
