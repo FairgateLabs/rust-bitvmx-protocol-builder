@@ -368,6 +368,9 @@ pub fn verify_winternitz_signature_timelock(
         0,
     )?;
 
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(&public_key));
+
     Ok(protocol_script)
 }
 
