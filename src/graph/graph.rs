@@ -655,11 +655,9 @@ impl TransactionGraph {
             let inputs = from.transaction.input.len();
             let outputs = from.transaction.output.len();
 
-            let sum_in = from
-                .inputs
-                .iter()
-                .map(|i| i.output_type().unwrap().get_value().to_sat())
-                .sum::<u64>();
+            let prevouts = self.get_prevouts(from.name.as_str())?;
+
+            let sum_in = prevouts.iter().map(|o| o.value.to_sat()).sum::<u64>();
             let sum_out = from
                 .transaction
                 .output
