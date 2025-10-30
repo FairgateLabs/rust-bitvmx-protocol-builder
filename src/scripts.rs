@@ -346,6 +346,7 @@ pub fn verify_winternitz_signature(
 pub fn verify_winternitz_signature_timelock(
     blocks: u16,
     verifying_key: &PublicKey,
+    public_key_name: &str,
     public_key: &WinternitzPublicKey,
     sign_mode: SignMode,
 ) -> Result<ProtocolScript, ScriptError> {
@@ -362,7 +363,7 @@ pub fn verify_winternitz_signature_timelock(
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     protocol_script.add_key(
-        "value",
+        public_key_name,
         public_key.derivation_index()?,
         KeyType::winternitz(public_key)?,
         0,
