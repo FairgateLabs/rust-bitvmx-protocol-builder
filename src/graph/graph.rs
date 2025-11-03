@@ -552,6 +552,22 @@ impl TransactionGraph {
             )?;
         }
 
+        self.update_input_values()?;
+
+        Ok(())
+    }
+
+    fn update_input_values(&mut self) -> Result<(), GraphError> {
+        for tx_name in self.get_transaction_names() {
+            let prevouts = self.get_prevouts(tx_name.as_str())?;
+            let node = self.get_node_mut(tx_name.as_str())?;
+
+            for (input_index, input_type) in node.inputs.iter_mut().enumerate() {
+                let prevout = &prevouts[input_index];
+                input_type.set_value(prevout.value);
+            }
+        }
+
         Ok(())
     }
 
@@ -656,9 +672,12 @@ impl TransactionGraph {
             let inputs = from.transaction.input.len();
             let outputs = from.transaction.output.len();
 
-            let prevouts = self.get_prevouts(from.name.as_str())?;
+            let sum_in = from
+                .inputs
+                .iter()
+                .map(|i| i.output_type().unwrap().get_value().to_sat())
+                .sum::<u64>();
 
-            let sum_in = prevouts.iter().map(|o| o.value.to_sat()).sum::<u64>();
             let sum_out = from
                 .transaction
                 .output
