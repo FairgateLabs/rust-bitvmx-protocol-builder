@@ -10,6 +10,7 @@ use bitcoin::{
     PublicKey, ScriptBuf, XOnlyPublicKey,
 };
 
+use bitcoin_script_functions::signatures::winternitz::get_winternitz_checksig_script;
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
@@ -566,99 +567,27 @@ pub fn linked_message_response(
     Ok(protocol_script)
 }
 
-// Winternitz Signature verification. Note that the script inputs are malleable.
 pub fn ots_checksig(
     public_key: &WinternitzPublicKey,
     keep_message: bool,
 ) -> Result<ScriptBuf, ScriptError> {
-    let total_size = public_key.total_len() as u32;
+    // TODO: Remove this check once get_winternitz_checksig_script supports SHA256
+    if public_key.key_type() == WinternitzType::SHA256 {
+        return Err(ScriptError::UnsupportedWinternitzTypeError);
+    }
+
+    let max = public_key.base() as u8;
     let message_size = public_key.message_size()? as u32;
-    let checksum_size = public_key.checksum_size()? as u32;
-    let base = public_key.base() as u32;
     let bits_per_digit = public_key.bits_per_digit();
-    let public_key_hashes = public_key.to_hashes();
+    let public_keys = public_key.to_hashes_string();
 
-    let verify = script! {
-        // Verify the hash chain for each digit
-        for digit_index in 0..total_size {
-            // Verify that the digit is in the range [0, d]
-            { base }
-            OP_MIN
-
-            // Push two copies of the digit onto the altstack
-            OP_DUP OP_TOALTSTACK OP_TOALTSTACK
-
-            // Hash the input hash d times and put every result on the stack
-            for _ in 0..base {
-                OP_DUP OP_HASH160
-            }
-
-            // Compute the offset of the hash table entry for this digit
-            { base }
-            OP_FROMALTSTACK
-            OP_SUB
-
-            // Verify the signature for this digit
-            OP_PICK
-            { public_key_hashes[(total_size - 1) as usize - digit_index as usize].clone() }
-            OP_EQUALVERIFY
-
-            // Drop the hash table entries from the stack
-            for _ in 0..(base + 1) / 2 {
-                OP_2DROP
-            }
-        }
-        // Verify the Checksum
-        // 1. Compute the checksum of the message's digits
-        OP_FROMALTSTACK
-        OP_DUP
-        OP_NEGATE
-
-        for _ in 1..message_size {
-            OP_FROMALTSTACK OP_TUCK OP_SUB
-        }
-
-        { base * message_size }
-        OP_ADD
-
-        // 2. Sum up the signed checksum's digits
-        OP_FROMALTSTACK
-
-        for _ in 0..checksum_size - 1 {
-            for _ in 0..bits_per_digit {
-                OP_DUP
-                OP_ADD
-            }
-
-            OP_FROMALTSTACK
-            OP_ADD
-        }
-
-        // 3. Ensure both checksums are equal
-        OP_EQUALVERIFY
-
-        if !keep_message {
-            // Drop the message's digits from the stack
-            if message_size == 1 {
-                OP_DROP
-            } else {
-                if message_size % 2 == 0 {
-                    for _ in 0..(message_size / 2) {
-                        OP_2DROP
-                    }
-                } else {
-                    for _ in 0..(message_size / 2) {
-                        OP_2DROP
-                    }
-                    OP_DROP
-                }
-            }
-        } else {
-            for _ in 0..message_size {
-                OP_TOALTSTACK
-            }
-        }
-    };
+    let verify = get_winternitz_checksig_script(
+        &public_keys,
+        message_size,
+        max,
+        bits_per_digit as u8,
+        keep_message,
+    );
 
     Ok(verify)
 }
