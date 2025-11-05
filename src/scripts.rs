@@ -10,6 +10,9 @@ use bitcoin::{
     PublicKey, ScriptBuf, XOnlyPublicKey,
 };
 
+use bitcoin_script_functions::signatures::winternitz::{
+    get_winternitz_checksig_script, winternitz_checksig_old,
+};
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
@@ -567,7 +570,7 @@ pub fn linked_message_response(
 }
 
 // Winternitz Signature verification. Note that the script inputs are malleable.
-pub fn ots_checksig(
+pub fn ots_checksig_old(
     public_key: &WinternitzPublicKey,
     keep_message: bool,
 ) -> Result<ScriptBuf, ScriptError> {
@@ -589,6 +592,7 @@ pub fn ots_checksig(
             OP_DUP OP_TOALTSTACK OP_TOALTSTACK
 
             // Hash the input hash d times and put every result on the stack
+
             for _ in 0..base {
                 OP_DUP OP_HASH160
             }
@@ -659,6 +663,54 @@ pub fn ots_checksig(
             }
         }
     };
+
+    Ok(verify)
+}
+
+// Winternitz Signature verification. Note that the script inputs are malleable.
+pub fn ots_checksig_old_using_stack(
+    public_key: &WinternitzPublicKey,
+    keep_message: bool,
+) -> Result<ScriptBuf, ScriptError> {
+    let public_keys = public_key.to_hashes_string();
+    let message_size = public_key.message_size()? as u32;
+    let bits_per_digit = public_key.bits_per_digit() as u8;
+    let max = public_key.base() as u32;
+
+    let stack = winternitz_checksig_old(
+        &public_keys,
+        message_size,
+        max,
+        bits_per_digit,
+        keep_message,
+    );
+
+    let verify = stack.get_script();
+
+    Ok(verify)
+}
+
+pub fn ots_checksig(
+    public_key: &WinternitzPublicKey,
+    keep_message: bool,
+) -> Result<ScriptBuf, ScriptError> {
+    // TODO: Remove this check once get_winternitz_checksig_script supports SHA256
+    if public_key.key_type() == WinternitzType::SHA256 {
+        return Err(ScriptError::UnsupportedWinternitzTypeError);
+    }
+
+    let max = public_key.base() as u8;
+    let message_size = public_key.message_size()? as u32;
+    let bits_per_digit = public_key.bits_per_digit();
+    let public_keys = public_key.to_hashes_string();
+
+    let verify = get_winternitz_checksig_script(
+        &public_keys,
+        message_size,
+        max,
+        bits_per_digit as u8,
+        keep_message,
+    );
 
     Ok(verify)
 }
