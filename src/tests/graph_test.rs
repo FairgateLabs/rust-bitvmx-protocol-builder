@@ -57,7 +57,14 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
 
-        assert!(graph.add_transaction("", tx.clone(), false).is_err());
+        let result = graph.add_transaction("", tx.clone(), false);
+        assert!(result.is_err());
+        
+        if let Err(GraphError::EmptyTransactionName) = result {
+            // Expected error type
+        } else {
+            panic!("Expected GraphError::EmptyTransactionName, got: {:?}", result);
+        }
     }
 
     #[test]
