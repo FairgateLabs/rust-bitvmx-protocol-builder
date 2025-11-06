@@ -343,6 +343,38 @@ pub fn verify_winternitz_signature(
     Ok(protocol_script)
 }
 
+pub fn verify_winternitz_signature_timelock(
+    blocks: u16,
+    verifying_key: &PublicKey,
+    public_key_name: &str,
+    public_key: &WinternitzPublicKey,
+    sign_mode: SignMode,
+) -> Result<ProtocolScript, ScriptError> {
+    let script = script!(
+        // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
+        { blocks as u32 }
+        OP_CSV
+        OP_DROP
+        { XOnlyPublicKey::from(*verifying_key).serialize().to_vec() }
+        OP_CHECKSIGVERIFY
+        { ots_checksig(public_key, false)? }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
+    protocol_script.add_key(
+        public_key_name,
+        public_key.derivation_index()?,
+        KeyType::winternitz(public_key)?,
+        0,
+    )?;
+
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(&public_key));
+
+    Ok(protocol_script)
+}
+
 pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
     let script = script!(
         // If blocks have passed since this transaction has been confirmed, the timelocked public key can spend the funds
