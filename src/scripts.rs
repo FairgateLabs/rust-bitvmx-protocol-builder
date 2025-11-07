@@ -295,13 +295,6 @@ pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
         for (_,key) in public_keys {
             { ots_checksig(key, keep_message)? }
         }
-        if keep_message {
-            for (_,key) in public_keys {
-                for _ in 0..key.message_size()? {
-                    OP_FROMALTSTACK
-                }
-            }
-        }
         if let Some(extra_script) = extra_check_script {
             { extra_script }
         }
@@ -577,7 +570,7 @@ pub fn ots_checksig(
     }
 
     let max = public_key.base() as u8;
-    let message_size = public_key.message_size()? as u32;
+    let message_size: u32 = public_key.message_size()? as u32;
     let bits_per_digit = public_key.bits_per_digit();
     let public_keys = public_key.to_hashes_string();
 
