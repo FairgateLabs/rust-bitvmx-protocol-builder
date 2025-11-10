@@ -115,4 +115,25 @@ mod test {
             panic!("Expected MissingInputInfo error");
         }
     }
+
+    #[test]
+    fn test_graph_sort_excludes_externals() {
+        let mut graph = TransactionGraph::default();
+        let raw_tx = hex!(SOME_TX);
+        let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
+
+        graph.add_transaction("external_tx", tx.clone(), true).unwrap();
+        
+        graph.add_transaction("internal_tx1", tx.clone(), false).unwrap();
+        graph.add_transaction("internal_tx2", tx, false).unwrap();
+
+        let sorted = graph.sort().unwrap();
+
+        assert_eq!(sorted.len(), 2);
+        assert!(sorted.contains(&"internal_tx1".to_string())); // Included
+        assert!(sorted.contains(&"internal_tx2".to_string())); // Included
+        assert!(!sorted.contains(&"external_tx".to_string())); // This will be excluded
+
+        assert_eq!(graph._get_node_count(), 3);
+    }
 }
