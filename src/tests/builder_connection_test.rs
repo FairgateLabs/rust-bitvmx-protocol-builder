@@ -697,4 +697,95 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_connect_missing_output_index() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_connect_missing_output_index").unwrap();
+
+        let mut protocol = Protocol::new("missing_output_test");
+
+        protocol.add_transaction("A")?;
+        
+        protocol.add_transaction("B")?;
+
+        // Try to connect to output index 0 of transaction A when it doesn't exist
+        let result = protocol.add_connection(
+            "c",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        );
+
+        // Verify it returns the expected error
+        match result {
+            Err(ProtocolBuilderError::MissingOutput(tx_name, index)) => {
+                assert_eq!(tx_name, "A");
+                assert_eq!(index, 0);
+            }
+            Err(other_error) => {
+                panic!("Expected MissingOutput error, got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_transaction_by_unknown_txid() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_get_transaction_by_unknown_txid").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let existing_txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("txid_lookup_test");
+        let builder = ProtocolBuilder {};
+
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            existing_txid,
+            OutputSpec::Auto(output_type),
+            "start",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Create a different txid that doesn't exist in the protocol
+        let unknown_txid = bitcoin::Txid::from_byte_array([0xff; 32]);
+
+        // Try to get transaction by unknown txid
+        let result = protocol.transaction_by_id(&unknown_txid);
+
+        match result {
+            Err(ProtocolBuilderError::GraphBuildingError(graph_error)) => {
+                match graph_error {
+                    crate::errors::GraphError::TransactionNotFound(txid_str) => {
+                        assert_eq!(txid_str, unknown_txid.to_string());
+                    }
+                    other_graph_error => {
+                        panic!("Expected GraphError::TransactionNotFound, got: {:?}", other_graph_error);
+                    }
+                }
+            }
+            Err(other_error) => {
+                panic!("Expected GraphBuildingError containing TransactionNotFound, got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+
+        Ok(())
+    }
 }
