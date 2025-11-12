@@ -788,4 +788,200 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_taproot_rounds_valid_endpoints() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_taproot_rounds_valid_endpoints").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let rounds = 3;
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("taproot_rounds_endpoints");
+        let builder = ProtocolBuilder {};
+
+        let (from_endpoint, to_endpoint) = builder.connect_taproot_rounds(
+            &mut protocol,
+            "rounds",
+            rounds,
+            "B",
+            "C",
+            value,
+            &internal_key,
+            &[script.clone()],
+            &[script.clone()],
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
+            &tc.tr_sighash_type(),
+        )?;
+
+        assert_eq!(from_endpoint, "B_0", "Expected from_endpoint to be 'B_0'");
+        assert_eq!(to_endpoint, "C_2", "Expected to_endpoint to be 'C_2' (last round, index 2)");
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "ext",
+                txid,
+                OutputSpec::Auto(output_type),
+                "A",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?
+            .add_taproot_connection(
+                &mut protocol,
+                "protocol",
+                "A",
+                value,
+                &internal_key,
+                &[script.clone()],
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
+                &from_endpoint,
+                &tc.tr_sighash_type(),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Verify that all expected transactions were created by checking transaction_names
+        let tx_names = protocol.transaction_names();
+        assert!(tx_names.contains(&"B_0".to_string()), "Protocol should contain B_0");
+        assert!(tx_names.contains(&"B_1".to_string()), "Protocol should contain B_1");
+        assert!(tx_names.contains(&"B_2".to_string()), "Protocol should contain B_2");
+        assert!(tx_names.contains(&"C_0".to_string()), "Protocol should contain C_0");
+        assert!(tx_names.contains(&"C_1".to_string()), "Protocol should contain C_1");
+        assert!(tx_names.contains(&"C_2".to_string()), "Protocol should contain C_2");
+
+        for i in 0..rounds {
+            let b_tx = protocol.transaction_to_send(&format!("B_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
+            let c_tx = protocol.transaction_to_send(&format!("C_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
+            
+            assert_eq!(b_tx.input.len(), 1, "B_{} should have exactly 1 input", i);
+            assert_eq!(c_tx.input.len(), 1, "C_{} should have exactly 1 input", i);
+        }
+
+        let c_last = protocol.transaction_to_send("C_2", &[InputArgs::new_taproot_script_args(0)])?;
+        assert_eq!(c_last.output.len(), 0, "C_2 (last round) should have 0 outputs (no reverse connection)");
+
+        let c_0 = protocol.transaction_to_send("C_0", &[InputArgs::new_taproot_script_args(0)])?;
+        let c_1 = protocol.transaction_to_send("C_1", &[InputArgs::new_taproot_script_args(0)])?;
+        assert_eq!(c_0.output.len(), 1, "C_0 should have 1 output (connects to next round)");
+        assert_eq!(c_1.output.len(), 1, "C_1 should have 1 output (connects to next round)");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_timelock_connection_sequence() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_timelock_connection_sequence").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let blocks = 200;
+        let expired_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
+        let renew_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
+
+        let mut protocol = Protocol::new("timelock_sequence_test");
+        let builder = ProtocolBuilder {};
+
+        // Add a simple timelock connection from A to B with blocks=200
+        builder.add_timelock_connection(
+            &mut protocol,
+            "A",
+            value,
+            &internal_key,
+            &expired_script,
+            &renew_script,
+            &SpendMode::ScriptsOnly,
+            "B",
+            blocks,
+            &tc.tr_sighash_type(),
+        )?;
+
+        // Build the protocol
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Read the transaction B and verify the sequence field
+        let tx_b = protocol.transaction_by_name("B")?;
+        
+        assert_eq!(
+            tx_b.input.len(),
+            1,
+            "Transaction B should have exactly 1 input"
+        );
+
+        // Verify that the sequence is set from the timelock height (as per specification)
+        let expected_sequence = bitcoin::Sequence::from_height(blocks);
+        assert_eq!(
+            tx_b.input[0].sequence,
+            expected_sequence,
+            "Input sequence should equal Sequence::from_height({}). \
+             Expected {:?}, got {:?}",
+            blocks,
+            expected_sequence,
+            tx_b.input[0].sequence
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_transaction_with_empty_name() {
+        let mut protocol = Protocol::new("empty_name_test");
+
+        let result = protocol.add_transaction("");
+
+        match result {
+            Err(ProtocolBuilderError::MissingTransactionName) => {
+                // Expected error
+            }
+            Err(other_error) => {
+                panic!("Expected MissingTransactionName error, got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+    }
+
+    #[test]
+    fn test_add_connection_with_empty_name() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_add_connection_with_empty_name").unwrap();
+        
+        let mut protocol = Protocol::new("empty_connection_name_test");
+
+        protocol.add_transaction("A")?;
+        protocol.add_transaction("B")?;
+
+        let result = protocol.add_connection(
+            "",  // Empty connection name
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        );
+
+        match result {
+            Err(ProtocolBuilderError::MissingConnectionName) => {
+                // Expected error
+            }
+            Err(other_error) => {
+                panic!("Expected MissingConnectionName error, got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+
+        Ok(())
+    }
 }
