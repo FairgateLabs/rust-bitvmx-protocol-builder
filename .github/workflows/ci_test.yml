@@ -27,5 +27,6 @@ jobs:
       submodule_path: 'rust-bitvmx-protocol-builder'
       cargo_lock_path: 'rust-bitvmx-protocol-builder/Cargo.lock'
       target_path: 'rust-bitvmx-protocol-builder/target'
+      branch: ${{ github.head_ref || github.ref_name }}
       nightly: false
     secrets: inherit
