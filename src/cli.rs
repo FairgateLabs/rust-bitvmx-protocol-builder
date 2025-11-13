@@ -4,7 +4,7 @@ use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, secp256k1, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 use clap::{Parser, Subcommand};
-use key_manager::{create_key_manager_from_config, key_manager::KeyManager, key_store::KeyStore};
+use key_manager::{create_key_manager_from_config, key_manager::KeyManager};
 use storage_backend::{storage::Storage, storage_config::StorageConfig};
 use tracing::info;
 
@@ -512,18 +512,9 @@ impl Cli {
     }
 
     fn key_manager(&self) -> Result<KeyManager> {
-        let store = Rc::new(Storage::new(&self.config.key_storage)?);
-        let keystore = KeyStore::new(store);
-
-        // TODO read from config
-        let path = PathBuf::from("/tmp/store".to_string());
-        let config = StorageConfig::new(path.to_str().unwrap().to_string(), None);
-        let store = Rc::new(Storage::new(&config).unwrap());
-
         Ok(create_key_manager_from_config(
             &self.config.key_manager,
-            keystore,
-            store,
+            self.config.key_storage.clone(),
         )?)
     }
 }

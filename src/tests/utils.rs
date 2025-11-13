@@ -4,7 +4,9 @@ use bitcoin::{
     secp256k1::{self},
     Network,
 };
-use key_manager::{errors::ConfigError, key_manager::KeyManager, key_store::KeyStore};
+use key_manager::{
+    config::KeyManagerConfig, create_key_manager_from_config, key_manager::KeyManager,
+};
 use std::{env, fs, path::PathBuf, rc::Rc};
 use storage_backend::{storage::Storage, storage_config::StorageConfig};
 
@@ -83,37 +85,22 @@ impl TestContext {
 pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyManager>, Error> {
     let test_dir = TemporaryDir::new(path_prefix);
     let keystore_path = test_dir.path("keystore");
-    let musig2_path = test_dir.path("musig2data");
 
-    let key_derivation_path = "m/101/1/0/0/";
     let keystore_password = "secret_password".to_string();
-    let config = StorageConfig::new(musig2_path.to_str().unwrap().to_string(), None);
-    let store: Rc<Storage> = Rc::new(Storage::new(&config).unwrap());
 
-    let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-    let key_derivation_seed: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| ConfigError::InvalidKeyDerivationSeed)?;
-
-    let bytes = hex::decode("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")?;
-    let winternitz_seed: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| ConfigError::InvalidWinternitzSeed)?;
-
-    let config = StorageConfig::new(
+    let storage_config = StorageConfig::new(
         keystore_path.to_str().unwrap().to_string(),
         Some(keystore_password),
     );
-    let storage_keystore = Rc::new(Storage::new(&config)?);
-    let database_keystore = KeyStore::new(storage_keystore);
-    let key_manager = KeyManager::new(
-        network,
-        key_derivation_path,
-        Some(key_derivation_seed),
-        Some(winternitz_seed),
-        database_keystore,
-        store,
-    )?;
+
+    // Create KeyManagerConfig with test mnemonic
+    let key_manager_config = KeyManagerConfig::new(
+        network.to_string(),
+        Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()),
+        None,
+    );
+
+    let key_manager = create_key_manager_from_config(&key_manager_config, storage_config)?;
 
     Ok(Rc::new(key_manager))
 }
