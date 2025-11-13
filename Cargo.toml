@@ -31,7 +31,8 @@ bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scrip
 bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", branch = "v.0.0.2" }
 bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", branch = "v.0.0.2" }
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", branch = "v.0.0.2" }
-bitcoin-script-functions = { path = "../rust-bitcoin-script-functions" }
+bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git" }
+bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git" }
 [[bin]]
 name = "protocol_builder"
 path = "src/main.rs"

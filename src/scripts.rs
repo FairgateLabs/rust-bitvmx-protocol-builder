@@ -10,7 +10,8 @@ use bitcoin::{
     PublicKey, ScriptBuf, XOnlyPublicKey,
 };
 
-use bitcoin_script_functions::signatures::winternitz::get_winternitz_checksig_script;
+use bitcoin_script_functions::signatures::winternitz::winternitz_checksig;
+use bitcoin_script_stack::stack::StackTracker;
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
@@ -571,6 +572,15 @@ pub fn ots_checksig(
     public_key: &WinternitzPublicKey,
     keep_message: bool,
 ) -> Result<ScriptBuf, ScriptError> {
+    let mut stack = StackTracker::new();
+    ots_checksig_internal(&mut stack, public_key, keep_message)
+}
+
+pub fn ots_checksig_internal(
+    stack: &mut StackTracker,
+    public_key: &WinternitzPublicKey,
+    keep_message: bool,
+) -> Result<ScriptBuf, ScriptError> {
     // TODO: Remove this check once get_winternitz_checksig_script supports SHA256
     if public_key.key_type() == WinternitzType::SHA256 {
         return Err(ScriptError::UnsupportedWinternitzTypeError);
@@ -583,7 +593,8 @@ pub fn ots_checksig(
 
     public_keys.reverse();
 
-    let verify = get_winternitz_checksig_script(
+    winternitz_checksig(
+        stack,
         &public_keys,
         message_size,
         max,
@@ -591,7 +602,7 @@ pub fn ots_checksig(
         keep_message,
     );
 
-    Ok(verify)
+    Ok(stack.get_script())
 }
 
 pub fn reveal_secret(

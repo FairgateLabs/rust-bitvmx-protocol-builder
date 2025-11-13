@@ -3,6 +3,7 @@ pub mod builder_outputs_test;
 pub mod builder_persistance_test;
 pub mod graph_test;
 pub mod input_test;
+pub mod ots_checksig;
 pub mod output_test;
 pub mod single_scripts_test;
 pub mod utils;
