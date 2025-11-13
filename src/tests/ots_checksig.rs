@@ -10,52 +10,63 @@ mod tests {
     // The purpose of this test is to evaluate the ots_checksig functionality by using its internal
     // method, ots_checksig_internal. This involves passing signatures obtained from the key manager
     // and verifying the correct execution of the stack.
+    // We test with a list of messages and different keep_message
     #[test]
     fn test_ots_checksig() {
-        let message_bytes = &[1];
-        let message_digits_length = message_digits_length(message_bytes.len());
-        let checksummed_message = to_checksummed_message(message_bytes);
-        let checksum_size = checksum_length(message_digits_length);
-        let message_size = checksummed_message.len() - checksum_size;
-
-        let master_secret = vec![
-            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
-            0x0e, 0x0f,
+        let list_messages = vec![
+            (vec![0, 0, 0], true),
+            (vec![1], false),
+            (vec![2, 3, 4, 5], true),
+            (vec![3, 4, 4, 4, 4, 4, 4, 4, 4], false),
+            (vec![3, 4, 4, 4, 15, 15, 4, 4, 14], true),
+            (vec![15, 15, 15], false),
         ];
-        let winternitz = Winternitz::new();
-        let pk = winternitz
-            .generate_private_key(
-                &master_secret,
-                WinternitzType::HASH160,
-                message_size,
-                checksum_size,
-                1,
-            )
-            .unwrap();
 
-        let pubk = winternitz
-            .generate_public_key(
-                &master_secret,
-                WinternitzType::HASH160,
-                message_size,
-                checksum_size,
-                1,
-            )
-            .unwrap();
+        for (message_bytes, keep_message) in list_messages {
+            let message_digits_length = message_digits_length(message_bytes.len());
+            let checksummed_message = to_checksummed_message(&message_bytes);
+            let checksum_size = checksum_length(message_digits_length);
+            let message_size = checksummed_message.len() - checksum_size;
 
-        let sig = winternitz.sign_message(message_size, &checksummed_message, &pk);
+            let master_secret = vec![
+                0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                0x0e, 0x0f,
+            ];
+            let winternitz = Winternitz::new();
+            let pk = winternitz
+                .generate_private_key(
+                    &master_secret,
+                    WinternitzType::HASH160,
+                    message_size,
+                    checksum_size,
+                    1,
+                )
+                .unwrap();
 
-        let mut stack = StackTracker::new();
+            let pubk = winternitz
+                .generate_public_key(
+                    &master_secret,
+                    WinternitzType::HASH160,
+                    message_size,
+                    checksum_size,
+                    1,
+                )
+                .unwrap();
 
-        for i in 0..sig.len() {
-            stack.hexstr(&hex::encode(sig.to_hashes()[i].clone()));
-            stack.number(sig.checksummed_message_digits()[i] as u32);
+            let sig = winternitz.sign_message(message_size, &checksummed_message, &pk);
+
+            let mut stack = StackTracker::new();
+
+            for i in 0..sig.len() {
+                stack.hexstr(&hex::encode(sig.to_hashes()[i].clone()));
+                stack.number(sig.checksummed_message_digits()[i] as u32);
+            }
+
+            let _ = ots_checksig_internal(&mut stack, &pubk, keep_message).unwrap();
+
+            stack.op_true();
+
+            assert!(stack.run().success);
         }
-
-        let _ = ots_checksig_internal(&mut stack, &pubk, false).unwrap();
-
-        stack.op_true();
-
-        assert!(stack.run().success);
     }
 }
