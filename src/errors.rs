@@ -89,6 +89,9 @@ pub enum ScriptError {
 
     #[error("Invalid key type. Expected {0}, got {1}")]
     InvalidKeyType(String, String),
+
+    #[error("SHA256 is not supported for Winternitz signatures")]
+    UnsupportedWinternitzTypeError,
 }
 
 #[derive(Error, Debug)]
