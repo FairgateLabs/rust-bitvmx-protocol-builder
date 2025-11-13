@@ -579,7 +579,9 @@ pub fn ots_checksig(
     let max = public_key.base() as u8;
     let message_size: u32 = public_key.message_size()? as u32;
     let bits_per_digit = public_key.bits_per_digit();
-    let public_keys = public_key.to_hashes_string();
+    let mut public_keys = public_key.to_hashes_string();
+
+    public_keys.reverse();
 
     let verify = get_winternitz_checksig_script(
         &public_keys,
