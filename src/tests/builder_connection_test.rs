@@ -20,29 +20,58 @@ mod tests {
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_connection").unwrap();
-        let internal_key = tc
+
+        // Taproot key for Schnorr signatures
+        let internal_taproot_key = tc
             .key_manager()
-            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        // ECDSA key for Segwit operations
+        let internal_ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
             .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
         let blocks = 100;
 
-        let expired_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key, SignMode::Single);
-        let renew_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
-        let expired_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
-        let renew_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key, SignMode::Single);
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let script_a =
-            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key, SignMode::Single);
-        let script_b =
-            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key, SignMode::Single);
+        let expired_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let renew_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let expired_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let renew_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x03]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_ecdsa_key,
+            SignMode::Single,
+        );
+        let script_a = ProtocolScript::new(
+            ScriptBuf::from(vec![0x05]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script_b = ProtocolScript::new(
+            ScriptBuf::from(vec![0x06]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -67,7 +96,7 @@ mod tests {
                 "protocol",
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_from,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -79,7 +108,7 @@ mod tests {
                 &mut protocol,
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_from,
                 &renew_from,
                 &SpendMode::ScriptsOnly,
@@ -92,7 +121,7 @@ mod tests {
                 "protocol",
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_to,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -104,7 +133,7 @@ mod tests {
                 &mut protocol,
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_to,
                 &renew_to,
                 &SpendMode::ScriptsOnly,
