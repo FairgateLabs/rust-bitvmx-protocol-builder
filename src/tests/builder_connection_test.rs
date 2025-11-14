@@ -391,7 +391,7 @@ mod tests {
         let tc = TestContext::new("test_single_node_no_connections").unwrap();
         let public_key = tc
             .key_manager()
-            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
             .unwrap();
 
         let value = 1000;
@@ -429,17 +429,32 @@ mod tests {
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_rounds").unwrap();
-        let internal_key = tc
+        let internal_taproot_key = tc
             .key_manager()
             .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        // Use ECDSA key for segwit_script output
+        let internal_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
             .unwrap();
 
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_segwit_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -451,7 +466,7 @@ mod tests {
             "B",
             "C",
             value,
-            &internal_key,
+            &internal_taproot_key,
             &[script.clone()],
             &[script.clone()],
             &SpendMode::All {
@@ -474,7 +489,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -571,17 +586,31 @@ mod tests {
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_multiple_connections").unwrap();
-        let internal_key = tc
+        let internal_taproot_key = tc
             .key_manager()
             .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        // Use ECDSA key for segwit_script output
+        let internal_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
             .unwrap();
 
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_segwit_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -600,7 +629,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -613,7 +642,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -626,7 +655,7 @@ mod tests {
                 "protocol",
                 "B",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -639,7 +668,7 @@ mod tests {
                 "protocol",
                 "C",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -652,7 +681,7 @@ mod tests {
                 "protocol",
                 "D",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -665,7 +694,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -678,7 +707,7 @@ mod tests {
                 "protocol",
                 "D",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -691,7 +720,7 @@ mod tests {
                 "protocol",
                 "F",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -707,7 +736,7 @@ mod tests {
             "H",
             "I",
             value,
-            &internal_key,
+            &internal_taproot_key,
             &[script.clone()],
             &[script.clone()],
             &SpendMode::All {
@@ -722,7 +751,7 @@ mod tests {
                 "protocol",
                 "G",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -793,7 +822,7 @@ mod tests {
         let tc = TestContext::new("test_get_transaction_by_unknown_txid").unwrap();
         let internal_key = tc
             .key_manager()
-            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
             .unwrap();
 
         let value = 1000;

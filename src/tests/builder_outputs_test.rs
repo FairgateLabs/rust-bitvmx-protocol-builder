@@ -102,18 +102,27 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let public_key = tc
+        let public_taproot_key = tc
             .key_manager()
             .derive_keypair(BitcoinKeyType::P2tr, 0)
             .unwrap();
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
+
+        // Use ECDSA key for segwit_script output
+        let public_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &public_segwit_key,
+            SignMode::Single,
+        );
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
         let pubkey_alice = tc
             .key_manager()
-            .derive_keypair(BitcoinKeyType::P2tr, 1)
+            .derive_keypair(BitcoinKeyType::P2tr, 2)
             .unwrap();
 
         let unspendable_script = scripts::op_return_script(vec![0x04, 0x05, 0x06])?;
@@ -137,7 +146,7 @@ mod tests {
                 "connection",
                 "keypath_origin",
                 value,
-                &public_key,
+                &public_taproot_key,
                 &[unspendable_script],
                 &SpendMode::KeyOnly {
                     key_path_sign: SignMode::Single,
