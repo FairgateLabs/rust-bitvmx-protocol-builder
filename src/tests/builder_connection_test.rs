@@ -15,29 +15,63 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        // Taproot key for Schnorr signatures
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        // ECDSA key for Segwit operations
+        let internal_ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
         let blocks = 100;
 
-        let expired_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &internal_key, SignMode::Single);
-        let renew_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &internal_key, SignMode::Single);
-        let expired_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &internal_key, SignMode::Single);
-        let renew_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &internal_key, SignMode::Single);
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let script_a =
-            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &internal_key, SignMode::Single);
-        let script_b =
-            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &internal_key, SignMode::Single);
+        let expired_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let renew_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let expired_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let renew_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x03]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_ecdsa_key,
+            SignMode::Single,
+        );
+        let script_a = ProtocolScript::new(
+            ScriptBuf::from(vec![0x05]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script_b = ProtocolScript::new(
+            ScriptBuf::from(vec![0x06]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
 
         let output_type = OutputType::segwit_script(value, &script)?;
 
@@ -62,7 +96,7 @@ mod tests {
                 "protocol",
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_from,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -74,7 +108,7 @@ mod tests {
                 &mut protocol,
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_from,
                 &renew_from,
                 &SpendMode::ScriptsOnly,
@@ -87,7 +121,7 @@ mod tests {
                 "protocol",
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_to,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -99,7 +133,7 @@ mod tests {
                 &mut protocol,
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_to,
                 &renew_to,
                 &SpendMode::ScriptsOnly,
@@ -225,7 +259,10 @@ mod tests {
     #[test]
     fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_cyclic_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let script =
@@ -267,7 +304,10 @@ mod tests {
     #[test]
     fn test_multiple_cyclic_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_multiple_cyclic_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -349,7 +389,10 @@ mod tests {
     #[test]
     fn test_single_node_no_connections() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_node_no_connections").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0).unwrap();
+        let public_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -386,14 +429,32 @@ mod tests {
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_rounds").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        // Use ECDSA key for segwit_script output
+        let internal_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
 
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_segwit_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -405,7 +466,7 @@ mod tests {
             "B",
             "C",
             value,
-            &internal_key,
+            &internal_taproot_key,
             &[script.clone()],
             &[script.clone()],
             &SpendMode::All {
@@ -428,7 +489,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -481,7 +542,10 @@ mod tests {
     #[test]
     fn test_zero_rounds() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_zero_rounds").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let rounds = 0;
         let value = 1000;
@@ -522,14 +586,31 @@ mod tests {
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_multiple_connections").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        // Use ECDSA key for segwit_script output
+        let internal_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
 
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &internal_segwit_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -548,7 +629,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -561,7 +642,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -574,7 +655,7 @@ mod tests {
                 "protocol",
                 "B",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -587,7 +668,7 @@ mod tests {
                 "protocol",
                 "C",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -600,7 +681,7 @@ mod tests {
                 "protocol",
                 "D",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -613,7 +694,7 @@ mod tests {
                 "protocol",
                 "A",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -626,7 +707,7 @@ mod tests {
                 "protocol",
                 "D",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -639,7 +720,7 @@ mod tests {
                 "protocol",
                 "F",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -655,7 +736,7 @@ mod tests {
             "H",
             "I",
             value,
-            &internal_key,
+            &internal_taproot_key,
             &[script.clone()],
             &[script.clone()],
             &SpendMode::All {
@@ -670,7 +751,7 @@ mod tests {
                 "protocol",
                 "G",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &[script.clone()],
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -705,7 +786,7 @@ mod tests {
         let mut protocol = Protocol::new("missing_output_test");
 
         protocol.add_transaction("A")?;
-        
+
         protocol.add_transaction("B")?;
 
         // Try to connect to output index 0 of transaction A when it doesn't exist
@@ -739,7 +820,10 @@ mod tests {
     #[test]
     fn test_get_transaction_by_unknown_txid() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_get_transaction_by_unknown_txid").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let existing_txid = Hash::all_zeros();
@@ -768,18 +852,22 @@ mod tests {
         let result = protocol.transaction_by_id(&unknown_txid);
 
         match result {
-            Err(ProtocolBuilderError::GraphBuildingError(graph_error)) => {
-                match graph_error {
-                    crate::errors::GraphError::TransactionNotFound(txid_str) => {
-                        assert_eq!(txid_str, unknown_txid.to_string());
-                    }
-                    other_graph_error => {
-                        panic!("Expected GraphError::TransactionNotFound, got: {:?}", other_graph_error);
-                    }
+            Err(ProtocolBuilderError::GraphBuildingError(graph_error)) => match graph_error {
+                crate::errors::GraphError::TransactionNotFound(txid_str) => {
+                    assert_eq!(txid_str, unknown_txid.to_string());
                 }
-            }
+                other_graph_error => {
+                    panic!(
+                        "Expected GraphError::TransactionNotFound, got: {:?}",
+                        other_graph_error
+                    );
+                }
+            },
             Err(other_error) => {
-                panic!("Expected GraphBuildingError containing TransactionNotFound, got: {:?}", other_error);
+                panic!(
+                    "Expected GraphBuildingError containing TransactionNotFound, got: {:?}",
+                    other_error
+                );
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
