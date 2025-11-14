@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::{scripts::{ProtocolScript, SignMode}, types::OutputType};
+    use crate::{
+        scripts::{ProtocolScript, SignMode},
+        types::OutputType,
+    };
 
     use bitcoin::{key::rand, secp256k1::Secp256k1, Amount, ScriptBuf, WScriptHash};
 
@@ -35,7 +38,11 @@ mod tests {
         let secp = Secp256k1::new();
         let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
         let value = 1000;
-        let script = ProtocolScript::new(bitcoin::ScriptBuf::new(), &public_key.into(), SignMode::Single);
+        let script = ProtocolScript::new(
+            bitcoin::ScriptBuf::new(),
+            &public_key.into(),
+            SignMode::Single,
+        );
         let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.get_script().clone()));
 
         let output_type = OutputType::segwit_script(value, &script).unwrap();

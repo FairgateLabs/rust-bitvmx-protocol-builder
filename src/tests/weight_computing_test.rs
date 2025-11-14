@@ -15,11 +15,19 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_weights_for_single_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_weights_for_single_connection").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0).unwrap();
-        let internal_key = tc.key_manager().derive_keypair(1).unwrap();
+        let public_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 1)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();

@@ -171,7 +171,7 @@ use protocol_builder::{
 use key_manager::key_manager::KeyManager;
 
 fn build_basic_flow(key_manager: Rc<KeyManager>) -> Result<()> {
-    let spend_key = key_manager.derive_keypair(0)?;
+    let spend_key = key_manager.derive_keypair(BitcoinKeyType::P2tr, 0)?;
     let sighash_all = SighashType::ecdsa_all();
 
     let mut protocol = Protocol::new("basic-flow");
@@ -282,7 +282,7 @@ fn render(protocol: &Protocol) -> anyhow::Result<()> {
     let dot = protocol.visualize(GraphOptions::Default)?;
     std::fs::write("protocol.dot", dot)?;
     // Then: `dot -Tpng protocol.dot -o protocol.png`
-    // or copy and paste the content of protocol.dot into https://viz-js.com/ 
+    // or copy and paste the content of protocol.dot into https://viz-js.com/
     Ok(())
 }
 ```
@@ -355,12 +355,12 @@ fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
     let builder = ProtocolBuilder {};
 
     // Keys used along the flow.
-    let internal_key: PublicKey = key_manager.derive_keypair(0)?; // Taproot internal key (x-only)
-    let exit_key: PublicKey = key_manager.derive_keypair(1)?; // Final recipient
-    let external_key: PublicKey = key_manager.derive_keypair(2)?; // Matches the on-chain UTXO
-    let participant_key_1: PublicKey = key_manager.derive_keypair(3)?; // Participant key to create MuSig2 aggregate key
-    let participant_key_2: PublicKey = key_manager.derive_keypair(4)?; // Participant key to create MuSig2 aggregate key
-    let participant_key_3: PublicKey = key_manager.derive_keypair(5)?; // Participant key to create MuSig2 aggregate key
+    let internal_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 0)?; // Taproot internal key (x-only)
+    let exit_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 1)?; // Final recipient
+    let external_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 2)?; // Matches the on-chain UTXO
+    let participant_key_1: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 3)?; // Participant key to create MuSig2 aggregate key
+    let participant_key_2: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 4)?; // Participant key to create MuSig2 aggregate key
+    let participant_key_3: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 5)?; // Participant key to create MuSig2 aggregate key
 
     let aggregated_key = key_manager.new_musig2_session(
         [participant_key_1, participant_key_2, participant_key_3].to_vec(),
@@ -483,7 +483,7 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 🧩 Part of the BitVMX Ecosystem
 
-This repository is a component of the **BitVMX Ecosystem**, an open platform for disputable computation secured by Bitcoin.  
+This repository is a component of the **BitVMX Ecosystem**, an open platform for disputable computation secured by Bitcoin.
 You can find the index of all BitVMX open-source components at [**FairgateLabs/BitVMX**](https://github.com/FairgateLabs/BitVMX).
 
 ---

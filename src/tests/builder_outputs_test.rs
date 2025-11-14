@@ -20,6 +20,8 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_op_return_output_script() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_op_return_output_script").unwrap();
@@ -100,13 +102,19 @@ mod tests {
 
         let value = 1000;
         let txid = Hash::all_zeros();
-        let public_key = tc.key_manager().derive_keypair(0).unwrap();
+        let public_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
-        let pubkey_alice = tc.key_manager().derive_keypair(1).unwrap();
+        let pubkey_alice = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 1)
+            .unwrap();
 
         let unspendable_script = scripts::op_return_script(vec![0x04, 0x05, 0x06])?;
 

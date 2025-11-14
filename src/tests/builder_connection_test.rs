@@ -15,10 +15,15 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_single_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -225,7 +230,10 @@ mod tests {
     #[test]
     fn test_single_cyclic_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_cyclic_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let script =
@@ -267,7 +275,10 @@ mod tests {
     #[test]
     fn test_multiple_cyclic_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_multiple_cyclic_connection").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -349,7 +360,10 @@ mod tests {
     #[test]
     fn test_single_node_no_connections() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_single_node_no_connections").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0).unwrap();
+        let public_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -386,7 +400,10 @@ mod tests {
     #[test]
     fn test_rounds() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_rounds").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let rounds = 3;
         let value = 1000;
@@ -481,7 +498,10 @@ mod tests {
     #[test]
     fn test_zero_rounds() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_zero_rounds").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let rounds = 0;
         let value = 1000;
@@ -522,7 +542,10 @@ mod tests {
     #[test]
     fn test_multiple_connections() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_multiple_connections").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let rounds = 3;
         let value = 1000;
@@ -705,7 +728,7 @@ mod tests {
         let mut protocol = Protocol::new("missing_output_test");
 
         protocol.add_transaction("A")?;
-        
+
         protocol.add_transaction("B")?;
 
         // Try to connect to output index 0 of transaction A when it doesn't exist
@@ -739,7 +762,10 @@ mod tests {
     #[test]
     fn test_get_transaction_by_unknown_txid() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_get_transaction_by_unknown_txid").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let existing_txid = Hash::all_zeros();
@@ -768,18 +794,22 @@ mod tests {
         let result = protocol.transaction_by_id(&unknown_txid);
 
         match result {
-            Err(ProtocolBuilderError::GraphBuildingError(graph_error)) => {
-                match graph_error {
-                    crate::errors::GraphError::TransactionNotFound(txid_str) => {
-                        assert_eq!(txid_str, unknown_txid.to_string());
-                    }
-                    other_graph_error => {
-                        panic!("Expected GraphError::TransactionNotFound, got: {:?}", other_graph_error);
-                    }
+            Err(ProtocolBuilderError::GraphBuildingError(graph_error)) => match graph_error {
+                crate::errors::GraphError::TransactionNotFound(txid_str) => {
+                    assert_eq!(txid_str, unknown_txid.to_string());
                 }
-            }
+                other_graph_error => {
+                    panic!(
+                        "Expected GraphError::TransactionNotFound, got: {:?}",
+                        other_graph_error
+                    );
+                }
+            },
             Err(other_error) => {
-                panic!("Expected GraphBuildingError containing TransactionNotFound, got: {:?}", other_error);
+                panic!(
+                    "Expected GraphBuildingError containing TransactionNotFound, got: {:?}",
+                    other_error
+                );
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");

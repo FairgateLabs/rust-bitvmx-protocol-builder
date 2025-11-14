@@ -2,7 +2,7 @@ use std::{rc::Rc, str::FromStr};
 
 use anyhow::Result;
 use bitcoin::{Network, PublicKey, Txid};
-use key_manager::{key_manager::KeyManager, key_store::KeyStore, winternitz::WinternitzType};
+use key_manager::{key_manager::KeyManager, key_type::BitcoinKeyType, winternitz::WinternitzType};
 use protocol_builder::{
     builder::{Protocol, ProtocolBuilder},
     graph::graph::GraphOptions,
@@ -13,19 +13,19 @@ use protocol_builder::{
         output::OutputType,
     },
 };
-use storage_backend::{storage::Storage, storage_config::StorageConfig};
+use storage_backend::storage_config::StorageConfig;
 
 fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
     let mut protocol = Protocol::new("protocol-demo");
     let builder = ProtocolBuilder {};
 
     // Keys used along the flow.
-    let internal_key: PublicKey = key_manager.derive_keypair(0)?; // Taproot internal key (x-only)
-    let exit_key: PublicKey = key_manager.derive_keypair(1)?; // Final recipient
-    let external_key: PublicKey = key_manager.derive_keypair(2)?; // Matches the on-chain UTXO
-    let participant_key_1: PublicKey = key_manager.derive_keypair(3)?; // Participant key to create MuSig2 aggregate key
-    let participant_key_2: PublicKey = key_manager.derive_keypair(4)?; // Participant key to create MuSig2 aggregate key
-    let participant_key_3: PublicKey = key_manager.derive_keypair(5)?; // Participant key to create MuSig2 aggregate key
+    let internal_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 0)?; // Taproot internal key (x-only)
+    let exit_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 1)?; // Final recipient
+    let external_key: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 2)?; // Matches the on-chain UTXO
+    let participant_key_1: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 3)?; // Participant key to create MuSig2 aggregate key
+    let participant_key_2: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 4)?; // Participant key to create MuSig2 aggregate key
+    let participant_key_3: PublicKey = key_manager.derive_keypair(BitcoinKeyType::P2tr, 5)?; // Participant key to create MuSig2 aggregate key
 
     let aggregated_key = key_manager.new_musig2_session(
         [participant_key_1, participant_key_2, participant_key_3].to_vec(),
@@ -121,45 +121,13 @@ fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
 }
 
 fn key_manager() -> Result<Rc<KeyManager>> {
-    let storage_path = temp_storage();
     let store_path = "/tmp/key_manager_storage".to_string();
 
-    let config_storage = StorageConfig::new(storage_path.clone(), None);
     let config_store = StorageConfig::new(store_path.clone(), Some("secret_password".to_string()));
 
-    let storage = Rc::new(Storage::new(&config_storage).unwrap());
-    let keys_storage = Rc::new(Storage::new(&config_store).unwrap());
-    let keystore = KeyStore::new(keys_storage);
-
-    let key_derivation_seed = random_bytes();
-    let winternitz_seed = random_bytes();
-
-    let key_manager = KeyManager::new(
-        Network::Regtest,
-        "m/101/1/0/0/",
-        Some(key_derivation_seed),
-        Some(winternitz_seed),
-        keystore,
-        storage,
-    )?;
+    let key_manager = KeyManager::new(Network::Regtest, None, None, config_store)?;
 
     Ok(Rc::new(key_manager))
-}
-
-fn temp_storage() -> String {
-    let dir = std::env::temp_dir();
-    let mut rng = bitcoin::secp256k1::rand::thread_rng();
-    let index = bitcoin::key::rand::RngCore::next_u32(&mut rng);
-    dir.join(format!("storage_{}.db", index))
-        .to_str()
-        .unwrap()
-        .to_string()
-}
-
-fn random_bytes() -> [u8; 32] {
-    let mut seed = [0u8; 32];
-    bitcoin::key::rand::RngCore::fill_bytes(&mut bitcoin::secp256k1::rand::thread_rng(), &mut seed);
-    seed
 }
 
 fn main() -> Result<()> {
