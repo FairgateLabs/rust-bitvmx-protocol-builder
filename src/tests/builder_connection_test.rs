@@ -984,4 +984,219 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_visualize_dot_format() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_dot_format").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("visualize_test");
+        let builder = ProtocolBuilder {};
+
+        // Create minimal protocol: external -> A -> B with ECDSA connection
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type.clone()),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+
+        protocol.add_connection(
+            "connection_ab",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(
+            dot_output.contains("digraph {"),
+            "DOT output must contain 'digraph {{'"
+        );
+
+        assert!(
+            dot_output.contains("A [label="),
+            "DOT output must contain node A"
+        );
+        assert!(
+            dot_output.contains("B [label="),
+            "DOT output must contain node B"
+        );
+
+        assert!(
+            dot_output.contains("A -> B:i0"),
+            "DOT output must contain edge 'A -> B:i0'"
+        );
+
+        assert!(
+            dot_output.contains("[label=connection_ab]"),
+            "DOT output must contain connection label"
+        );
+
+        assert!(
+            dot_output.ends_with("}") || dot_output.ends_with("}\n"),
+            "DOT output must end with closing brace"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_dot_with_edge_arrows() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_edge_arrows").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("edge_arrows_test");
+        let builder = ProtocolBuilder {};
+
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+
+        protocol.add_connection(
+            "conn",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::EdgeArrows)?;
+
+        assert!(
+            dot_output.contains(":o0:e ->") && dot_output.contains(":i0:w"),
+            "EdgeArrows format must include output and input port specifications"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_multiple_nodes_and_edges() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_multi").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("multi_node_test");
+        let builder = ProtocolBuilder {};
+
+        // Create A -> B -> C chain
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+        
+        protocol.add_connection(
+            "ab",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "B", value, &script)?;
+
+        protocol.add_transaction("C")?;
+
+        protocol.add_connection(
+            "bc",
+            "B",
+            OutputSpec::Index(0),
+            "C",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(dot_output.contains("A [label="), "Must contain node A");
+        assert!(dot_output.contains("B [label="), "Must contain node B");
+        assert!(dot_output.contains("C [label="), "Must contain node C");
+
+        assert!(dot_output.contains("A -> B:i0"), "Must contain edge A -> B");
+        assert!(dot_output.contains("B -> C:i0"), "Must contain edge B -> C");
+
+        assert!(dot_output.contains("[label=ab]"), "Must contain connection label 'ab'");
+        assert!(dot_output.contains("[label=bc]"), "Must contain connection label 'bc'");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_empty_protocol() -> Result<(), ProtocolBuilderError> {
+        let protocol = Protocol::new("empty_test");
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(
+            dot_output.contains("digraph {"),
+            "Empty protocol must still produce valid DOT"
+        );
+        assert!(
+            dot_output.ends_with("}") || dot_output.ends_with("}\n"),
+            "Empty protocol must close DOT properly"
+        );
+
+        assert!(
+            !dot_output.contains(" -> "),
+            "Empty protocol should not have edges"
+        );
+
+        Ok(())
+    }
 }
