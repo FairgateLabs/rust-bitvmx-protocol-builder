@@ -605,6 +605,12 @@ pub fn ots_checksig(
     keep_message: bool,
 ) -> Result<ScriptBuf, ScriptError> {
     let mut stack = StackTracker::new();
+
+    for i in 0..public_key.total_len() {
+        stack.define(1, format!("public_key_{}", i).as_str());
+        stack.define(1, format!("hint_{}", i).as_str());
+    }
+
     ots_checksig_internal(&mut stack, public_key, keep_message)
 }
 
