@@ -11,7 +11,7 @@ name = "protocol_builder"
 
 [dependencies]
 anyhow = "1.0.98"
-bitcoin = { version = "=0.32.6", features = ["std", "rand-std"] }
+bitcoin = { version = "0.32.6", features = ["std", "rand-std"] }
 clap = { version = "4.5.36", features = ["derive"] }
 config = "0.15.11"
 hex = "0.4.3"
@@ -31,8 +31,8 @@ bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scrip
 bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", branch = "v.0.0.2" }
 bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", branch = "v.0.0.2" }
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", branch = "v.0.0.2" }
-bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git" }
-bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git" }
+bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", branch = "v2" }
+bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", branch = "v.0.0.1" }
 [[bin]]
 name = "protocol_builder"
 path = "src/main.rs"
