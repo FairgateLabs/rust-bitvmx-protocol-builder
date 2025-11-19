@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use bitcoin::{secp256k1::Message, EcdsaSighashType, TapSighashType};
+use bitcoin::{secp256k1::Message, Amount, EcdsaSighashType, TapSighashType};
 use key_manager::winternitz::WinternitzSignature;
 use serde::{Deserialize, Serialize};
 
@@ -340,6 +340,13 @@ impl InputType {
                 "{:?}",
                 self.sighash_type
             )))
+    }
+
+    pub fn set_value(&mut self, value: Amount) {
+        if let Some(output_type) = &mut self.output_type {
+            output_type.set_value(value);
+            return;
+        }
     }
 
     pub fn signatures(&self) -> &Vec<Option<Signature>> {
