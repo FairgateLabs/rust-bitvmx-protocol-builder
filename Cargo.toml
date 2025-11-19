@@ -24,13 +24,15 @@ tracing-subscriber = "0.3.18"
 petgraph = { version = "0.8.1", features = ["serde-1"] }
 
 bitcoincore-rpc = { version = "0.19.0" }
+
 bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "v.0.0.2" }
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "v.0.0.2" }
 
 bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", branch = "v.0.0.2" }
 bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", branch = "v.0.0.2" }
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", branch = "v.0.0.2" }
-
+bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", branch = "v2" }
+bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", branch = "v.0.0.1" }
 [[bin]]
 name = "protocol_builder"
 path = "src/main.rs"
