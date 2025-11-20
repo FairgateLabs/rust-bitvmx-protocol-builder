@@ -408,6 +408,18 @@ impl Protocol {
         Ok(())
     }
 
+    pub fn update_input_signature(
+        &mut self,
+        transaction_name: &str,
+        input_index: u32,
+        signature: Option<Signature>,
+        signature_index: usize,
+    ) -> Result<(), ProtocolBuilderError> {
+        self.graph
+            .update_input_signature(transaction_name, input_index, signature, signature_index)?;
+        Ok(())
+    }
+
     pub fn transaction_to_send(
         &self,
         transaction_name: &str,
