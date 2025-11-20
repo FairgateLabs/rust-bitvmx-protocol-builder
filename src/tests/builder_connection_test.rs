@@ -1,16 +1,16 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, ScriptBuf};
+    use bitcoin::{hashes::Hash, key::rand, secp256k1::{Message, Secp256k1}, ScriptBuf};
 
     use crate::{
         builder::{Protocol, ProtocolBuilder},
-        errors::ProtocolBuilderError,
+        errors::{GraphError, ProtocolBuilderError},
         graph::graph::GraphOptions,
         scripts::{ProtocolScript, SignMode},
         tests::utils::TestContext,
         types::{
             connection::{InputSpec, OutputSpec},
-            input::{InputArgs, SpendMode},
+            input::{InputArgs, SpendMode, Signature},
             output::OutputType,
         },
     };
@@ -976,6 +976,354 @@ mod tests {
             }
             Err(other_error) => {
                 panic!("Expected MissingConnectionName error, got: {:?}", other_error);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_dot_format() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_dot_format").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("visualize_test");
+        let builder = ProtocolBuilder {};
+
+        // Create minimal protocol: external -> A -> B with ECDSA connection
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type.clone()),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+
+        protocol.add_connection(
+            "connection_ab",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(
+            dot_output.contains("digraph {"),
+            "DOT output must contain 'digraph {{'"
+        );
+
+        assert!(
+            dot_output.contains("A [label="),
+            "DOT output must contain node A"
+        );
+        assert!(
+            dot_output.contains("B [label="),
+            "DOT output must contain node B"
+        );
+
+        assert!(
+            dot_output.contains("A -> B:i0"),
+            "DOT output must contain edge 'A -> B:i0'"
+        );
+
+        assert!(
+            dot_output.contains("[label=connection_ab]"),
+            "DOT output must contain connection label"
+        );
+
+        assert!(
+            dot_output.ends_with("}") || dot_output.ends_with("}\n"),
+            "DOT output must end with closing brace"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_dot_with_edge_arrows() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_edge_arrows").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("edge_arrows_test");
+        let builder = ProtocolBuilder {};
+
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+
+        protocol.add_connection(
+            "conn",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::EdgeArrows)?;
+
+        assert!(
+            dot_output.contains(":o0:e ->") && dot_output.contains(":i0:w"),
+            "EdgeArrows format must include output and input port specifications"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_multiple_nodes_and_edges() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_visualize_multi").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("multi_node_test");
+        let builder = ProtocolBuilder {};
+
+        // Create A -> B -> C chain
+        builder.add_external_connection(
+            &mut protocol,
+            "ext",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
+
+        protocol.add_transaction("B")?;
+        
+        protocol.add_connection(
+            "ab",
+            "A",
+            OutputSpec::Index(0),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        builder.add_p2wsh_output(&mut protocol, "B", value, &script)?;
+
+        protocol.add_transaction("C")?;
+
+        protocol.add_connection(
+            "bc",
+            "B",
+            OutputSpec::Index(0),
+            "C",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(dot_output.contains("A [label="), "Must contain node A");
+        assert!(dot_output.contains("B [label="), "Must contain node B");
+        assert!(dot_output.contains("C [label="), "Must contain node C");
+
+        assert!(dot_output.contains("A -> B:i0"), "Must contain edge A -> B");
+        assert!(dot_output.contains("B -> C:i0"), "Must contain edge B -> C");
+
+        assert!(dot_output.contains("[label=ab]"), "Must contain connection label 'ab'");
+        assert!(dot_output.contains("[label=bc]"), "Must contain connection label 'bc'");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_visualize_empty_protocol() -> Result<(), ProtocolBuilderError> {
+        let protocol = Protocol::new("empty_test");
+
+        let dot_output = protocol.visualize(GraphOptions::Default)?;
+
+        assert!(
+            dot_output.contains("digraph {"),
+            "Empty protocol must still produce valid DOT"
+        );
+        assert!(
+            dot_output.ends_with("}") || dot_output.ends_with("}\n"),
+            "Empty protocol must close DOT properly"
+        );
+
+        assert!(
+            !dot_output.contains(" -> "),
+            "Empty protocol should not have edges"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_input_signature_out_of_range() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_update_input_signature_out_of_range").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("signature_index_test");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "A",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?;
+
+        protocol.add_transaction("B")?;
+        
+        protocol.add_connection(
+            "conn",
+            "A",
+            OutputSpec::Auto(OutputType::segwit_key(value, &internal_key)?),
+            "B",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            None,
+            None,
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Transaction B has one input with one signature slot (index 0)
+        // Trying to update signature_index 1 should fail
+        let secp = Secp256k1::new();
+        let msg = Message::from_digest_slice(&[0; 32]).unwrap();
+        let (secret_key, _) = secp.generate_keypair(&mut rand::thread_rng());
+        let ecdsa_sig = secp.sign_ecdsa(&msg, &secret_key);
+        let signature = bitcoin::ecdsa::Signature::sighash_all(ecdsa_sig);
+
+        let result = protocol.update_input_signature(
+            "B",
+            0,
+            Some(Signature::Ecdsa(signature)),
+            1, // Out of range - only index 0 exists
+        );
+
+        match result {
+            Err(ProtocolBuilderError::GraphBuildingError(GraphError::InvalidSignatureIndex(1))) => {
+                // Expected error
+            }
+            Err(e) => {
+                panic!("Expected InvalidSignatureIndex(1), but got: {:?}", e);
+            }
+            Ok(_) => {
+                panic!("Expected an error, but got Ok");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sign_ecdsa_on_taproot_input() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_sign_ecdsa_on_taproot_input").unwrap();
+        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+        let script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
+        let output_type = OutputType::segwit_script(value, &script)?;
+
+        let mut protocol = Protocol::new("sign_type_mismatch_test");
+        let builder = ProtocolBuilder {};
+
+        // Create external connection with ECDSA
+        builder.add_external_connection(
+            &mut protocol,
+            "external",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
+
+        protocol.add_transaction("B")?;
+
+        // Add a Taproot connection from A to B
+        builder.add_taproot_connection(
+            &mut protocol,
+            "taproot_conn",
+            "A",
+            value,
+            &internal_key,
+            &[script.clone()],
+            &SpendMode::All {
+                key_path_sign: SignMode::Single,
+            },
+            "B",
+            &tc.tr_sighash_type(),
+        )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Transaction B has a Taproot input at index 0
+        // Trying to sign with ECDSA should fail with type mismatch
+        let result = protocol.sign_ecdsa_input("B", 0, tc.key_manager());
+
+        match result {
+            Err(ProtocolBuilderError::InvalidSighashType(tx_name, input_idx, expected, actual)) => {
+                assert_eq!(tx_name, "B");
+                assert_eq!(input_idx, 0);
+                assert_eq!(expected, "SighashType::Ecdsa");
+                assert!(actual.contains("Taproot"), "Expected Taproot in actual type, got: {}", actual);
+            }
+            Err(e) => {
+                panic!("Expected InvalidSighashType error, but got: {:?}", e);
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
