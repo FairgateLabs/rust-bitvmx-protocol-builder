@@ -6,6 +6,7 @@ use bitcoin::{
     taproot::TaprootBuilderError,
     transaction,
 };
+use key_manager::storage_backend::error::StorageError;
 use key_manager::{
     errors::{KeyManagerError, WinternitzError},
     musig2::errors::Musig2SignerError,
@@ -180,10 +181,10 @@ pub enum ProtocolBuilderError {
     ScriptError(#[from] ScriptError),
 
     #[error("Error while trying acessing the data")]
-    DataError(#[from] storage_backend::error::StorageError),
+    DataError(#[from] StorageError),
 
     #[error("Error while trying to open storage")]
-    StorageError(storage_backend::error::StorageError),
+    StorageError(StorageError),
 
     #[error("Invalid signature type")]
     InvalidSignatureType,

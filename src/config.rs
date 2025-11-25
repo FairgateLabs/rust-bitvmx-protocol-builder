@@ -1,9 +1,9 @@
 use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use config as settings;
 use key_manager::config::KeyManagerConfig;
+use key_manager::storage_backend::storage_config::StorageConfig;
 use serde::Deserialize;
 use std::env;
-use storage_backend::storage_config::StorageConfig;
 use tracing::warn;
 
 use crate::errors::ConfigError;

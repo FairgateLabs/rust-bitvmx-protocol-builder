@@ -6,9 +6,9 @@ use bitcoin::{
     XOnlyPublicKey,
 };
 use key_manager::key_manager::KeyManager;
+use key_manager::storage_backend::storage::{KeyValueStore, Storage};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
-use storage_backend::storage::{KeyValueStore, Storage};
 
 use crate::{
     errors::ProtocolBuilderError,
