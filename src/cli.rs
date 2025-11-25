@@ -4,8 +4,8 @@ use anyhow::{Ok, Result};
 
 use bitcoin::{hashes::Hash, secp256k1, EcdsaSighashType, PublicKey, ScriptBuf, TapSighashType};
 use clap::{Parser, Subcommand};
+use key_manager::storage_backend::{storage::Storage, storage_config::StorageConfig};
 use key_manager::{create_key_manager_from_config, key_manager::KeyManager};
-use storage_backend::{storage::Storage, storage_config::StorageConfig};
 use tracing::info;
 
 use crate::{

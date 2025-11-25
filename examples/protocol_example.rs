@@ -2,6 +2,7 @@ use std::{rc::Rc, str::FromStr};
 
 use anyhow::Result;
 use bitcoin::{Network, PublicKey, Txid};
+use key_manager::storage_backend::storage_config::StorageConfig;
 use key_manager::{key_manager::KeyManager, key_type::BitcoinKeyType, winternitz::WinternitzType};
 use protocol_builder::{
     builder::{Protocol, ProtocolBuilder},
@@ -13,7 +14,6 @@ use protocol_builder::{
         output::OutputType,
     },
 };
-use storage_backend::storage_config::StorageConfig;
 
 fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
     let mut protocol = Protocol::new("protocol-demo");

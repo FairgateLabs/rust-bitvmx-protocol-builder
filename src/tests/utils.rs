@@ -4,11 +4,11 @@ use bitcoin::{
     secp256k1::{self},
     Network,
 };
+use key_manager::storage_backend::{storage::Storage, storage_config::StorageConfig};
 use key_manager::{
     config::KeyManagerConfig, create_key_manager_from_config, key_manager::KeyManager,
 };
 use std::{env, fs, path::PathBuf, rc::Rc};
-use storage_backend::{storage::Storage, storage_config::StorageConfig};
 
 use crate::types::input::SighashType;
 
