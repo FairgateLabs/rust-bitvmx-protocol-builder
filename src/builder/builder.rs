@@ -379,7 +379,7 @@ impl ProtocolBuilder {
         renew_script: &ProtocolScript,
         spend_mode: &SpendMode,
         to: &str,
-        _expired_blocks: u16,
+        expired_blocks: u16,
         sighash_type: &SighashType,
     ) -> Result<&Self, ProtocolBuilderError> {
         protocol.add_connection(
@@ -392,12 +392,11 @@ impl ProtocolBuilder {
             )?),
             to,
             InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
-            Some(0), // This is not used in the current implementation
+            Some(expired_blocks),
             None,
         )?;
         Ok(self)
 
-        // TODO use expired_blocks to create a transaction that consumes the expired_script
     }
 
     #[allow(clippy::too_many_arguments)]
