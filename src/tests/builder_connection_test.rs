@@ -880,14 +880,15 @@ mod tests {
     #[test]
     fn test_taproot_rounds_valid_endpoints() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_taproot_rounds_valid_endpoints").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let external_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
+        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
 
         let rounds = 3;
         let value = 1000;
         let txid = Hash::all_zeros();
         let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &external_key, SignMode::Single);
+        let output_type = OutputType::taproot(value, &external_key, &[script.clone()])?;
 
         let mut protocol = Protocol::new("taproot_rounds_endpoints");
         let builder = ProtocolBuilder {};
@@ -918,7 +919,7 @@ mod tests {
                 txid,
                 OutputSpec::Auto(output_type),
                 "A",
-                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+                InputSpec::Auto(tc.tr_sighash_type(), SpendMode::KeyOnly { key_path_sign: SignMode::Single }),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -948,7 +949,7 @@ mod tests {
         for i in 0..rounds {
             let b_tx = protocol.transaction_to_send(&format!("B_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
             let c_tx = protocol.transaction_to_send(&format!("C_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
-            
+
             assert_eq!(b_tx.input.len(), 1, "B_{} should have exactly 1 input", i);
             assert_eq!(c_tx.input.len(), 1, "C_{} should have exactly 1 input", i);
         }
@@ -967,7 +968,7 @@ mod tests {
     #[test]
     fn test_timelock_connection_sequence() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_timelock_connection_sequence").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(0).unwrap();
+        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
 
         let value = 1000;
         let blocks = 200;
@@ -998,7 +999,7 @@ mod tests {
 
         // Read the transaction B and verify the sequence field
         let tx_b = protocol.transaction_by_name("B")?;
-        
+
         assert_eq!(
             tx_b.input.len(),
             1,
@@ -1042,7 +1043,7 @@ mod tests {
     #[test]
     fn test_add_connection_with_empty_name() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_add_connection_with_empty_name").unwrap();
-        
+
         let mut protocol = Protocol::new("empty_connection_name_test");
 
         protocol.add_transaction("A")?;
