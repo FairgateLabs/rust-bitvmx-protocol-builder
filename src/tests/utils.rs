@@ -86,7 +86,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     let test_dir = TemporaryDir::new(path_prefix);
     let keystore_path = test_dir.path("keystore");
 
-    let keystore_password = "secret_password".to_string();
+    let keystore_password = "secret_password__123ABC".to_string();
 
     let storage_config = StorageConfig::new(
         keystore_path.to_str().unwrap().to_string(),
