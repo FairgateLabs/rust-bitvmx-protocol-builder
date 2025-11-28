@@ -86,7 +86,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     let musig2_path = test_dir.path("musig2data");
 
     let key_derivation_path = "m/101/1/0/0/";
-    let keystore_password = "secret_password".to_string();
+    let keystore_password = "secret_password__123ABC".to_string();
     let config = StorageConfig::new(musig2_path.to_str().unwrap().to_string(), None);
     let store: Rc<Storage> = Rc::new(Storage::new(&config).unwrap());
 

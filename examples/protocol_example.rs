@@ -125,7 +125,7 @@ fn key_manager() -> Result<Rc<KeyManager>> {
     let store_path = "/tmp/key_manager_storage".to_string();
 
     let config_storage = StorageConfig::new(storage_path.clone(), None);
-    let config_store = StorageConfig::new(store_path.clone(), Some("secret_password".to_string()));
+    let config_store = StorageConfig::new(store_path.clone(), Some("secret password_123__ABC".to_string()));
 
     let storage = Rc::new(Storage::new(&config_storage).unwrap());
     let keys_storage = Rc::new(Storage::new(&config_store).unwrap());
