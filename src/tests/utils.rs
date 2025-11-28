@@ -100,7 +100,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
         None,
     );
 
-    let key_manager = create_key_manager_from_config(&key_manager_config, storage_config)?;
+    let key_manager = create_key_manager_from_config(&key_manager_config, &storage_config)?;
 
     Ok(Rc::new(key_manager))
 }

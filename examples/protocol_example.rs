@@ -125,7 +125,7 @@ fn key_manager() -> Result<Rc<KeyManager>> {
 
     let config_store = StorageConfig::new(store_path.clone(), Some("secret_password".to_string()));
 
-    let key_manager = KeyManager::new(Network::Regtest, None, None, config_store)?;
+    let key_manager = KeyManager::new(Network::Regtest, None, None, &config_store)?;
 
     Ok(Rc::new(key_manager))
 }
