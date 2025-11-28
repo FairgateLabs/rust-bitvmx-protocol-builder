@@ -880,8 +880,14 @@ mod tests {
     #[test]
     fn test_taproot_rounds_valid_endpoints() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_taproot_rounds_valid_endpoints").unwrap();
-        let external_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
+        let external_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let rounds = 3;
         let value = 1000;
@@ -910,7 +916,10 @@ mod tests {
         )?;
 
         assert_eq!(from_endpoint, "B_0", "Expected from_endpoint to be 'B_0'");
-        assert_eq!(to_endpoint, "C_2", "Expected to_endpoint to be 'C_2' (last round, index 2)");
+        assert_eq!(
+            to_endpoint, "C_2",
+            "Expected to_endpoint to be 'C_2' (last round, index 2)"
+        );
 
         builder
             .add_external_connection(
@@ -919,7 +928,12 @@ mod tests {
                 txid,
                 OutputSpec::Auto(output_type),
                 "A",
-                InputSpec::Auto(tc.tr_sighash_type(), SpendMode::KeyOnly { key_path_sign: SignMode::Single }),
+                InputSpec::Auto(
+                    tc.tr_sighash_type(),
+                    SpendMode::KeyOnly {
+                        key_path_sign: SignMode::Single,
+                    },
+                ),
             )?
             .add_taproot_connection(
                 &mut protocol,
@@ -939,28 +953,65 @@ mod tests {
 
         // Verify that all expected transactions were created by checking transaction_names
         let tx_names = protocol.transaction_names();
-        assert!(tx_names.contains(&"B_0".to_string()), "Protocol should contain B_0");
-        assert!(tx_names.contains(&"B_1".to_string()), "Protocol should contain B_1");
-        assert!(tx_names.contains(&"B_2".to_string()), "Protocol should contain B_2");
-        assert!(tx_names.contains(&"C_0".to_string()), "Protocol should contain C_0");
-        assert!(tx_names.contains(&"C_1".to_string()), "Protocol should contain C_1");
-        assert!(tx_names.contains(&"C_2".to_string()), "Protocol should contain C_2");
+        assert!(
+            tx_names.contains(&"B_0".to_string()),
+            "Protocol should contain B_0"
+        );
+        assert!(
+            tx_names.contains(&"B_1".to_string()),
+            "Protocol should contain B_1"
+        );
+        assert!(
+            tx_names.contains(&"B_2".to_string()),
+            "Protocol should contain B_2"
+        );
+        assert!(
+            tx_names.contains(&"C_0".to_string()),
+            "Protocol should contain C_0"
+        );
+        assert!(
+            tx_names.contains(&"C_1".to_string()),
+            "Protocol should contain C_1"
+        );
+        assert!(
+            tx_names.contains(&"C_2".to_string()),
+            "Protocol should contain C_2"
+        );
 
         for i in 0..rounds {
-            let b_tx = protocol.transaction_to_send(&format!("B_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
-            let c_tx = protocol.transaction_to_send(&format!("C_{}", i), &[InputArgs::new_taproot_script_args(0)])?;
+            let b_tx = protocol.transaction_to_send(
+                &format!("B_{}", i),
+                &[InputArgs::new_taproot_script_args(0)],
+            )?;
+            let c_tx = protocol.transaction_to_send(
+                &format!("C_{}", i),
+                &[InputArgs::new_taproot_script_args(0)],
+            )?;
 
             assert_eq!(b_tx.input.len(), 1, "B_{} should have exactly 1 input", i);
             assert_eq!(c_tx.input.len(), 1, "C_{} should have exactly 1 input", i);
         }
 
-        let c_last = protocol.transaction_to_send("C_2", &[InputArgs::new_taproot_script_args(0)])?;
-        assert_eq!(c_last.output.len(), 0, "C_2 (last round) should have 0 outputs (no reverse connection)");
+        let c_last =
+            protocol.transaction_to_send("C_2", &[InputArgs::new_taproot_script_args(0)])?;
+        assert_eq!(
+            c_last.output.len(),
+            0,
+            "C_2 (last round) should have 0 outputs (no reverse connection)"
+        );
 
         let c_0 = protocol.transaction_to_send("C_0", &[InputArgs::new_taproot_script_args(0)])?;
         let c_1 = protocol.transaction_to_send("C_1", &[InputArgs::new_taproot_script_args(0)])?;
-        assert_eq!(c_0.output.len(), 1, "C_0 should have 1 output (connects to next round)");
-        assert_eq!(c_1.output.len(), 1, "C_1 should have 1 output (connects to next round)");
+        assert_eq!(
+            c_0.output.len(),
+            1,
+            "C_0 should have 1 output (connects to next round)"
+        );
+        assert_eq!(
+            c_1.output.len(),
+            1,
+            "C_1 should have 1 output (connects to next round)"
+        );
 
         Ok(())
     }
@@ -968,7 +1019,10 @@ mod tests {
     #[test]
     fn test_timelock_connection_sequence() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_timelock_connection_sequence").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let blocks = 200;
@@ -1009,13 +1063,10 @@ mod tests {
         // Verify that the sequence is set from the timelock height (as per specification)
         let expected_sequence = bitcoin::Sequence::from_height(blocks);
         assert_eq!(
-            tx_b.input[0].sequence,
-            expected_sequence,
+            tx_b.input[0].sequence, expected_sequence,
             "Input sequence should equal Sequence::from_height({}). \
              Expected {:?}, got {:?}",
-            blocks,
-            expected_sequence,
-            tx_b.input[0].sequence
+            blocks, expected_sequence, tx_b.input[0].sequence
         );
 
         Ok(())
@@ -1032,7 +1083,10 @@ mod tests {
                 // Expected error
             }
             Err(other_error) => {
-                panic!("Expected MissingTransactionName error, got: {:?}", other_error);
+                panic!(
+                    "Expected MissingTransactionName error, got: {:?}",
+                    other_error
+                );
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
@@ -1050,7 +1104,7 @@ mod tests {
         protocol.add_transaction("B")?;
 
         let result = protocol.add_connection(
-            "",  // Empty connection name
+            "", // Empty connection name
             "A",
             OutputSpec::Index(0),
             "B",
@@ -1064,7 +1118,10 @@ mod tests {
                 // Expected error
             }
             Err(other_error) => {
-                panic!("Expected MissingConnectionName error, got: {:?}", other_error);
+                panic!(
+                    "Expected MissingConnectionName error, got: {:?}",
+                    other_error
+                );
             }
             Ok(_) => {
                 panic!("Expected an error, but got Ok");
