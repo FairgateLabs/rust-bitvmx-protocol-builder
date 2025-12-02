@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{scripts::{ProtocolScript, SignMode}, types::OutputType};
+    use crate::{scripts::{ProtocolScript, SignMode}, types::output::{AUTO_AMOUNT, RECOVER_AMOUNT, OutputType}};
 
     use bitcoin::{key::rand, secp256k1::Secp256k1, Amount, ScriptBuf, WScriptHash};
 
@@ -52,5 +52,47 @@ mod tests {
             }
             _ => panic!("Wrong enum variant"),
         }
+    }
+
+    #[test]
+    fn test_auto_amount_flags() {
+        // Test AUTO_AMOUNT sentinel value
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        
+        let auto_output = OutputType::segwit_key(AUTO_AMOUNT, &public_key.into()).unwrap();
+        let recover_output = OutputType::segwit_key(RECOVER_AMOUNT, &public_key.into()).unwrap();
+        let normal_output = OutputType::segwit_key(1000, &public_key.into()).unwrap();
+
+        // Test auto_value() flags
+        assert_eq!(auto_output.auto_value(), true);
+        assert_eq!(auto_output.recover_value(), false);
+        
+        // Test recover_value() flags
+        assert_eq!(recover_output.auto_value(), false);
+        assert_eq!(recover_output.recover_value(), true);
+
+        // Test normal value has no flags
+        assert_eq!(normal_output.auto_value(), false);
+        assert_eq!(normal_output.recover_value(), false);
+
+        // Test dust_limit() returns >= 540 sats
+        assert!(auto_output.dust_limit().to_sat() >= 540);
+        assert!(recover_output.dust_limit().to_sat() >= 540);
+        assert_eq!(auto_output.dust_limit(), Amount::from_sat(540));
+    }
+
+    #[test]
+    fn test_recover_amount_flags() {
+        // Test RECOVER_AMOUNT with different output types
+        let secp = Secp256k1::new();
+        let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
+        let script = ProtocolScript::new(ScriptBuf::new(), &public_key.into(), SignMode::Single);
+        
+        // Test with SegwitScript
+        let recover_script_output = OutputType::segwit_script(RECOVER_AMOUNT, &script).unwrap();
+        assert_eq!(recover_script_output.auto_value(), false);
+        assert_eq!(recover_script_output.recover_value(), true);
+        assert!(recover_script_output.dust_limit().to_sat() >= 540);
     }
 }
