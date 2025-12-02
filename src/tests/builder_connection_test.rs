@@ -1139,7 +1139,10 @@ mod tests {
     #[test]
     fn test_visualize_dot_format() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_visualize_dot_format").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2wpkh, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -1213,7 +1216,10 @@ mod tests {
     #[test]
     fn test_visualize_dot_with_edge_arrows() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_visualize_edge_arrows").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2wpkh, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -1262,7 +1268,10 @@ mod tests {
     #[test]
     fn test_visualize_multiple_nodes_and_edges() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_visualize_multi").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2wpkh, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -1360,7 +1369,10 @@ mod tests {
     #[test]
     fn test_update_input_signature_out_of_range() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_update_input_signature_out_of_range").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2wpkh, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
@@ -1424,13 +1436,15 @@ mod tests {
         Ok(())
     }
 
-
     // TODO andres: we need to re-think this test, and choose the right key types at derive_keypair to avoid SignatureError(EcdsaWithTaprootKey) or SignatureError(SchnorrWithNonTaprootKey)
     #[test]
     #[ignore]
     fn test_sign_ecdsa_on_taproot_input() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_sign_ecdsa_on_taproot_input").unwrap();
-        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0).unwrap();
+        let internal_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
