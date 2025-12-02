@@ -1,6 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use bitcoin::{hashes::Hash, key::rand, secp256k1::{Message, Secp256k1}, ScriptBuf};
+    use bitcoin::{
+        hashes::Hash,
+        key::rand,
+        secp256k1::{Message, Secp256k1},
+        ScriptBuf,
+    };
 
     use crate::{
         builder::{Protocol, ProtocolBuilder},
@@ -10,7 +15,7 @@ mod tests {
         tests::utils::TestContext,
         types::{
             connection::{InputSpec, OutputSpec},
-            input::{InputArgs, SpendMode, Signature},
+            input::{InputArgs, Signature, SpendMode},
             output::OutputType,
         },
     };
@@ -1281,7 +1286,7 @@ mod tests {
         builder.add_p2wsh_output(&mut protocol, "A", value, &script)?;
 
         protocol.add_transaction("B")?;
-        
+
         protocol.add_connection(
             "ab",
             "A",
@@ -1317,8 +1322,14 @@ mod tests {
         assert!(dot_output.contains("A -> B:i0"), "Must contain edge A -> B");
         assert!(dot_output.contains("B -> C:i0"), "Must contain edge B -> C");
 
-        assert!(dot_output.contains("[label=ab]"), "Must contain connection label 'ab'");
-        assert!(dot_output.contains("[label=bc]"), "Must contain connection label 'bc'");
+        assert!(
+            dot_output.contains("[label=ab]"),
+            "Must contain connection label 'ab'"
+        );
+        assert!(
+            dot_output.contains("[label=bc]"),
+            "Must contain connection label 'bc'"
+        );
 
         Ok(())
     }
@@ -1360,18 +1371,17 @@ mod tests {
         let mut protocol = Protocol::new("signature_index_test");
         let builder = ProtocolBuilder {};
 
-        builder
-            .add_external_connection(
-                &mut protocol,
-                "external",
-                txid,
-                OutputSpec::Auto(output_type),
-                "A",
-                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
-            )?;
+        builder.add_external_connection(
+            &mut protocol,
+            "external",
+            txid,
+            OutputSpec::Auto(output_type),
+            "A",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
 
         protocol.add_transaction("B")?;
-        
+
         protocol.add_connection(
             "conn",
             "A",
@@ -1466,7 +1476,11 @@ mod tests {
                 assert_eq!(tx_name, "B");
                 assert_eq!(input_idx, 0);
                 assert_eq!(expected, "SighashType::Ecdsa");
-                assert!(actual.contains("Taproot"), "Expected Taproot in actual type, got: {}", actual);
+                assert!(
+                    actual.contains("Taproot"),
+                    "Expected Taproot in actual type, got: {}",
+                    actual
+                );
             }
             Err(e) => {
                 panic!("Expected InvalidSighashType error, but got: {:?}", e);

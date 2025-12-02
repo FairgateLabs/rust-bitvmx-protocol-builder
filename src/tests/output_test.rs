@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::{scripts::{ProtocolScript, SignMode}, types::output::{AUTO_AMOUNT, RECOVER_AMOUNT, OutputType}};
+    use crate::{
+        scripts::{ProtocolScript, SignMode},
+        types::output::{OutputType, AUTO_AMOUNT, RECOVER_AMOUNT},
+    };
 
     use bitcoin::{key::rand, secp256k1::Secp256k1, Amount, ScriptBuf, WScriptHash};
 
