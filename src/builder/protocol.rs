@@ -415,8 +415,12 @@ impl Protocol {
         signature: Option<Signature>,
         signature_index: usize,
     ) -> Result<(), ProtocolBuilderError> {
-        self.graph
-            .update_input_signature(transaction_name, input_index, signature, signature_index)?;
+        self.graph.update_input_signature(
+            transaction_name,
+            input_index,
+            signature,
+            signature_index,
+        )?;
         Ok(())
     }
 
