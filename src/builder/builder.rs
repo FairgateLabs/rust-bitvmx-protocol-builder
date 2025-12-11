@@ -396,7 +396,6 @@ impl ProtocolBuilder {
             None,
         )?;
         Ok(self)
-
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -59,11 +59,14 @@ mod test {
 
         let result = graph.add_transaction("", tx.clone(), false);
         assert!(result.is_err());
-        
+
         if let Err(GraphError::EmptyTransactionName) = result {
             // Expected error type
         } else {
-            panic!("Expected GraphError::EmptyTransactionName, got: {:?}", result);
+            panic!(
+                "Expected GraphError::EmptyTransactionName, got: {:?}",
+                result
+            );
         }
     }
 
@@ -122,9 +125,13 @@ mod test {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
 
-        graph.add_transaction("external_tx", tx.clone(), true).unwrap();
-        
-        graph.add_transaction("internal_tx1", tx.clone(), false).unwrap();
+        graph
+            .add_transaction("external_tx", tx.clone(), true)
+            .unwrap();
+
+        graph
+            .add_transaction("internal_tx1", tx.clone(), false)
+            .unwrap();
         graph.add_transaction("internal_tx2", tx, false).unwrap();
 
         let sorted = graph.sort().unwrap();

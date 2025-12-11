@@ -15,32 +15,66 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_weights_for_single_connection() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_weights_for_single_connection").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0).unwrap();
-        let internal_key = tc.key_manager().derive_keypair(1).unwrap();
+        let public_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 1)
+            .unwrap();
+        // Use ECDSA key for segwit_script output
+        let public_segwit_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 2)
+            .unwrap();
 
         let value = 1000;
         let txid = Hash::all_zeros();
         let blocks = 100;
 
-        let expired_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x00]), &public_key, SignMode::Single);
-        let renew_from =
-            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &public_key, SignMode::Single);
-        let expired_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &public_key, SignMode::Single);
-        let renew_to =
-            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &public_key, SignMode::Single);
-        let script =
-            ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let script_a =
-            ProtocolScript::new(ScriptBuf::from(vec![0x05]), &public_key, SignMode::Single);
-        let script_b =
-            ProtocolScript::new(ScriptBuf::from(vec![0x06]), &public_key, SignMode::Single);
+        let expired_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
+        let renew_from = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
+        let expired_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
+        let renew_to = ProtocolScript::new(
+            ScriptBuf::from(vec![0x03]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x04]),
+            &public_segwit_key,
+            SignMode::Single,
+        );
+        let script_a = ProtocolScript::new(
+            ScriptBuf::from(vec![0x05]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
+        let script_b = ProtocolScript::new(
+            ScriptBuf::from(vec![0x06]),
+            &public_taproot_key,
+            SignMode::Single,
+        );
 
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
@@ -62,7 +96,7 @@ mod tests {
                 "protocol",
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_from,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -74,7 +108,7 @@ mod tests {
                 &mut protocol,
                 "start",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_from,
                 &renew_from,
                 &SpendMode::All {
@@ -89,7 +123,7 @@ mod tests {
                 "protocol",
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &scripts_to,
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
@@ -101,7 +135,7 @@ mod tests {
                 &mut protocol,
                 "challenge",
                 value,
-                &internal_key,
+                &internal_taproot_key,
                 &expired_to,
                 &renew_to,
                 &SpendMode::All {

@@ -15,6 +15,8 @@ mod tests {
         },
     };
 
+    use key_manager::key_type::BitcoinKeyType;
+
     #[test]
     fn test_persistence() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_persistence").unwrap();
@@ -155,8 +157,8 @@ mod tests {
     #[test]
     fn test_persistence_4() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_persistence_4").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0)?;
-        let internal_key = tc.key_manager().derive_keypair(1)?;
+        let public_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0)?;
+        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 1)?;
         let storage = Rc::new(tc.new_storage("protocol"));
 
         let value = 1000;
@@ -203,8 +205,8 @@ mod tests {
     #[test]
     fn test_persistence_5() -> Result<(), ProtocolBuilderError> {
         let tc = TestContext::new("test_persistence_5").unwrap();
-        let public_key = tc.key_manager().derive_keypair(0)?;
-        let internal_key = tc.key_manager().derive_keypair(1)?;
+        let public_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 0)?;
+        let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 1)?;
         let storage = Rc::new(tc.new_storage("protocol"));
 
         let value = 1000;
