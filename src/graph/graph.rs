@@ -711,8 +711,12 @@ impl TransactionGraph {
             }
 
             result.push_str(&format!(
-                "{} [label=\"{{ {} [{}] }} | {}  \"] \n",
-                from.name, from.name, fee, inout,
+                "{} [label=\"{{ {} [{}] [{}] }} | {}  \"] \n",
+                from.name,
+                from.name,
+                fee,
+                last_chars(&from.transaction.compute_txid().to_string(), 8),
+                inout,
             ));
 
             for edge in self.graph.edges(node_index) {
@@ -846,4 +850,14 @@ impl TransactionGraph {
     pub(crate) fn _get_node_indexes(&self) -> HashMap<String, petgraph::graph::NodeIndex> {
         self.node_indexes.clone()
     }
+}
+
+fn last_chars(s: &str, n: usize) -> String {
+    s.chars()
+        .rev()
+        .take(n)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
