@@ -1,3 +1,4 @@
+use crate::types::input::SighashType;
 use anyhow::Error;
 use bitcoin::{
     key::rand::RngCore,
@@ -7,10 +8,9 @@ use bitcoin::{
 use key_manager::{
     config::KeyManagerConfig, create_key_manager_from_config, key_manager::KeyManager,
 };
+use redact::Secret;
 use std::{env, fs, path::PathBuf, rc::Rc};
 use storage_backend::{storage::Storage, storage_config::StorageConfig};
-
-use crate::types::input::SighashType;
 
 pub struct TemporaryDir {
     pub path: PathBuf,
@@ -86,7 +86,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     let test_dir = TemporaryDir::new(path_prefix);
     let keystore_path = test_dir.path("keystore");
 
-    let keystore_password = "secret_password__123ABC".to_string();
+    let keystore_password = Secret::from("secret_password__123ABC");
 
     let storage_config = StorageConfig::new(
         keystore_path.to_str().unwrap().to_string(),
