@@ -33,6 +33,7 @@ bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoi
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", branch = "v.0.0.2" }
 bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", branch = "v2" }
 bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", branch = "v.0.0.1" }
+redact = { version = "0.1", features = ["serde"] }
 
 [[bin]]
 name = "protocol_builder"
