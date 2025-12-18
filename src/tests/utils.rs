@@ -96,7 +96,7 @@ pub fn new_key_manager(network: Network, path_prefix: &str) -> Result<Rc<KeyMana
     // Create KeyManagerConfig with test mnemonic
     let key_manager_config = KeyManagerConfig::new(
         network.to_string(),
-        Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string()),
+        Some("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string().into()),
         None,
     );
 
