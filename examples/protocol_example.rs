@@ -34,7 +34,7 @@ fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
     )?;
 
     // Winternitz key for the one-time authentication branch.
-    let winternitz_key = key_manager.derive_winternitz(32, WinternitzType::SHA256, 0)?;
+    let winternitz_key = key_manager.next_winternitz(32, WinternitzType::SHA256)?;
 
     // Taproot leaves showcasing each sign mode using the helper scripts.
     let skip_leaf = scripts::timelock(
