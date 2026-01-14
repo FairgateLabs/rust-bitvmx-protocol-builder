@@ -1,7 +1,7 @@
 [package]
 name = "bitvmx-protocol-builder"
 description = "Library to build and manage Directed Acyclic Graphs (DAGs) of BitVMX pre-signed transactions"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 authors = ["Diego Masini <diego.masini@gmail.com>"]
 repository = "https://github.com/FairgateLabs/rust-bitvmx-protocol-builder"
@@ -28,9 +28,9 @@ bitcoincore-rpc = { version = "0.19.0" }
 bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "v.0.0.2" }
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "v.0.0.2" }
 
-bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", tag = "v0.5.0" }
-bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", tag = "v0.5.0" }
-rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.5.0" }
+bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", tag = "v0.5.1" }
+bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", tag = "v0.5.1" }
+rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.5.1" }
 bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", branch = "v2" }
 bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", branch = "v.0.0.1" }
 redact = { version = "0.1", features = ["serde", "zeroize"] }
