@@ -22,6 +22,13 @@ use super::input::SpendMode;
 
 pub const AUTO_AMOUNT: u64 = 1;
 pub const RECOVER_AMOUNT: u64 = 2;
+pub const MAX_DUST_LIMIT: [(&str, u64); 5] = [
+    ("TaprootScript", 540),
+    ("SegwitPublicKey", 540),
+    ("SegwitScript", 540),
+    ("SegwitUnspendable", 540),
+    ("ExternalUnknown", 540),
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageId {
@@ -198,12 +205,24 @@ impl OutputType {
 
     // TODO: for a more precise estimation we can set different dust limits for different output types
     pub fn dust_limit(&self) -> Amount {
-        match self {
-            OutputType::Taproot { .. } => Amount::from_sat(540),
-            OutputType::SegwitPublicKey { .. } => Amount::from_sat(540),
-            OutputType::SegwitScript { .. } => Amount::from_sat(540),
-            OutputType::SegwitUnspendable { .. } => Amount::from_sat(540),
-            OutputType::ExternalUnknown { .. } => Amount::from_sat(540),
+        let sats = MAX_DUST_LIMIT
+            .iter()
+            .find(|(n, _)| *n == self.get_name())
+            .expect("missing dust limit for output type")
+            .1;
+
+        Amount::from_sat(sats)
+    }
+
+    pub fn generic_dust_limit(output_type: Option<&OutputType>) -> Amount {
+        match output_type {
+            Some(output) => output.dust_limit(),
+            None => MAX_DUST_LIMIT
+                .iter()
+                .map(|(_, limit)| *limit)
+                .max()
+                .map(Amount::from_sat)
+                .unwrap(),
         }
     }
 
