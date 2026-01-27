@@ -166,7 +166,7 @@ impl OutputType {
     }
 
     pub fn segwit_key(value: u64, public_key: &PublicKey) -> Result<Self, ProtocolBuilderError> {
-        let witness_public_key_hash = public_key.wpubkey_hash().expect("key is compressed");
+        let witness_public_key_hash = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
 
         Ok(OutputType::SegwitPublicKey {
@@ -604,7 +604,7 @@ impl OutputType {
         value: &Amount,
         public_key: &PublicKey,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
-        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let wpkh = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
 
         let mut sighasher = SighashCache::new(transaction);
