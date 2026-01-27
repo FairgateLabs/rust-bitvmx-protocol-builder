@@ -2,13 +2,14 @@ use bitcoin::{
     locktime,
     secp256k1::{self, Message},
     taproot::LeafVersion,
-    transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
+    transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
     XOnlyPublicKey,
 };
 use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::{KeyValueStore, Storage};
+use tracing::info;
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -118,6 +119,18 @@ impl Protocol {
         output_type: &OutputType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
+
+        let value = output_type.get_value();
+        let dust_limit = output_type.dust_limit();
+
+        // Drop dust outputs: implicitly add to fee
+        if value > Amount::from_sat(0) && value < dust_limit {
+            info!(
+                "Dropping dust output: value {} < dust limit {}",
+                value, dust_limit
+            );
+            return Ok(self);
+        }
 
         let mut transaction = self.get_or_create_transaction(transaction_name, false)?;
 
