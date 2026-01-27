@@ -635,29 +635,46 @@ impl TransactionGraph {
     ) -> Result<(), GraphError> {
         let parent_connections = self.find_incoming_edges(*child_index);
 
-        if !parent_connections.is_empty() {
-            let parent_amount = child_amount / parent_connections.len() as u64;
-
-            for connection in parent_connections {
-                let parent = self.get_from_node(connection)?;
-                let output_index = self.get_connection(connection)?.output_index as usize;
-                let output = parent.outputs[output_index].clone();
-
-                let parent_key = format!("{}:{}", parent.name, output_index);
-
-                let amount = if output.auto_value() {
-                    amounts
-                        .get(&parent_key)
-                        .map(|v| max!(v.to_sat(), parent_amount, output.dust_limit().to_sat()))
-                        .unwrap_or(parent_amount)
-                } else {
-                    output.get_value().to_sat()
-                };
-
-                amounts.insert(parent_key, Amount::from_sat(amount));
-            }
+        if parent_connections.is_empty() {
+            return Ok(());
         }
 
+        let mut remaining = child_amount;
+        let mut auto_parents = Vec::new();
+
+        for connection in parent_connections {
+            let parent = self.get_from_node(connection)?;
+            let output_index = self.get_connection(connection)?.output_index as usize;
+            let output = parent.outputs[output_index].clone();
+            let parent_key = format!("{}:{}", parent.name, output_index);
+
+            if output.auto_value() {
+                auto_parents.push((parent_key, output));
+            } else {
+                let value = output.get_value();
+                remaining = remaining
+                    .checked_sub(value.to_sat())
+                    .ok_or_else(|| GraphError::InsufficientFunds(remaining, value.to_sat()))?;
+                amounts.insert(parent_key, value);
+            };
+        }
+
+        if !auto_parents.is_empty() {
+            let per_parent = remaining / (auto_parents.len() as u64);
+            let mut extra = remaining % (auto_parents.len() as u64);
+
+            for (parent_key, output) in auto_parents {
+                let mut value = Amount::from_sat(per_parent);
+                if extra > 0 {
+                    value += Amount::from_sat(1);
+                    extra -= 1;
+                }
+                let final_value = max!(value, output.dust_limit());
+                amounts.insert(parent_key, final_value);
+            }
+        } else if remaining != 0 {
+            return Err(GraphError::WrongAmount(0, remaining));
+        }
         Ok(())
     }
 
