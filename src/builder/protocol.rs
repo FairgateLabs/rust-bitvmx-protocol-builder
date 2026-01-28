@@ -9,7 +9,7 @@ use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
 use storage_backend::storage::{KeyValueStore, Storage};
-use tracing::info;
+use tracing::warn;
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -125,7 +125,7 @@ impl Protocol {
 
         // Drop dust outputs: implicitly add to fee
         if value > Amount::from_sat(0) && value < dust_limit {
-            info!(
+            warn!(
                 "Dropping dust output: value {} < dust limit {}",
                 value, dust_limit
             );
