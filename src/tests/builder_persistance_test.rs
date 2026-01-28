@@ -209,7 +209,7 @@ mod tests {
         let internal_key = tc.key_manager().derive_keypair(BitcoinKeyType::P2tr, 1)?;
         let storage = Rc::new(tc.new_storage("protocol"));
 
-        let value = 1000;
+        let value = 2000;
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
         let script_expired =
@@ -226,10 +226,10 @@ mod tests {
             "B",
             value,
             &[script.clone()],
-            100,
+            600,
             &script_expired,
             &script_renew,
-            100,
+            600,
             &public_key,
             &internal_key,
             &SpendMode::All {
