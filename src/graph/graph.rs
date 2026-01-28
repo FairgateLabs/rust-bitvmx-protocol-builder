@@ -540,7 +540,11 @@ impl TransactionGraph {
                 5,
             )?;
 
-            let total_subtracted = total_transaction_amount + minimum_relay_fee;
+            let total_subtracted = total_transaction_amount
+                .checked_add(minimum_relay_fee)
+                .ok_or_else(|| {
+                    GraphError::OverflowError(total_transaction_amount, minimum_relay_fee)
+                })?;
             let recover_amount = total_parents_amount
                 .checked_sub(total_subtracted)
                 .ok_or_else(|| {
