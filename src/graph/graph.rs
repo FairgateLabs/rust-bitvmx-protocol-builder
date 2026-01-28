@@ -540,9 +540,17 @@ impl TransactionGraph {
                 5,
             )?;
 
-            let recover_amount = Amount::from_sat(
-                total_parents_amount - total_transaction_amount - minimum_relay_fee,
-            );
+            let total_subtracted = total_transaction_amount
+                .checked_add(minimum_relay_fee)
+                .ok_or_else(|| {
+                    GraphError::OverflowError(total_transaction_amount, minimum_relay_fee)
+                })?;
+            let recover_amount = total_parents_amount
+                .checked_sub(total_subtracted)
+                .ok_or_else(|| {
+                    GraphError::InsufficientFunds(total_parents_amount, total_subtracted)
+                })?;
+            let recover_amount = Amount::from_sat(recover_amount);
 
             // Update OutputType value
             self.update_output_value(

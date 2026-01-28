@@ -60,6 +60,12 @@ pub enum GraphError {
     #[error("Invalid signature index: {0}")]
     InvalidSignatureIndex(usize),
 
+    #[error("Insufficient funds: total amount {0} is less than subtracted amount {1}")]
+    InsufficientFunds(u64, u64),
+
+    #[error("Overflow error when calculating amounts: {0} + {1} exceeds u64 limits")]
+    OverflowError(u64, u64),
+
     #[error("Transaction with txid {0} not found in graph")]
     TransactionNotFound(String),
 
