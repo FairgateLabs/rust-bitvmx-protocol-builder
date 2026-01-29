@@ -232,6 +232,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Invalid spend mode. Expected {0}, got {1}")]
     InvalidSpendMode(String, SpendMode),
+
+    #[error("Uncompressed public key error: {0}")]
+    UncompressedPublicKeyError(#[from] UncompressedPublicKeyError),
 }
 
 #[derive(Error, Debug)]

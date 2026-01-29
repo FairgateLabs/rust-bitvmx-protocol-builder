@@ -576,7 +576,7 @@ fn push_witness(
     sighasher: &mut SighashCache<Transaction>,
 ) -> Result<(), ProtocolBuilderError> {
     let value = Amount::from_sat(utxo.amount);
-    let witness_public_key_hash = utxo.pub_key.wpubkey_hash().expect("key is compressed");
+    let witness_public_key_hash = utxo.pub_key.wpubkey_hash()?;
     let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
     let input_hash = Message::from(sighasher.p2wpkh_signature_hash(
         input_index,
