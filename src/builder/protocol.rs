@@ -2,7 +2,7 @@ use bitcoin::{
     locktime,
     secp256k1::{self, Message},
     taproot::LeafVersion,
-    transaction, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
+    transaction, Amount, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, Txid, Witness,
     XOnlyPublicKey,
 };
 use key_manager::key_manager::KeyManager;
@@ -118,6 +118,17 @@ impl Protocol {
         output_type: &OutputType,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         check_empty_transaction_name(transaction_name)?;
+
+        let value = output_type.get_value();
+        let dust_limit = output_type.dust_limit();
+
+        if value > Amount::from_sat(0) && value < dust_limit {
+            return Err(ProtocolBuilderError::DustOutput {
+                value,
+                dust_limit,
+                output_type: output_type.clone(),
+            });
+        }
 
         let mut transaction = self.get_or_create_transaction(transaction_name, false)?;
 

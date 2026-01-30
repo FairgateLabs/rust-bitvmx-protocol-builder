@@ -194,13 +194,17 @@ impl ProtocolBuilder {
             Some(funding_transaction_utxo.txid),
         )?;
 
-        protocol.add_transaction_output(
-            "cpfp",
-            &OutputType::segwit_key(
-                funding_transaction_utxo.amount - speedup_fee,
-                change_address,
-            )?,
-        )?;
+        let change_amount = funding_transaction_utxo
+            .amount
+            .checked_sub(speedup_fee)
+            .ok_or_else(|| {
+                ProtocolBuilderError::InsufficientFunds(
+                    funding_transaction_utxo.amount,
+                    speedup_fee,
+                )
+            })?;
+        let change_output = OutputType::segwit_key(change_amount, change_address)?;
+        protocol.add_transaction_output("cpfp", &change_output)?;
 
         protocol.build_and_sign(key_manager, "id")?;
 

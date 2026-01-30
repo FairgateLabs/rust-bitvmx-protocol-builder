@@ -4,7 +4,7 @@ use bitcoin::{
     secp256k1::scalar::OutOfRangeError,
     sighash::{P2wpkhError, SighashTypeParseError, TaprootError},
     taproot::TaprootBuilderError,
-    transaction,
+    transaction, Amount,
 };
 use key_manager::{
     errors::{KeyManagerError, WinternitzError},
@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use config as settings;
 
-use crate::types::input::SpendMode;
+use crate::types::{input::SpendMode, OutputType};
 
 #[derive(Error, Debug)]
 pub enum UnspendableKeyError {
@@ -232,6 +232,13 @@ pub enum ProtocolBuilderError {
 
     #[error("Invalid spend mode. Expected {0}, got {1}")]
     InvalidSpendMode(String, SpendMode),
+
+    #[error("Dust output detected. Value: {value}, Dust limit: {dust_limit}, Output type: {output_type:?}")]
+    DustOutput {
+        value: Amount,
+        dust_limit: Amount,
+        output_type: OutputType,
+    },
 
     #[error("Uncompressed public key error: {0}")]
     UncompressedPublicKeyError(#[from] UncompressedPublicKeyError),
