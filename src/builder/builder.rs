@@ -194,13 +194,17 @@ impl ProtocolBuilder {
             Some(funding_transaction_utxo.txid),
         )?;
 
-        protocol.add_transaction_output(
-            "cpfp",
-            &OutputType::segwit_key(
-                funding_transaction_utxo.amount - speedup_fee,
-                change_address,
-            )?,
-        )?;
+        let change_amount = funding_transaction_utxo
+            .amount
+            .checked_sub(speedup_fee)
+            .ok_or_else(|| {
+                ProtocolBuilderError::InsufficientFunds(
+                    funding_transaction_utxo.amount,
+                    speedup_fee,
+                )
+            })?;
+        let change_output = OutputType::segwit_key(change_amount, change_address)?;
+        protocol.add_transaction_output("cpfp", &change_output)?;
 
         protocol.build_and_sign(key_manager, "id")?;
 
@@ -576,7 +580,7 @@ fn push_witness(
     sighasher: &mut SighashCache<Transaction>,
 ) -> Result<(), ProtocolBuilderError> {
     let value = Amount::from_sat(utxo.amount);
-    let witness_public_key_hash = utxo.pub_key.wpubkey_hash().expect("key is compressed");
+    let witness_public_key_hash = utxo.pub_key.wpubkey_hash()?;
     let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
     let input_hash = Message::from(sighasher.p2wpkh_signature_hash(
         input_index,

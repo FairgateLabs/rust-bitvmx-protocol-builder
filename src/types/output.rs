@@ -22,6 +22,7 @@ use super::input::SpendMode;
 
 pub const AUTO_AMOUNT: u64 = 1;
 pub const RECOVER_AMOUNT: u64 = 2;
+pub const MAX_DUST_LIMIT: u64 = 540;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageId {
@@ -166,7 +167,7 @@ impl OutputType {
     }
 
     pub fn segwit_key(value: u64, public_key: &PublicKey) -> Result<Self, ProtocolBuilderError> {
-        let witness_public_key_hash = public_key.wpubkey_hash().expect("key is compressed");
+        let witness_public_key_hash = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
 
         Ok(OutputType::SegwitPublicKey {
@@ -199,11 +200,18 @@ impl OutputType {
     // TODO: for a more precise estimation we can set different dust limits for different output types
     pub fn dust_limit(&self) -> Amount {
         match self {
-            OutputType::Taproot { .. } => Amount::from_sat(540),
-            OutputType::SegwitPublicKey { .. } => Amount::from_sat(540),
-            OutputType::SegwitScript { .. } => Amount::from_sat(540),
-            OutputType::SegwitUnspendable { .. } => Amount::from_sat(540),
-            OutputType::ExternalUnknown { .. } => Amount::from_sat(540),
+            OutputType::Taproot { .. } => Amount::from_sat(MAX_DUST_LIMIT),
+            OutputType::SegwitPublicKey { .. } => Amount::from_sat(MAX_DUST_LIMIT),
+            OutputType::SegwitScript { .. } => Amount::from_sat(MAX_DUST_LIMIT),
+            OutputType::SegwitUnspendable { .. } => Amount::from_sat(MAX_DUST_LIMIT),
+            OutputType::ExternalUnknown { .. } => Amount::from_sat(MAX_DUST_LIMIT),
+        }
+    }
+
+    pub fn generic_dust_limit(output_type: Option<&OutputType>) -> Amount {
+        match output_type {
+            Some(output) => output.dust_limit(),
+            None => Amount::from_sat(MAX_DUST_LIMIT),
         }
     }
 
@@ -604,7 +612,7 @@ impl OutputType {
         value: &Amount,
         public_key: &PublicKey,
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
-        let wpkh = public_key.wpubkey_hash().expect("key is compressed");
+        let wpkh = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
 
         let mut sighasher = SighashCache::new(transaction);

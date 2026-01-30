@@ -27,5 +27,4 @@ jobs:
       submodule_path: 'rust-bitvmx-protocol-builder'
       cargo_lock_path: 'rust-bitvmx-protocol-builder/Cargo.lock'
       target_path: 'rust-bitvmx-protocol-builder/target'
-      nightly: false
     secrets: inherit
