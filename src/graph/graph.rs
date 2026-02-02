@@ -18,6 +18,7 @@ use crate::{
     },
 };
 
+#[allow(unused_macros)]
 macro_rules! max {
     ($x:expr) => ($x);
     ($x:expr, $($xs:expr),+) => (
@@ -660,25 +661,29 @@ impl TransactionGraph {
                 auto_parents.push((parent_key, output));
             } else {
                 let value = output.get_value();
-                remaining = remaining
-                    .checked_sub(value.to_sat())
-                    .ok_or_else(|| GraphError::InsufficientFunds(remaining, value.to_sat()))?;
+                remaining = remaining.saturating_sub(value.to_sat()); // Saturating at 0
                 amounts.insert(parent_key, value);
             };
         }
 
         if !auto_parents.is_empty() {
-            let per_parent = remaining / (auto_parents.len() as u64);
-            let mut extra = remaining % (auto_parents.len() as u64);
+            let count = auto_parents.len() as u64;
+            let per_parent = remaining / count;
+            let mut extra = remaining % count;
 
             for (parent_key, output) in auto_parents {
-                let mut value = Amount::from_sat(per_parent);
-                if extra > 0 {
-                    value += Amount::from_sat(1);
-                    extra -= 1;
-                }
-                let final_value = max!(value, output.dust_limit());
-                amounts.insert(parent_key, final_value);
+                let dust = output.dust_limit();
+                let value = if remaining == 0 || per_parent < dust.to_sat() {
+                    dust
+                } else {
+                    let mut value = Amount::from_sat(per_parent);
+                    if extra > 0 {
+                        value += Amount::from_sat(1);
+                        extra -= 1;
+                    }
+                    value
+                };
+                amounts.insert(parent_key, value);
             }
         } else if remaining != 0 {
             return Err(GraphError::WrongAmount(0, remaining));
