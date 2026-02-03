@@ -75,12 +75,13 @@ mod tests {
         protocol.add_transaction("end")?;
 
         // Avoid generating the hashes and signatures for all the spend paths of the challenge output
-        let challenge_output = OutputType::taproot(value, &internal_key, &challenge_leaves)?;
+        let challenge_output = OutputType::taproot(value.into(), &internal_key, &challenge_leaves)?;
         protocol.add_transaction_output("challenge", &challenge_output)?;
 
         // Create the transaction output types
-        let external_output = OutputType::segwit_key(value, &public_key)?;
-        let start_challenge_output = OutputType::taproot(value, &internal_key, &timeout_leaves)?;
+        let external_output = OutputType::segwit_key(value.into(), &public_key)?;
+        let start_challenge_output =
+            OutputType::taproot(value.into(), &internal_key, &timeout_leaves)?;
 
         // Add the
 
@@ -155,7 +156,8 @@ mod tests {
             .add_transaction_output("response_op3", &OutputType::segwit_unspendable(script_op3)?)?;
 
         // End the challenge avoiding the generation of the hashes and signatures for the response challenge output
-        let end_challenge_output = OutputType::taproot(value, &internal_key, &timeout_leaves)?;
+        let end_challenge_output =
+            OutputType::taproot(value.into(), &internal_key, &timeout_leaves)?;
 
         // Connect the response transaction from op1 to the end transaction
         protocol.add_connection(

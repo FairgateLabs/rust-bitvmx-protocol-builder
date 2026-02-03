@@ -1,4 +1,7 @@
-use std::{collections::HashMap, vec};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    vec,
+};
 
 use bitcoin::{secp256k1::Message, Amount, Transaction, TxOut, Txid};
 use petgraph::{
@@ -520,7 +523,11 @@ impl TransactionGraph {
                     .try_fold(0u64, |acc, &connection| {
                         let parent = self.get_from_node(connection)?;
                         let output_index = self.get_connection(connection)?.output_index as usize;
-                        Ok(acc + parent.outputs[output_index].get_value().to_sat())
+                        Ok(acc
+                            + parent.outputs[output_index]
+                                .get_value()
+                                .ok_or_else(|| GraphError::AmountTypeValueExpected)?
+                                .to_sat())
                     })?;
 
             // Collect the transaction outputs amount, excluding the recovering output
@@ -620,13 +627,15 @@ impl TransactionGraph {
             }
 
             // If the output is auto or recover value, set the dust limit, otherwise use the output value
-            let amount = amounts.entry(key).or_insert_with(|| {
-                if output_type.auto_value() || output_type.recover_value() {
-                    output_type.dust_limit()
-                } else {
-                    output_type.get_value()
+            let amount = match amounts.entry(key) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let value = output_type
+                        .get_value_or_dust()
+                        .map_err(|error| GraphError::DustOutput(error.to_string()))?;
+                    entry.insert(value)
                 }
-            });
+            };
 
             transaction_amount += amount.to_sat();
         }
@@ -660,7 +669,9 @@ impl TransactionGraph {
             if output.auto_value() {
                 auto_parents.push((parent_key, output));
             } else {
-                let value = output.get_value();
+                let value = output
+                    .get_value()
+                    .ok_or_else(|| GraphError::AmountTypeValueExpected)?;
                 remaining = remaining.saturating_sub(value.to_sat()); // Saturating at 0
                 amounts.insert(parent_key, value);
             };
@@ -701,11 +712,20 @@ impl TransactionGraph {
             let inputs = from.transaction.input.len();
             let outputs = from.transaction.output.len();
 
-            let sum_in = from
+            let sum_in: u64 = from
                 .inputs
                 .iter()
-                .map(|i| i.output_type().unwrap().get_value().to_sat())
-                .sum::<u64>();
+                .map(|i| {
+                    Ok::<u64, GraphError>(
+                        i.output_type()?
+                            .get_value()
+                            .ok_or_else(|| GraphError::AmountTypeValueExpected)?
+                            .to_sat(),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .sum();
 
             let sum_out = from
                 .transaction

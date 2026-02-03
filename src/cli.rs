@@ -296,7 +296,7 @@ impl Cli {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new(protocol_name);
 

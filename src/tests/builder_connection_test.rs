@@ -78,7 +78,7 @@ mod tests {
             SignMode::Single,
         );
 
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
@@ -319,7 +319,7 @@ mod tests {
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
 
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let scripts_from = vec![script.clone(), script.clone()];
         let scripts_to = scripts_from.clone();
@@ -403,7 +403,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("single_connection");
         let builder = ProtocolBuilder {};
@@ -459,7 +459,7 @@ mod tests {
             &internal_segwit_key,
             SignMode::Single,
         );
-        let output_type = OutputType::segwit_script(value, &segwit_script)?;
+        let output_type = OutputType::segwit_script(value.into(), &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -615,7 +615,7 @@ mod tests {
             &internal_segwit_key,
             SignMode::Single,
         );
-        let output_type = OutputType::segwit_script(value, &segwit_script)?;
+        let output_type = OutputType::segwit_script(value.into(), &segwit_script)?;
 
         let mut protocol = Protocol::new("rounds");
         let builder = ProtocolBuilder {};
@@ -834,7 +834,7 @@ mod tests {
         let existing_txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("txid_lookup_test");
         let builder = ProtocolBuilder {};
@@ -899,7 +899,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &external_key, SignMode::Single);
-        let output_type = OutputType::taproot(value, &external_key, &[script.clone()])?;
+        let output_type = OutputType::taproot(value.into(), &external_key, &[script.clone()])?;
 
         let mut protocol = Protocol::new("taproot_rounds_endpoints");
         let builder = ProtocolBuilder {};
@@ -1148,7 +1148,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("visualize_test");
         let builder = ProtocolBuilder {};
@@ -1225,7 +1225,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("edge_arrows_test");
         let builder = ProtocolBuilder {};
@@ -1277,7 +1277,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("multi_node_test");
         let builder = ProtocolBuilder {};
@@ -1378,7 +1378,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("signature_index_test");
         let builder = ProtocolBuilder {};
@@ -1397,7 +1397,7 @@ mod tests {
         protocol.add_connection(
             "conn",
             "A",
-            OutputSpec::Auto(OutputType::segwit_key(value, &internal_key)?),
+            OutputSpec::Auto(OutputType::segwit_key(value.into(), &internal_key)?),
             "B",
             InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
             None,
@@ -1450,7 +1450,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &internal_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value, &script)?;
+        let output_type = OutputType::segwit_script(value.into(), &script)?;
 
         let mut protocol = Protocol::new("sign_type_mismatch_test");
         let builder = ProtocolBuilder {};

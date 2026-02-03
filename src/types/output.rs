@@ -117,76 +117,75 @@ impl Into<SpeedupData> for Utxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AmountMode {
-    None,
+pub enum AmountType {
+    Value(Amount),
+    Return,
     Auto,
     Recover,
+    None,
 }
-impl AmountMode {
+impl AmountType {
     pub fn is_none(&self) -> bool {
-        matches!(self, AmountMode::None)
+        matches!(self, AmountType::None)
+    }
+    pub fn is_return(&self) -> bool {
+        matches!(self, AmountType::Return)
     }
     pub fn is_auto(&self) -> bool {
-        matches!(self, AmountMode::Auto)
+        matches!(self, AmountType::Auto)
     }
     pub fn is_recover(&self) -> bool {
-        matches!(self, AmountMode::Recover)
+        matches!(self, AmountType::Recover)
+    }
+    pub fn get_value(&self) -> Option<Amount> {
+        match self {
+            AmountType::Value(v) => Some(*v),
+            _ => None,
+        }
     }
 }
-impl From<u64> for AmountMode {
+impl From<u64> for AmountType {
     fn from(value: u64) -> Self {
-        match value {
-            1 => AmountMode::Auto,
-            2 => AmountMode::Recover,
-            _ => AmountMode::None,
-        }
+        AmountType::Value(Amount::from_sat(value))
     }
 }
-impl From<AmountMode> for u64 {
-    fn from(mode: AmountMode) -> Self {
-        match mode {
-            AmountMode::None => 0,
-            AmountMode::Auto => 1,
-            AmountMode::Recover => 2,
-        }
+impl From<Amount> for AmountType {
+    fn from(value: Amount) -> Self {
+        AmountType::Value(value)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputType {
     Taproot {
-        value: Amount,
+        value: AmountType,
         internal_key: PublicKey,
         script_pubkey: ScriptBuf,
         leaves: Vec<ProtocolScript>,
-        amount_mode: AmountMode,
     },
     SegwitPublicKey {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         public_key: PublicKey,
-        amount_mode: AmountMode,
     },
     SegwitScript {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
         script: ProtocolScript,
-        amount_mode: AmountMode,
     },
     SegwitUnspendable {
-        value: Amount,
+        value: AmountType,
         script_pubkey: ScriptBuf,
-        amount_mode: AmountMode,
     },
     ExternalUnknown {
+        value: AmountType,
         script_pubkey: ScriptBuf,
-        amount_mode: AmountMode,
     },
 }
 
 impl OutputType {
     pub fn taproot(
-        value: u64,
+        value: AmountType,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
     ) -> Result<Self, ProtocolBuilderError> {
@@ -197,52 +196,51 @@ impl OutputType {
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
 
         Ok(OutputType::Taproot {
-            value: Amount::from_sat(value),
+            value,
             internal_key: *internal_key,
             script_pubkey,
             leaves: leaves.to_vec(),
-            amount_mode: AmountMode::from(value),
         })
     }
 
-    pub fn segwit_key(value: u64, public_key: &PublicKey) -> Result<Self, ProtocolBuilderError> {
+    pub fn segwit_key(
+        value: AmountType,
+        public_key: &PublicKey,
+    ) -> Result<Self, ProtocolBuilderError> {
         let witness_public_key_hash = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
 
         Ok(OutputType::SegwitPublicKey {
-            value: Amount::from_sat(value),
+            value,
             public_key: *public_key,
             script_pubkey,
-            amount_mode: AmountMode::from(value),
         })
     }
 
     pub fn segwit_script(
-        value: u64,
+        value: AmountType,
         script: &ProtocolScript,
     ) -> Result<Self, ProtocolBuilderError> {
         let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.get_script().clone()));
 
         Ok(OutputType::SegwitScript {
-            value: Amount::from_sat(value),
+            value,
             script_pubkey,
             script: script.clone(),
-            amount_mode: AmountMode::from(value),
         })
     }
 
     pub fn segwit_unspendable(script_pubkey: ScriptBuf) -> Result<Self, ProtocolBuilderError> {
         Ok(OutputType::SegwitUnspendable {
-            value: Amount::from_sat(0),
+            value: AmountType::Return,
             script_pubkey,
-            amount_mode: AmountMode::None,
         })
     }
 
     pub fn external_unknown(script_pubkey: ScriptBuf) -> Result<Self, ProtocolBuilderError> {
         Ok(OutputType::ExternalUnknown {
+            value: AmountType::None,
             script_pubkey,
-            amount_mode: AmountMode::None,
         })
     }
 
@@ -274,47 +272,75 @@ impl OutputType {
         }
     }
 
-    pub fn get_value(&self) -> Amount {
+    pub fn get_value(&self) -> Option<Amount> {
         match self {
             OutputType::Taproot { value, .. }
             | OutputType::SegwitPublicKey { value, .. }
             | OutputType::SegwitScript { value, .. }
-            | OutputType::SegwitUnspendable { value, .. } => *value,
-            OutputType::ExternalUnknown { .. } => Amount::from_sat(0), /*TODO: FIX  {
-                                                                           panic!("Cannot get value of ExternalUnknown output type")
-                                                                       }*/
+            | OutputType::SegwitUnspendable { value, .. }
+            | OutputType::ExternalUnknown { value, .. } => match value {
+                AmountType::Value(v) => Some(*v),
+                _ => None,
+            },
+        }
+    }
+
+    pub fn get_value_or_err(&self) -> Result<Amount, ProtocolBuilderError> {
+        self.get_value()
+            .ok_or(ProtocolBuilderError::AmountTypeValueExpected)
+    }
+
+    pub fn get_value_or_dust(&self) -> Result<Amount, ProtocolBuilderError> {
+        match self.get_value() {
+            Some(value) => {
+                if value < self.dust_limit() {
+                    return Err(ProtocolBuilderError::DustOutput {
+                        value,
+                        dust_limit: self.dust_limit(),
+                        output_type: self.clone(),
+                    });
+                }
+                Ok(value)
+            }
+            None => Ok(self.dust_limit()),
         }
     }
 
     pub fn set_value(&mut self, new_value: Amount) {
         match self {
-            OutputType::Taproot { value, .. } => *value = new_value,
-            OutputType::SegwitPublicKey { value, .. } => *value = new_value,
-            OutputType::SegwitScript { value, .. } => *value = new_value,
-            OutputType::SegwitUnspendable { value, .. } => *value = new_value,
-            OutputType::ExternalUnknown { .. } => { /* No value field to set */ }
+            OutputType::Taproot { value, .. } => *value = new_value.into(),
+            OutputType::SegwitPublicKey { value, .. } => *value = new_value.into(),
+            OutputType::SegwitScript { value, .. } => *value = new_value.into(),
+            OutputType::SegwitUnspendable { value, .. } => *value = new_value.into(),
+            OutputType::ExternalUnknown { value, .. } => *value = new_value.into(),
+        }
+    }
+
+    fn amount_type(&self) -> &AmountType {
+        match self {
+            OutputType::Taproot { value, .. }
+            | OutputType::SegwitPublicKey { value, .. }
+            | OutputType::SegwitScript { value, .. }
+            | OutputType::SegwitUnspendable { value, .. }
+            | OutputType::ExternalUnknown { value, .. } => value,
         }
     }
 
     pub fn auto_value(&self) -> bool {
-        match self {
-            OutputType::Taproot { amount_mode, .. }
-            | OutputType::SegwitPublicKey { amount_mode, .. }
-            | OutputType::SegwitScript { amount_mode, .. }
-            | OutputType::SegwitUnspendable { amount_mode, .. } => amount_mode.is_auto(),
-            OutputType::ExternalUnknown { .. } => false,
-        }
+        self.amount_type().is_auto()
     }
 
     pub fn recover_value(&self) -> bool {
-        match self {
-            OutputType::Taproot { amount_mode, .. }
-            | OutputType::SegwitPublicKey { amount_mode, .. }
-            | OutputType::SegwitScript { amount_mode, .. }
-            | OutputType::SegwitUnspendable { amount_mode, .. } => amount_mode.is_recover(),
-            OutputType::ExternalUnknown { .. } => false,
-        }
+        self.amount_type().is_recover()
     }
+
+    // pub fn return_value(&self) -> bool {
+    //     self.amount_type().is_return()
+    // }
+
+    // pub fn none_value(&self) -> bool {
+    //     self.amount_type().is_none()
+    // }
 
     pub fn get_script_pubkey(&self) -> &ScriptBuf {
         match self {
@@ -396,14 +422,14 @@ impl OutputType {
                 transaction,
                 input_index,
                 ecdsa_sighash_type,
-                value,
+                &value.get_value().unwrap_or_else(|| self.dust_limit()),
                 public_key,
             )?,
             OutputType::SegwitScript { value, script, .. } => self.ecdsa_script_sighash(
                 transaction,
                 input_index,
                 ecdsa_sighash_type,
-                value,
+                &value.get_value().unwrap_or_else(|| self.dust_limit()),
                 script,
             )?,
             OutputType::SegwitUnspendable { .. } => {
