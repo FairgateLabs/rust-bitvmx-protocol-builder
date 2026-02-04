@@ -184,8 +184,8 @@ pub enum OutputType {
 }
 
 impl OutputType {
-    pub fn taproot(
-        value: AmountType,
+    pub fn taproot<V: Into<AmountType>>(
+        value: V,
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
     ) -> Result<Self, ProtocolBuilderError> {
@@ -196,35 +196,35 @@ impl OutputType {
             ScriptBuf::new_p2tr(&secp, spend_info.internal_key(), spend_info.merkle_root());
 
         Ok(OutputType::Taproot {
-            value,
+            value: value.into(),
             internal_key: *internal_key,
             script_pubkey,
             leaves: leaves.to_vec(),
         })
     }
 
-    pub fn segwit_key(
-        value: AmountType,
+    pub fn segwit_key<V: Into<AmountType>>(
+        value: V,
         public_key: &PublicKey,
     ) -> Result<Self, ProtocolBuilderError> {
         let witness_public_key_hash = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
 
         Ok(OutputType::SegwitPublicKey {
-            value,
+            value: value.into(),
             public_key: *public_key,
             script_pubkey,
         })
     }
 
-    pub fn segwit_script(
-        value: AmountType,
+    pub fn segwit_script<V: Into<AmountType>>(
+        value: V,
         script: &ProtocolScript,
     ) -> Result<Self, ProtocolBuilderError> {
         let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.get_script().clone()));
 
         Ok(OutputType::SegwitScript {
-            value,
+            value: value.into(),
             script_pubkey,
             script: script.clone(),
         })
@@ -333,14 +333,6 @@ impl OutputType {
     pub fn recover_value(&self) -> bool {
         self.amount_type().is_recover()
     }
-
-    // pub fn return_value(&self) -> bool {
-    //     self.amount_type().is_return()
-    // }
-
-    // pub fn none_value(&self) -> bool {
-    //     self.amount_type().is_none()
-    // }
 
     pub fn get_script_pubkey(&self) -> &ScriptBuf {
         match self {

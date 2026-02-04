@@ -34,7 +34,7 @@ mod tests {
         let public_key = PublicKey::from_slice(&pubkey_bytes).expect("Invalid public key format");
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &public_key, SignMode::Single);
-        let output_type = OutputType::segwit_script(value.into(), &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         // Arrange
         let number: u64 = 0;
@@ -117,7 +117,7 @@ mod tests {
             &public_segwit_key,
             SignMode::Single,
         );
-        let output_type = OutputType::segwit_script(value.into(), &script)?;
+        let output_type = OutputType::segwit_script(value, &script)?;
 
         let speedup_value = 2450000;
         let pubkey_alice = tc

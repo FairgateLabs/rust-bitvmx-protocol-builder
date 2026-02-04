@@ -17,7 +17,7 @@ mod tests {
             .expect("key is compressed");
         let script_pubkey = ScriptBuf::new_p2wpkh(&witness_public_key_hash);
 
-        let output_type = OutputType::segwit_key(value.into(), &public_key.into()).unwrap();
+        let output_type = OutputType::segwit_key(value, &public_key.into()).unwrap();
 
         match output_type {
             OutputType::SegwitPublicKey {
@@ -45,7 +45,7 @@ mod tests {
         );
         let script_pubkey = ScriptBuf::new_p2wsh(&WScriptHash::from(script.get_script().clone()));
 
-        let output_type = OutputType::segwit_script(value.into(), &script).unwrap();
+        let output_type = OutputType::segwit_script(value, &script).unwrap();
 
         match output_type {
             OutputType::SegwitScript {
@@ -70,7 +70,7 @@ mod tests {
         let auto_output = OutputType::segwit_key(AmountType::Auto, &public_key.into()).unwrap();
         let recover_output =
             OutputType::segwit_key(AmountType::Recover, &public_key.into()).unwrap();
-        let normal_output = OutputType::segwit_key(1000.into(), &public_key.into()).unwrap();
+        let normal_output = OutputType::segwit_key(1000, &public_key.into()).unwrap();
 
         // Test auto_value() flags
         assert_eq!(auto_output.auto_value(), true);

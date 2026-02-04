@@ -68,7 +68,7 @@ fn protocol_example(key_manager: Rc<KeyManager>) -> Result<Protocol> {
         &mut protocol,
         "external_funding",
         external_txid,
-        OutputSpec::Auto(OutputType::segwit_key(120_000.into(), &external_key)?),
+        OutputSpec::Auto(OutputType::segwit_key(120_000, &external_key)?),
         "taproot_key_tx",
         InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
     )?;

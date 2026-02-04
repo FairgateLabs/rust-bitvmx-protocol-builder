@@ -34,7 +34,7 @@ impl ProtocolBuilder {
         internal_key: &PublicKey,
         leaves: &[ProtocolScript],
     ) -> Result<&Self, ProtocolBuilderError> {
-        let output_type = OutputType::taproot(value.into(), internal_key, leaves)?;
+        let output_type = OutputType::taproot(value, internal_key, leaves)?;
         protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
@@ -46,7 +46,7 @@ impl ProtocolBuilder {
         value: u64,
         public_key: &PublicKey,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let output_type = OutputType::segwit_key(value.into(), public_key)?;
+        let output_type = OutputType::segwit_key(value, public_key)?;
         protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
@@ -58,7 +58,7 @@ impl ProtocolBuilder {
         value: u64,
         script: &ProtocolScript,
     ) -> Result<&Self, ProtocolBuilderError> {
-        let output_type = OutputType::segwit_script(value.into(), script)?;
+        let output_type = OutputType::segwit_script(value, script)?;
         protocol.add_transaction_output(transaction_name, &output_type)?;
         Ok(self)
     }
@@ -148,7 +148,7 @@ impl ProtocolBuilder {
 
             if let Some(utxo) = &speedup_data.utxo {
                 protocol.add_unknown_outputs(&tx_name, utxo.vout)?;
-                let external_output = OutputType::segwit_key(utxo.amount.into(), &utxo.pub_key)?;
+                let external_output = OutputType::segwit_key(utxo.amount, &utxo.pub_key)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
                     &tx_name,
@@ -181,7 +181,7 @@ impl ProtocolBuilder {
         protocol.add_external_transaction("funding")?;
         protocol.add_unknown_outputs("funding", funding_transaction_utxo.vout)?;
         let external_output = OutputType::segwit_key(
-            funding_transaction_utxo.amount.into(),
+            funding_transaction_utxo.amount,
             &funding_transaction_utxo.pub_key,
         )?;
         protocol.add_connection(
@@ -203,7 +203,7 @@ impl ProtocolBuilder {
                     speedup_fee,
                 )
             })?;
-        let change_output = OutputType::segwit_key(change_amount.into(), change_address)?;
+        let change_output = OutputType::segwit_key(change_amount, change_address)?;
         protocol.add_transaction_output("cpfp", &change_output)?;
 
         protocol.build_and_sign(key_manager, "id")?;
@@ -315,7 +315,7 @@ impl ProtocolBuilder {
         protocol.add_connection(
             connection_name,
             from,
-            OutputSpec::Auto(OutputType::taproot(value.into(), internal_key, leaves)?),
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves)?),
             to,
             InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
             None,
@@ -339,7 +339,7 @@ impl ProtocolBuilder {
         protocol.add_connection(
             connection_name,
             from,
-            OutputSpec::Auto(OutputType::segwit_key(value.into(), public_key)?),
+            OutputSpec::Auto(OutputType::segwit_key(value, public_key)?),
             to,
             InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
             None,
@@ -363,7 +363,7 @@ impl ProtocolBuilder {
         protocol.add_connection(
             connection_name,
             from,
-            OutputSpec::Auto(OutputType::segwit_script(value.into(), script)?),
+            OutputSpec::Auto(OutputType::segwit_script(value, script)?),
             to,
             InputSpec::Auto(sighash_type.clone(), SpendMode::Segwit),
             None,
@@ -390,7 +390,7 @@ impl ProtocolBuilder {
             "timelock",
             from,
             OutputSpec::Auto(OutputType::taproot(
-                value.into(),
+                value,
                 internal_key,
                 &[expired_script.clone(), renew_script.clone()],
             )?),
@@ -494,11 +494,7 @@ impl ProtocolBuilder {
             protocol.add_connection(
                 connection_name,
                 &from_round,
-                OutputSpec::Auto(OutputType::taproot(
-                    value.into(),
-                    internal_key,
-                    leaves_from,
-                )?),
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
                 &to_round,
                 InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
                 None,
@@ -513,7 +509,7 @@ impl ProtocolBuilder {
             protocol.add_connection(
                 connection_name,
                 &to_round,
-                OutputSpec::Auto(OutputType::taproot(value.into(), internal_key, leaves_to)?),
+                OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_to)?),
                 &from_round,
                 InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
                 None,
@@ -530,11 +526,7 @@ impl ProtocolBuilder {
         protocol.add_connection(
             connection_name,
             &from_round,
-            OutputSpec::Auto(OutputType::taproot(
-                value.into(),
-                internal_key,
-                leaves_from,
-            )?),
+            OutputSpec::Auto(OutputType::taproot(value, internal_key, leaves_from)?),
             &to_round,
             InputSpec::Auto(sighash_type.clone(), spend_mode.clone()),
             None,

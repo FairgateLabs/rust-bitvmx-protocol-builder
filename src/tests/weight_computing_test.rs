@@ -74,7 +74,7 @@ mod tests {
             SignMode::Single,
         );
 
-        let output_type = OutputType::segwit_script(value.into(), &segwit_script)?;
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let scripts_from = vec![script_a.clone(), script_b.clone()];
         let scripts_to = scripts_from.clone();
