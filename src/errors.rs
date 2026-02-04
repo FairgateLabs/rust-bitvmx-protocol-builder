@@ -77,6 +77,12 @@ pub enum GraphError {
 
     #[error("Transaction name cannot be empty")]
     EmptyTransactionName,
+
+    #[error("Amount value expected but got different variant in AmountType")]
+    AmountTypeValueExpected,
+
+    #[error("Output amount is less than dust limit: {0} ")]
+    DustOutput(String),
 }
 
 #[derive(Error, Debug)]
@@ -245,6 +251,9 @@ pub enum ProtocolBuilderError {
 
     #[error("Uncompressed public key error: {0}")]
     UncompressedPublicKeyError(#[from] UncompressedPublicKeyError),
+
+    #[error("Amount value expected but got different variant in AmountType")]
+    AmountTypeValueExpected,
 }
 
 #[derive(Error, Debug)]

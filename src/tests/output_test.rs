@@ -2,7 +2,7 @@
 mod tests {
     use crate::{
         scripts::{ProtocolScript, SignMode},
-        types::output::{AmountMode, OutputType},
+        types::output::{AmountType, OutputType},
     };
 
     use bitcoin::{key::rand, secp256k1::Secp256k1, Amount, ScriptBuf, WScriptHash};
@@ -24,9 +24,8 @@ mod tests {
                 value: v,
                 script_pubkey: s,
                 public_key: key,
-                amount_mode: _,
             } => {
-                assert_eq!(v, Amount::from_sat(value));
+                assert_eq!(v, value.into());
                 assert_eq!(s, script_pubkey);
                 assert_eq!(key, public_key.into());
             }
@@ -53,9 +52,8 @@ mod tests {
                 value: v,
                 script_pubkey: s,
                 script: sc,
-                amount_mode: _,
             } => {
-                assert_eq!(v, Amount::from_sat(value));
+                assert_eq!(v, value.into());
                 assert_eq!(s, script_pubkey);
                 assert_eq!(sc.get_script(), script.get_script());
             }
@@ -69,10 +67,9 @@ mod tests {
         let secp = Secp256k1::new();
         let (_, public_key) = secp.generate_keypair(&mut rand::thread_rng());
 
-        let auto_output =
-            OutputType::segwit_key(AmountMode::Auto.into(), &public_key.into()).unwrap();
+        let auto_output = OutputType::segwit_key(AmountType::Auto, &public_key.into()).unwrap();
         let recover_output =
-            OutputType::segwit_key(AmountMode::Recover.into(), &public_key.into()).unwrap();
+            OutputType::segwit_key(AmountType::Recover, &public_key.into()).unwrap();
         let normal_output = OutputType::segwit_key(1000, &public_key.into()).unwrap();
 
         // Test auto_value() flags
@@ -102,7 +99,7 @@ mod tests {
 
         // Test with SegwitScript
         let recover_script_output =
-            OutputType::segwit_script(AmountMode::Recover.into(), &script).unwrap();
+            OutputType::segwit_script(AmountType::Recover, &script).unwrap();
         assert_eq!(recover_script_output.auto_value(), false);
         assert_eq!(recover_script_output.recover_value(), true);
         assert!(recover_script_output.dust_limit().to_sat() >= 540);
