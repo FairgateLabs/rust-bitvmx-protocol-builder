@@ -280,6 +280,7 @@ impl OutputType {
             | OutputType::SegwitUnspendable { value, .. }
             | OutputType::ExternalUnknown { value, .. } => match value {
                 AmountType::Value(v) => Some(*v),
+                AmountType::Return => Some(Amount::from_sat(0)),
                 _ => None,
             },
         }
@@ -293,7 +294,7 @@ impl OutputType {
     pub fn get_value_or_dust(&self) -> Result<Amount, ProtocolBuilderError> {
         match self.get_value() {
             Some(value) => {
-                if value < self.dust_limit() {
+                if value < self.dust_limit() && !self.return_value() {
                     return Err(ProtocolBuilderError::DustOutput {
                         value,
                         dust_limit: self.dust_limit(),
@@ -332,6 +333,10 @@ impl OutputType {
 
     pub fn recover_value(&self) -> bool {
         self.amount_type().is_recover()
+    }
+
+    pub fn return_value(&self) -> bool {
+        self.amount_type().is_return()
     }
 
     pub fn get_script_pubkey(&self) -> &ScriptBuf {
