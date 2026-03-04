@@ -673,7 +673,10 @@ impl TransactionGraph {
                     .get_value()
                     .ok_or_else(|| GraphError::AmountTypeValueExpected)?;
                 remaining = remaining.saturating_sub(value.to_sat()); // Saturating at 0
-                amounts.insert(parent_key, value);
+                let current_amount = amounts.get(&parent_key).cloned().unwrap_or_default();
+                if value.to_sat() > current_amount.to_sat() {
+                    amounts.insert(parent_key, value);
+                }
             };
         }
 
@@ -694,7 +697,11 @@ impl TransactionGraph {
                     }
                     value
                 };
-                amounts.insert(parent_key, value);
+
+                let current_amount = amounts.get(&parent_key).cloned().unwrap_or_default();
+                if value.to_sat() > current_amount.to_sat() {
+                    amounts.insert(parent_key, value);
+                }
             }
         } else if remaining != 0 {
             return Err(GraphError::WrongAmount(0, remaining));
