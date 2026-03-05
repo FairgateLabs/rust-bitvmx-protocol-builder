@@ -14,7 +14,11 @@ use bitcoin_script_functions::signatures::winternitz::winternitz_checksig;
 use bitcoin_script_stack::stack::StackTracker;
 use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
-use key_manager::winternitz::{WinternitzPublicKey, WinternitzType};
+use key_manager::{
+    errors::LamportError,
+    lamport::{LamportPublicKey, LamportType},
+    winternitz::{WinternitzPublicKey, WinternitzType},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::ScriptError;
@@ -29,6 +33,10 @@ pub enum KeyType {
     XOnlyKey,
     WinternitzKey {
         key_type: WinternitzType,
+        message_size: usize,
+    },
+    LamportKey {
+        key_type: LamportType,
         message_size: usize,
     },
 }
@@ -49,6 +57,13 @@ impl KeyType {
         })
     }
 
+    pub fn lamport(key: &LamportPublicKey) -> Result<Self, ScriptError> {
+        Ok(KeyType::LamportKey {
+            key_type: key.hash_type(),
+            message_size: key.len(),
+        })
+    }
+
     pub fn winternitz_message_size(&self) -> Result<usize, ScriptError> {
         match self {
             KeyType::WinternitzKey { message_size, .. } => Ok(*message_size),
@@ -59,6 +74,13 @@ impl KeyType {
             KeyType::XOnlyKey => Err(ScriptError::InvalidKeyType(
                 "Winternitz".to_string(),
                 "XOnlyKey".to_string(),
+            )),
+            KeyType::LamportKey {
+                key_type: _,
+                message_size: _,
+            } => Err(ScriptError::InvalidKeyType(
+                "Winternitz".to_string(),
+                "Lamport".to_string(),
             )),
         }
     }
@@ -320,6 +342,91 @@ pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
     }
 
     Ok(protocol_script)
+}
+
+pub fn verify_lamport_signatures<T: AsRef<str>>(
+    verifying_key: &PublicKey,
+    public_keys: &Vec<(T, &LamportPublicKey)>,
+    sign_mode: SignMode,
+    extra_check_script: Option<Vec<ScriptBuf>>,
+) -> Result<ProtocolScript, ScriptError> {
+    let keep_message = extra_check_script.is_some();
+
+    let script = script!(
+        {XOnlyPublicKey::from(*verifying_key).serialize().to_vec()}
+        OP_CHECKSIGVERIFY
+        for (_,key) in public_keys {
+            { ots_checklamport(key, keep_message) }
+        }
+        if keep_message {
+            for (_,key) in public_keys {
+                for _ in 0..key.len() {
+                    OP_FROMALTSTACK
+                }
+            }
+        }
+        if let Some(extra_script) = extra_check_script {
+            { extra_script }
+        }
+        OP_PUSHNUM_1
+    );
+
+    let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
+    for (i, (name, key)) in public_keys.iter().enumerate() {
+        protocol_script.add_key(
+            name.as_ref(),
+            key.derivation_index()
+                .ok_or(LamportError::ExtraDataMissing(
+                    "derivation_index".to_string(),
+                ))?,
+            KeyType::lamport(key)?,
+            i as u32,
+        )?;
+    }
+
+    Ok(protocol_script)
+}
+
+pub fn ots_checklamport(public_key: &LamportPublicKey, keep_message: bool) -> ScriptBuf {
+    let mut stack = StackTracker::new();
+
+    for i in 0..public_key.len() {
+        stack.define(1, format!("signature_{}", i).as_str());
+    }
+
+    lamport_checksig(&mut stack, &public_key, keep_message);
+
+    stack.get_script()
+}
+
+fn lamport_checksig(stack: &mut StackTracker, public_key: &LamportPublicKey, keep_message: bool) {
+    let (zeros, ones) = public_key.to_hashes_string();
+
+    const OTS_SIZE: u32 = 32;
+
+    for idx in 0..public_key.len() {
+        stack.op_size();
+        stack.number(OTS_SIZE);
+        stack.op_equalverify();
+
+        if keep_message {
+            stack.op_dup();
+            stack.to_altstack();
+        }
+
+        stack.op_sha256();
+        stack.op_dup();
+
+        stack.hexstr(&zeros[idx]);
+        stack.op_equal();
+
+        stack.op_swap();
+        stack.hexstr(&ones[idx]);
+        stack.op_equal();
+
+        stack.op_boolor();
+        stack.op_verify();
+    }
 }
 
 pub fn verify_winternitz_signature(
@@ -754,6 +861,7 @@ mod tests {
         opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP, OP_RETURN},
         PublicKey, XOnlyPublicKey,
     };
+    use key_manager::lamport::Lamport;
     use std::str::FromStr;
 
     use super::*;
@@ -1236,5 +1344,49 @@ mod tests {
 
         // Assert
         assert_eq!(taproot_spend_info.internal_key(), internal_key);
+    }
+
+    #[test]
+    fn test_lamport_valid_signature() {
+        let lamport = Lamport::new();
+        let master_secret = b"test_master_secret_12345678901234567890";
+        let message_bit_length = 2;
+
+        let private_key = lamport
+            .generate_private_key(master_secret, LamportType::SHA256, message_bit_length, 0)
+            .unwrap();
+
+        let signature = lamport.sign_message(&[true, false], &private_key).unwrap();
+        let public_key = LamportPublicKey::from(private_key).unwrap();
+
+        let mut stack = StackTracker::new();
+
+        for hash in signature.to_hashes().iter().rev() {
+            stack.hexstr(&hex::encode(&hash));
+        }
+
+        lamport_checksig(&mut stack, &public_key, false);
+        stack.op_true();
+        assert!(stack.run().success);
+    }
+
+    #[test]
+    fn test_lamport_invalid_signature() {
+        let lamport = Lamport::new();
+        let master_secret = b"test_master_secret_12345678901234567890";
+        let message_bit_length = 1;
+
+        let public_key = lamport
+            .generate_public_key(master_secret, LamportType::SHA256, message_bit_length, 0)
+            .unwrap();
+
+        let mut stack = StackTracker::new();
+
+        stack.hexstr("DEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEADDEAD");
+
+        lamport_checksig(&mut stack, &public_key, false);
+
+        stack.op_true();
+        assert!(!stack.run().success);
     }
 }

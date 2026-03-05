@@ -7,7 +7,7 @@ use bitcoin::{
     transaction, Amount,
 };
 use key_manager::{
-    errors::{KeyManagerError, WinternitzError},
+    errors::{KeyManagerError, LamportError, WinternitzError},
     musig2::errors::Musig2SignerError,
 };
 use thiserror::Error;
@@ -97,7 +97,10 @@ pub enum ScriptError {
     TapTreeError(#[from] TaprootBuilderError),
 
     #[error("Missing extra data error in Winternitz Public Key")]
-    MissingExtraDataError(#[from] WinternitzError),
+    WinternitzMissingExtraDataError(#[from] WinternitzError),
+
+    #[error("Missing extra data error in Lamport Public Key")]
+    LamportMissingExtraDataError(#[from] LamportError),
 
     #[error("Script name cannot be empty")]
     EmptyScriptName,
