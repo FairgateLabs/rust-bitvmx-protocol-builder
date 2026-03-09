@@ -6,7 +6,9 @@ mod tests {
 
     use crate::{config::Config, errors::ConfigError};
 
-    // Serialize all env-var-dependent tests to avoid race conditions in parallel test runs
+    // Serialize all env-var-dependent tests to avoid race conditions in parallel test runs.
+    // _guard uses the _ prefix intentionally: the MutexGuard is never read directly but must
+    // stay alive until end of scope to hold the lock (dropped via its Drop implementation).
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     // Test 1: Load Development Config (requested scenario)
