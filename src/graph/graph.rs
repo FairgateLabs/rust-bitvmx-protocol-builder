@@ -694,7 +694,12 @@ impl TransactionGraph {
                     }
                     value
                 };
-                amounts.insert(parent_key, value);
+
+                if let Some(existing_value) = amounts.get(&parent_key) {
+                    amounts.insert(parent_key, max!(value, *existing_value));
+                } else {
+                    amounts.insert(parent_key, value);
+                }
             }
         } else if remaining != 0 {
             return Err(GraphError::WrongAmount(0, remaining));

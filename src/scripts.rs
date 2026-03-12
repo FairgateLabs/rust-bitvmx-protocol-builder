@@ -16,7 +16,7 @@ use bitcoin_scriptexec::treepp::*;
 use itertools::Itertools;
 use key_manager::{
     errors::LamportError,
-    lamport::{LamportPublicKey, LamportType},
+    lamport::LamportPublicKey,
     winternitz::{WinternitzPublicKey, WinternitzType},
 };
 use serde::{Deserialize, Serialize};
@@ -35,10 +35,7 @@ pub enum KeyType {
         key_type: WinternitzType,
         message_size: usize,
     },
-    LamportKey {
-        key_type: LamportType,
-        message_size: usize,
-    },
+    LamportKey(LamportPublicKey),
 }
 
 impl KeyType {
@@ -58,10 +55,25 @@ impl KeyType {
     }
 
     pub fn lamport(key: &LamportPublicKey) -> Result<Self, ScriptError> {
-        Ok(KeyType::LamportKey {
-            key_type: key.hash_type(),
-            message_size: key.len(),
-        })
+        Ok(KeyType::LamportKey(key.clone()))
+    }
+
+    pub fn lamport_public_key(&self) -> Result<&LamportPublicKey, ScriptError> {
+        match self {
+            KeyType::LamportKey(key) => Ok(key),
+            KeyType::EcdsaKey => Err(ScriptError::InvalidKeyType(
+                "Lamport".to_string(),
+                "EcdsaKey".to_string(),
+            )),
+            KeyType::XOnlyKey => Err(ScriptError::InvalidKeyType(
+                "Lamport".to_string(),
+                "XOnlyKey".to_string(),
+            )),
+            KeyType::WinternitzKey { .. } => Err(ScriptError::InvalidKeyType(
+                "Lamport".to_string(),
+                "Winternitz".to_string(),
+            )),
+        }
     }
 
     pub fn winternitz_message_size(&self) -> Result<usize, ScriptError> {
@@ -75,10 +87,7 @@ impl KeyType {
                 "Winternitz".to_string(),
                 "XOnlyKey".to_string(),
             )),
-            KeyType::LamportKey {
-                key_type: _,
-                message_size: _,
-            } => Err(ScriptError::InvalidKeyType(
+            KeyType::LamportKey(_) => Err(ScriptError::InvalidKeyType(
                 "Winternitz".to_string(),
                 "Lamport".to_string(),
             )),
@@ -403,8 +412,7 @@ fn lamport_checksig(stack: &mut StackTracker, public_key: &LamportPublicKey, kee
     let (zeros, ones) = public_key.to_hashes_string();
 
     const OTS_SIZE: u32 = 32;
-
-    for idx in 0..public_key.len() {
+    for idx in (0..public_key.len()).rev() {
         stack.op_size();
         stack.number(OTS_SIZE);
         stack.op_equalverify();
@@ -861,7 +869,7 @@ mod tests {
         opcodes::all::{OP_CHECKSIG, OP_CSV, OP_DROP, OP_RETURN},
         PublicKey, XOnlyPublicKey,
     };
-    use key_manager::lamport::Lamport;
+    use key_manager::lamport::{Lamport, LamportType};
     use std::str::FromStr;
 
     use super::*;
@@ -1361,7 +1369,7 @@ mod tests {
 
         let mut stack = StackTracker::new();
 
-        for hash in signature.to_hashes().iter().rev() {
+        for hash in signature.to_hashes().iter() {
             stack.hexstr(&hex::encode(&hash));
         }
 
