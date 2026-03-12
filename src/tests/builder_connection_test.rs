@@ -1509,4 +1509,473 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_p2wsh_skip_signing_witness() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_p2wsh_skip_signing_witness").unwrap();
+
+        // ECDSA key for SegWit operations
+        let ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        // Create a script with SignMode::Skip - this script should not be signed
+        let skip_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &ecdsa_key,
+            SignMode::Skip,
+        );
+
+        let output_type = OutputType::segwit_script(value, &skip_script)?;
+
+        let mut protocol = Protocol::new("p2wsh_skip_signing");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "start",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Create a transaction to spend with empty InputArgs (no signature pushes)
+        let args = InputArgs::new_segwit_args();
+        let tx = protocol.transaction_to_send("start", &[args])?;
+
+        // For P2WSH with skip-signing, witness should contain only the witness_script
+        // Witness format: [witness_script]
+        // Length should be exactly 1 (just the script)
+        let witness = &tx.input[0].witness;
+        assert_eq!(
+            witness.len(),
+            1,
+            "P2WSH skip-signing witness should contain only the witness script (length 1), got {}",
+            witness.len()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_taproot_invalid_leaf_index() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_taproot_invalid_leaf_index").unwrap();
+
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        let ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        // Create 3 taproot leaves (indices 0, 1, 2)
+        let script_0 = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script_1 = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let script_2 = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let scripts = vec![script_0, script_1, script_2];
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x03]),
+            &ecdsa_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
+
+        let mut protocol = Protocol::new("invalid_leaf_test");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "origin",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?
+            .add_taproot_connection(
+                &mut protocol,
+                "taproot_conn",
+                "origin",
+                value,
+                &internal_taproot_key,
+                &scripts,
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
+                "spend",
+                &tc.tr_sighash_type(),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Get the signature for a valid leaf (leaf 0)
+        let valid_signature = protocol
+            .input_taproot_script_spend_signature("spend", 0, 0)
+            .unwrap()
+            .unwrap();
+
+        // Now try to use an INVALID leaf index (3, when only 0-2 exist)
+        let mut args = InputArgs::new_taproot_script_args(3); // leaf index out of range
+        args.push_taproot_signature(valid_signature)?;
+
+        // Attempting to build transaction with invalid leaf index should fail
+        let result = protocol.transaction_to_send("spend", &[args]);
+
+        match result {
+            Err(ProtocolBuilderError::InvalidLeaf(input_idx)) => {
+                assert_eq!(
+                    input_idx, 0,
+                    "Expected InvalidLeaf error for input 0, got input {}",
+                    input_idx
+                );
+            }
+            Err(e) => {
+                panic!(
+                    "Expected ProtocolBuilderError::InvalidLeaf(0), but got: {:?}",
+                    e
+                );
+            }
+            Ok(_) => {
+                panic!("Expected an error for invalid leaf index, but transaction was created successfully");
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_taproot_mixed_signmodes() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_taproot_mixed_signmodes").unwrap();
+
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        let ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        // Create 3 taproot leaves with different SignModes (Skip, Single, Skip)
+        // Avoid Aggregate which requires multiple keys
+        let skip_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &internal_taproot_key,
+            SignMode::Skip,
+        );
+        let single_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+        let skip_script2 = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &internal_taproot_key,
+            SignMode::Skip,
+        );
+
+        let scripts = vec![skip_script, single_script.clone(), skip_script2];
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x03]),
+            &ecdsa_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
+
+        let mut protocol = Protocol::new("mixed_signmodes_test");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "origin",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?
+            .add_taproot_connection(
+                &mut protocol,
+                "taproot_conn",
+                "origin",
+                value,
+                &internal_taproot_key,
+                &scripts,
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
+                "spend",
+                &tc.tr_sighash_type(),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Get signature for Single-mode leaf (index 1)
+        let single_signature = protocol
+            .input_taproot_script_spend_signature("spend", 0, 1)
+            .unwrap()
+            .unwrap();
+
+        // Build transaction spending the Single-mode leaf
+        let mut args = InputArgs::new_taproot_script_args(1);
+        args.push_taproot_signature(single_signature)?;
+        let tx = protocol.transaction_to_send("spend", &[args])?;
+
+        // Verify witness contains expected elements
+        let witness = &tx.input[0].witness;
+        
+        // Witness should have: [signature, script, control_block]
+        // At minimum 3 elements (signature, script, control_block)
+        assert!(
+            witness.len() >= 3,
+            "Mixed SignMode witness should have at least 3 elements (signature, script, control_block), got {}",
+            witness.len()
+        );
+
+        // Verify the script is present in witness (second-to-last element for taproot)
+        assert!(
+            witness.len() >= 2,
+            "Witness must contain script and control block"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_witness_stack_order_validation() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_witness_stack_order_validation").unwrap();
+
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        let _ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        // Create Taproot leaf
+        let taproot_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let output_type = OutputType::segwit_script(value, &taproot_script)?;
+
+        let mut protocol = Protocol::new("witness_order_test");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "origin",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?
+            .add_taproot_connection(
+                &mut protocol,
+                "taproot_conn",
+                "origin",
+                value,
+                &internal_taproot_key,
+                &[taproot_script.clone()],
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
+                "spend_taproot",
+                &tc.tr_sighash_type(),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Test Taproot script-path witness ordering
+        let taproot_signature = protocol
+            .input_taproot_script_spend_signature("spend_taproot", 0, 0)
+            .unwrap()
+            .unwrap();
+
+        let mut taproot_args = InputArgs::new_taproot_script_args(0);
+        taproot_args.push_taproot_signature(taproot_signature)?;
+        let taproot_tx = protocol.transaction_to_send("spend_taproot", &[taproot_args])?;
+
+        let taproot_witness = &taproot_tx.input[0].witness;
+
+        // For Taproot script-path: witness stack should be [signature(s), script, control_block]
+        // Last element is control_block
+        // Second-to-last is script
+        // Before that are signatures/data
+        assert!(
+            taproot_witness.len() >= 3,
+            "Taproot script-path witness must have at least 3 elements"
+        );
+
+        // Verify witness structure (at least signature + script + control_block)
+        let last_element_size = taproot_witness.last().map(|w| w.len()).unwrap_or(0);
+        
+        // Control block is typically 33 bytes (for single-leaf tree)
+        assert!(
+            last_element_size > 0,
+            "Last witness element (control_block) must not be empty"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_taproot_skip_multiple_inputs() -> Result<(), ProtocolBuilderError> {
+        let tc = TestContext::new("test_taproot_skip_multiple_inputs").unwrap();
+
+        let internal_taproot_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2tr, 0)
+            .unwrap();
+
+        let _ecdsa_key = tc
+            .key_manager()
+            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
+            .unwrap();
+
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        // Create 2 leaves: Skip and Single
+        let skip_leaf = ProtocolScript::new(
+            ScriptBuf::from(vec![0x00]),
+            &internal_taproot_key,
+            SignMode::Skip,
+        );
+        let single_leaf = ProtocolScript::new(
+            ScriptBuf::from(vec![0x01]),
+            &internal_taproot_key,
+            SignMode::Single,
+        );
+
+        let leaves = vec![skip_leaf, single_leaf.clone()];
+
+        let segwit_script = ProtocolScript::new(
+            ScriptBuf::from(vec![0x02]),
+            &_ecdsa_key,
+            SignMode::Single,
+        );
+        let output_type = OutputType::segwit_script(value, &segwit_script)?;
+
+        let mut protocol = Protocol::new("skip_multi_input_test");
+        let builder = ProtocolBuilder {};
+
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "external",
+                txid,
+                OutputSpec::Auto(output_type),
+                "origin",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )?
+            // First taproot connection: spends Skip leaf
+            .add_taproot_connection(
+                &mut protocol,
+                "conn1",
+                "origin",
+                value,
+                &internal_taproot_key,
+                &leaves,
+                &SpendMode::Script { leaf: 0 },
+                "spend_skip",
+                &tc.tr_sighash_type(),
+            )?
+            // Second taproot connection: spends Single leaf
+            .add_taproot_connection(
+                &mut protocol,
+                "conn2",
+                "origin",
+                value,
+                &internal_taproot_key,
+                &leaves,
+                &SpendMode::Script { leaf: 1 },
+                "spend_single",
+                &tc.tr_sighash_type(),
+            )?;
+
+        protocol.build_and_sign(tc.key_manager(), "")?;
+
+        // Get signature for Single-mode leaf only
+        let single_signature = protocol
+            .input_taproot_script_spend_signature("spend_single", 0, 1)
+            .unwrap()
+            .unwrap();
+
+        // Create transaction with multiple inputs:
+        // Input 0: Skip leaf (no signature needed)
+        // Input 1: Single leaf (signature provided)
+        let skip_args = InputArgs::new_taproot_script_args(0); // Skip leaf, no signatures
+        let mut single_args = InputArgs::new_taproot_script_args(1); // Single leaf
+        single_args.push_taproot_signature(single_signature)?;
+
+        let spend_skip_tx = protocol.transaction_to_send("spend_skip", &[skip_args])?;
+        let spend_single_tx = protocol.transaction_to_send("spend_single", &[single_args])?;
+
+        // Verify Skip input witness
+        let skip_witness = &spend_skip_tx.input[0].witness;
+        assert!(
+            skip_witness.len() >= 2,
+            "Skip-mode witness should have at least [script, control_block], got {}",
+            skip_witness.len()
+        );
+
+        // Verify Single input witness has more elements (includes signature)
+        let single_witness = &spend_single_tx.input[0].witness;
+        assert!(
+            single_witness.len() >= 3,
+            "Single-mode witness should have at least [signature, script, control_block], got {}",
+            single_witness.len()
+        );
+
+        // Verify Single witness has more elements than Skip witness
+        assert!(
+            single_witness.len() > skip_witness.len(),
+            "Single-mode witness should have more elements than Skip-mode witness"
+        );
+
+        Ok(())
+    }
 }

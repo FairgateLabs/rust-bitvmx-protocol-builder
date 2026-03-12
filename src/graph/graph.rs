@@ -673,7 +673,10 @@ impl TransactionGraph {
                     .get_value()
                     .ok_or_else(|| GraphError::AmountTypeValueExpected)?;
                 remaining = remaining.saturating_sub(value.to_sat()); // Saturating at 0
-                amounts.insert(parent_key, value);
+                let current_amount = amounts.get(&parent_key).cloned().unwrap_or_default();
+                if value.to_sat() > current_amount.to_sat() {
+                    amounts.insert(parent_key, value);
+                }
             };
         }
 
@@ -695,9 +698,8 @@ impl TransactionGraph {
                     value
                 };
 
-                if let Some(existing_value) = amounts.get(&parent_key) {
-                    amounts.insert(parent_key, max!(value, *existing_value));
-                } else {
+                let current_amount = amounts.get(&parent_key).cloned().unwrap_or_default();
+                if value.to_sat() > current_amount.to_sat() {
                     amounts.insert(parent_key, value);
                 }
             }
