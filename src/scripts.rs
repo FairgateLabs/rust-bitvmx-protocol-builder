@@ -61,17 +61,9 @@ impl KeyType {
     pub fn lamport_public_key(&self) -> Result<&LamportPublicKey, ScriptError> {
         match self {
             KeyType::LamportKey(key) => Ok(key),
-            KeyType::EcdsaKey => Err(ScriptError::InvalidKeyType(
+            _ => Err(ScriptError::InvalidKeyType(
                 "Lamport".to_string(),
-                "EcdsaKey".to_string(),
-            )),
-            KeyType::XOnlyKey => Err(ScriptError::InvalidKeyType(
-                "Lamport".to_string(),
-                "XOnlyKey".to_string(),
-            )),
-            KeyType::WinternitzKey { .. } => Err(ScriptError::InvalidKeyType(
-                "Lamport".to_string(),
-                "Winternitz".to_string(),
+                self.to_string(),
             )),
         }
     }
@@ -79,18 +71,19 @@ impl KeyType {
     pub fn winternitz_message_size(&self) -> Result<usize, ScriptError> {
         match self {
             KeyType::WinternitzKey { message_size, .. } => Ok(*message_size),
-            KeyType::EcdsaKey => Err(ScriptError::InvalidKeyType(
+            _ => Err(ScriptError::InvalidKeyType(
                 "Winternitz".to_string(),
-                "EcdsaKey".to_string(),
+                self.to_string(),
             )),
-            KeyType::XOnlyKey => Err(ScriptError::InvalidKeyType(
-                "Winternitz".to_string(),
-                "XOnlyKey".to_string(),
-            )),
-            KeyType::LamportKey(_) => Err(ScriptError::InvalidKeyType(
-                "Winternitz".to_string(),
-                "Lamport".to_string(),
-            )),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            KeyType::WinternitzKey { .. } => "Winternitz".to_string(),
+            KeyType::LamportKey { .. } => "Lamport".to_string(),
+            KeyType::EcdsaKey { .. } => "Ecdsa".to_string(),
+            KeyType::XOnlyKey { .. } => "XOnly".to_string(),
         }
     }
 }
