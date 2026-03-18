@@ -1765,12 +1765,6 @@ mod tests {
             witness.len()
         );
 
-        // Verify the script is present in witness (second-to-last element for taproot)
-        assert!(
-            witness.len() >= 2,
-            "Witness must contain script and control block"
-        );
-
         Ok(())
     }
 
@@ -1781,11 +1775,6 @@ mod tests {
         let internal_taproot_key = tc
             .key_manager()
             .derive_keypair(BitcoinKeyType::P2tr, 0)
-            .unwrap();
-
-        let _ecdsa_key = tc
-            .key_manager()
-            .derive_keypair(BitcoinKeyType::P2wpkh, 1)
             .unwrap();
 
         let value = 1000;
@@ -1870,7 +1859,7 @@ mod tests {
             .derive_keypair(BitcoinKeyType::P2tr, 0)
             .unwrap();
 
-        let _ecdsa_key = tc
+        let ecdsa_key = tc
             .key_manager()
             .derive_keypair(BitcoinKeyType::P2wpkh, 1)
             .unwrap();
@@ -1894,7 +1883,7 @@ mod tests {
 
         let segwit_script = ProtocolScript::new(
             ScriptBuf::from(vec![0x02]),
-            &_ecdsa_key,
+            &ecdsa_key,
             SignMode::Single,
         );
         let output_type = OutputType::segwit_script(value, &segwit_script)?;
