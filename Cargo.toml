@@ -25,14 +25,14 @@ petgraph = { version = "0.8.1", features = ["serde-1"] }
 
 bitcoincore-rpc = { version = "0.19.0" }
 
-bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", branch = "v.0.0.2" }
+bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/", tag = "v0.6.0" }
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", branch = "v.0.0.2" }
 
 bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", tag = "v0.6.0" }
 bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", tag = "v0.6.0" }
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.6.0" }
-bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", branch = "v2" }
-bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", branch = "v.0.0.1" }
+bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", tag = "v0.6.0" }
+bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", tag = "v0.6.0" }
 redact = { version = "0.1", features = ["serde", "zeroize"] }
 
 [[bin]]
