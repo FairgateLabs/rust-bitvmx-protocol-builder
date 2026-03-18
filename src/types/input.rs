@@ -1,12 +1,12 @@
 use std::fmt::{Display, Formatter};
 
 use bitcoin::{secp256k1::Message, Amount, EcdsaSighashType, TapSighashType};
-use key_manager::winternitz::WinternitzSignature;
+use key_manager::{lamport::LamportSignature, winternitz::WinternitzSignature};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{GraphError, ProtocolBuilderError},
-    scripts::SignMode,
+    scripts::SignMode, types::output::SignatureType,
 };
 
 use super::OutputType;
@@ -227,6 +227,25 @@ impl InputArgs {
             self.push_slice(hash);
             self.push_slice(&digit);
         }
+
+        self
+    }
+
+    pub fn push_lamport_signature(&mut self, lamport_signature: LamportSignature) -> &mut Self {
+        let hashes = lamport_signature.to_hashes();
+
+        for hash in hashes {
+            self.push_slice(&hash);
+        }
+
+        self
+    }
+
+    pub fn push_one_time_signature(&mut self, signature: SignatureType) -> &mut Self {
+        match signature {
+            SignatureType::Lamport(sig) => self.push_lamport_signature(sig),
+            SignatureType::Winternitz(sig) => self.push_winternitz_signature(sig),
+        };
 
         self
     }
