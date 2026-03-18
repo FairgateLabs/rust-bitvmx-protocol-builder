@@ -410,11 +410,6 @@ fn lamport_checksig(stack: &mut StackTracker, public_key: &LamportPublicKey, kee
         stack.number(OTS_SIZE);
         stack.op_equalverify();
 
-        if keep_message {
-            stack.op_dup();
-            stack.to_altstack();
-        }
-
         stack.op_sha256();
         stack.op_dup();
 
@@ -424,6 +419,11 @@ fn lamport_checksig(stack: &mut StackTracker, public_key: &LamportPublicKey, kee
         stack.op_swap();
         stack.hexstr(&ones[idx]);
         stack.op_equal();
+
+        if keep_message {
+            stack.op_dup();
+            stack.to_altstack();
+        }
 
         stack.op_boolor();
         stack.op_verify();
