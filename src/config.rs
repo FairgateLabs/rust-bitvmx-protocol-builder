@@ -2,7 +2,6 @@ use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use key_manager::config::KeyManagerConfig;
 use serde::Deserialize;
 use storage_backend::storage_config::StorageConfig;
-use tracing::{info};
 
 use crate::errors::ConfigError;
 
@@ -27,14 +26,6 @@ pub struct Config {
 
 impl Config {
     pub fn new(config: Option<String>) -> Result<Config, ConfigError> {
-        match config {
-            Some(config) => {
-                info!("Using configuration: {}", config);
-                Ok(bitvmx_settings::settings::load_config_file::<Config>(
-                    Some(config),
-                )?)
-            }
-            None => Ok(bitvmx_settings::settings::load::<Config>()?),
-        }
+        Ok(bitvmx_settings::settings::load_config_file::<Config>(config)?)
     }
 }

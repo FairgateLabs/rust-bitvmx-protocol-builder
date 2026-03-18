@@ -135,7 +135,7 @@ enum Commands {
 
 impl Cli {
     pub fn new() -> Result<Self> {
-        let config = Config::new(Some("config/development.yaml".to_string()))?;
+        let config = Config::new(None)?;
         Ok(Self { config })
     }
 
