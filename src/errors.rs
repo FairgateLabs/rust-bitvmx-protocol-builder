@@ -12,7 +12,7 @@ use key_manager::{
 };
 use thiserror::Error;
 
-use config as settings;
+use bitvmx_settings::errors::ConfigError as SettingsConfigError;
 
 use crate::types::{input::SpendMode, OutputType};
 
@@ -112,7 +112,7 @@ pub enum ScriptError {
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Error while trying to build configuration")]
-    ConfigFileError(#[from] settings::ConfigError),
+    ConfigFileError(#[from] SettingsConfigError),
 
     #[error("Speedup public key is invalid")]
     InvalidKeyForSpeedupScript(#[from] ScriptError),
