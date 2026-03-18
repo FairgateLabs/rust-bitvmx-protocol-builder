@@ -1372,6 +1372,41 @@ mod tests {
     }
 
     #[test]
+    fn test_lamport_keep_message() {
+        let lamport = Lamport::new();
+        let master_secret = b"test_master_secret_12345678901234567890";
+        let message_bit_length = 3;
+
+        let private_key = lamport
+            .generate_private_key(master_secret, LamportType::SHA256, message_bit_length, 0)
+            .unwrap();
+
+        let signature = lamport
+            .sign_message(&[true, true, false], &private_key)
+            .unwrap();
+        let public_key = LamportPublicKey::from(private_key).unwrap();
+
+        let mut stack = StackTracker::new();
+
+        for hash in signature.to_hashes().iter() {
+            stack.hexstr(&hex::encode(&hash));
+        }
+
+        lamport_checksig(&mut stack, &public_key, true);
+
+        // We signed the message [true, true, false] so we expect [1, 1, 0] in the alt stack
+        for i in [1, 1, 0] {
+            stack.from_altstack();
+            stack.number(i);
+            stack.op_equalverify();
+        }
+
+        stack.op_true();
+
+        assert!(stack.run().success);
+    }
+
+    #[test]
     fn test_lamport_invalid_signature() {
         let lamport = Lamport::new();
         let master_secret = b"test_master_secret_12345678901234567890";
