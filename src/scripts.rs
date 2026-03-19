@@ -288,12 +288,13 @@ impl ProtocolScript {
             { leaf_id }
             OP_EQUALVERIFY
             { original_script }
-        );
+        )
+        .compile();
     }
 }
 
 pub fn op_return_script(data: Vec<u8>) -> Result<ProtocolScript, ScriptError> {
-    let script = script!(OP_RETURN { data });
+    let script = script!(OP_RETURN { data }).compile();
 
     let protocol_script = ProtocolScript::new_unspendable(script);
     Ok(protocol_script)
@@ -331,7 +332,8 @@ pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
             { extra_script }
         }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     for (i, (name, key)) in public_keys.iter().enumerate() {
@@ -371,7 +373,8 @@ pub fn verify_lamport_signatures<T: AsRef<str>>(
             { extra_script }
         }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     for (i, (name, key)) in public_keys.iter().enumerate() {
@@ -440,7 +443,8 @@ pub fn verify_winternitz_signature(
         OP_CHECKSIGVERIFY
         { ots_checksig(public_key, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     protocol_script.add_key(
@@ -469,7 +473,8 @@ pub fn verify_winternitz_signature_timelock(
         OP_CHECKSIGVERIFY
         { ots_checksig(public_key, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, verifying_key, sign_mode);
     protocol_script.add_key(
@@ -493,13 +498,14 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> P
         OP_DROP
         { XOnlyPublicKey::from(*timelock_key).serialize().to_vec() }
         OP_CHECKSIG
-    );
+    )
+    .compile();
 
     ProtocolScript::new(script, timelock_key, sign_mode)
 }
 
 pub fn op_return(data: Vec<u8>) -> ScriptBuf {
-    script!(OP_RETURN { data })
+    script!(OP_RETURN { data }).compile()
 }
 
 // TODO aggregated_key must be an aggregated key and not a single public key
@@ -507,7 +513,8 @@ pub fn timelock_renew(aggregated_key: &PublicKey, sign_mode: SignMode) -> Protoc
     let script = script!(
         { XOnlyPublicKey::from(*aggregated_key).serialize().to_vec() }
         OP_CHECKSIG
-    );
+    )
+    .compile();
 
     ProtocolScript::new(script, aggregated_key, sign_mode)
 }
@@ -516,7 +523,8 @@ pub fn check_signature(public_key: &PublicKey, sign_mode: SignMode) -> ProtocolS
     let script = script!(
         { XOnlyPublicKey::from(*public_key).serialize().to_vec() }
         OP_CHECKSIG
-    );
+    )
+    .compile();
 
     ProtocolScript::new(script, public_key, sign_mode)
 }
@@ -541,7 +549,8 @@ pub fn kickoff(
         { ots_checksig(input_key, false)? }
         { ots_checksig(ending_state_key, false)? }
         { ots_checksig(ending_step_number_key, false)? }
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
@@ -580,7 +589,8 @@ pub fn initial_stages(
         }
         { ots_checksig(selection_key, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     for (index, key) in interval_keys.iter().enumerate() {
@@ -618,7 +628,8 @@ pub fn stage_from_3_and_upward(
         { ots_checksig(key_previous_selection_bob, false)? }
         { ots_checksig(key_previous_selection_alice, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     for (index, key) in interval_keys.iter().enumerate() {
@@ -656,7 +667,8 @@ pub fn linked_message_challenge(
         OP_CHECKSIGVERIFY
         { ots_checksig(xc_key, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
@@ -683,7 +695,8 @@ pub fn linked_message_response(
         { ots_checksig(xp_key, false)? }
         { ots_checksig(yp_key, false)? }
         OP_PUSHNUM_1
-    );
+    )
+    .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
     protocol_script.add_key(
@@ -762,7 +775,8 @@ pub fn reveal_secret(
         OP_EQUALVERIFY
         { XOnlyPublicKey::from(*pub_key).serialize().to_vec() }
         OP_CHECKSIG
-    );
+    )
+    .compile();
 
     ProtocolScript::new(script, pub_key, sign_mode)
 }
@@ -837,7 +851,8 @@ pub fn operator_hashed_slot_preimage(
         OP_SHA256
         { slot_preimage }
         OP_EQUAL
-    );
+    )
+    .compile();
 
     ProtocolScript::new(script, &public_key, SignMode::Single)
 }
@@ -849,7 +864,8 @@ pub fn verify_signature(
     let script = script!(
         { XOnlyPublicKey::from(*public_key).serialize().to_vec() }
         OP_CHECKSIG
-    );
+    )
+    .compile();
 
     let protocol_script = ProtocolScript::new(script, public_key, sign_mode);
     Ok(protocol_script)
@@ -884,6 +900,7 @@ mod tests {
             {script}
             OP_ENDIF
         }
+        .compile()
     }
 
     #[test]
