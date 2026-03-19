@@ -221,8 +221,8 @@ impl ProtocolBuilder {
                         .input_taproot_script_spend_signature("cpfp", idx, leaf_index)?
                         .unwrap();
                     let mut spending_args = InputArgs::new_taproot_script_args(leaf_index);
-                    for wots in speedup_data.wots_sigs.as_ref().unwrap().iter() {
-                        spending_args.push_winternitz_signature(wots.clone());
+                    for sig in speedup_data.sigs.as_ref().unwrap().iter() {
+                        spending_args.push_one_time_signature(sig.clone());
                     }
                     spending_args.push_taproot_signature(signature)?;
                     if speedup_data.leaf_identification {
