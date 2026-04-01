@@ -39,7 +39,7 @@ impl Protocol {
     }
 
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        Ok(storage.get(&name)?)
+        Ok(storage.get(&name, None)?)
     }
 
     pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
