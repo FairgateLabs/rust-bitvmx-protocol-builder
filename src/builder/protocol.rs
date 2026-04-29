@@ -283,6 +283,7 @@ impl Protocol {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
         let output_type = input.output_type().unwrap();
         let transaction = self.transaction_by_name(transaction_name)?;
+        let mut hasher = bitcoin::sighash::SighashCache::new(transaction);
 
         let ecdsa_sighash_type = match input.sighash_type() {
             SighashType::Ecdsa(ecdsa_sighash_type) => ecdsa_sighash_type,
@@ -297,7 +298,7 @@ impl Protocol {
         };
 
         let hashed_messages = output_type.compute_ecdsa_sighash(
-            transaction,
+            &mut hasher,
             transaction_name,
             input_index,
             &SpendMode::Segwit,
@@ -340,6 +341,7 @@ impl Protocol {
         let input = &self.graph.get_inputs(transaction_name)?[input_index];
         let output_type = input.output_type().unwrap();
         let transaction = self.transaction_by_name(transaction_name)?;
+        let mut hasher = bitcoin::sighash::SighashCache::new(transaction);
 
         let tap_sighash_type = match input.sighash_type() {
             SighashType::Taproot(tap_sighash_type) => tap_sighash_type,
@@ -355,7 +357,7 @@ impl Protocol {
 
         let prevouts = self.graph.get_prevouts(transaction_name)?;
         let hashed_messages = output_type.compute_taproot_sighash(
-            transaction,
+            &mut hasher,
             transaction_name,
             input_index,
             &prevouts,
@@ -655,6 +657,7 @@ impl Protocol {
     ) -> Result<(), ProtocolBuilderError> {
         let (transactions, transaction_names) = self.graph.sorted_transactions()?;
         for (transaction, transaction_name) in transactions.iter().zip(transaction_names.iter()) {
+            let mut hasher = bitcoin::sighash::SighashCache::new(transaction);
             for (input_index, input) in self.graph.get_inputs(transaction_name)?.iter().enumerate()
             {
                 let output_type = input.output_type().unwrap();
@@ -668,7 +671,7 @@ impl Protocol {
                         //};
 
                         output_type.compute_taproot_sighash(
-                            transaction,
+                            &mut hasher,
                             transaction_name,
                             input_index,
                             &prevouts,
@@ -679,7 +682,7 @@ impl Protocol {
                         )?
                     }
                     SighashType::Ecdsa(ecdsa_sighash_type) => output_type.compute_ecdsa_sighash(
-                        transaction,
+                        &mut hasher,
                         transaction_name,
                         input_index,
                         input.spend_mode(),
