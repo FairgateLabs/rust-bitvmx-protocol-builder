@@ -382,7 +382,7 @@ impl OutputType {
     #[allow(clippy::too_many_arguments)]
     pub fn compute_taproot_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
@@ -397,7 +397,7 @@ impl OutputType {
                 leaves,
                 ..
             } => self.taproot_sighash(
-                transaction,
+                hasher,
                 transaction_name,
                 input_index,
                 prevouts,
@@ -421,7 +421,7 @@ impl OutputType {
 
     pub fn compute_ecdsa_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         _transaction_name: &str,
         input_index: usize,
         spend_mode: &SpendMode,
@@ -435,14 +435,14 @@ impl OutputType {
             OutputType::SegwitPublicKey {
                 value, public_key, ..
             } => self.ecdsa_key_sighash(
-                transaction,
+                hasher,
                 input_index,
                 ecdsa_sighash_type,
                 &value.get_value().unwrap_or_else(|| self.dust_limit()),
                 public_key,
             )?,
             OutputType::SegwitScript { value, script, .. } => self.ecdsa_script_sighash(
-                transaction,
+                hasher,
                 input_index,
                 ecdsa_sighash_type,
                 &value.get_value().unwrap_or_else(|| self.dust_limit()),
@@ -553,7 +553,7 @@ impl OutputType {
     #[allow(clippy::too_many_arguments)]
     fn taproot_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
@@ -572,7 +572,7 @@ impl OutputType {
 
         if key_path {
             let hashed_message = self.taproot_key_only_sighash(
-                transaction,
+                hasher,
                 transaction_name,
                 input_index,
                 prevouts,
@@ -593,7 +593,7 @@ impl OutputType {
             // Script path hashes
             for (leaf_index, leaf) in selected_leaves.as_ref().unwrap().iter() {
                 let hashed_message = self.taproot_script_only_sighash(
-                    transaction,
+                    hasher,
                     transaction_name,
                     input_index,
                     prevouts,
@@ -615,7 +615,7 @@ impl OutputType {
     #[allow(clippy::too_many_arguments)]
     fn taproot_script_only_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
@@ -625,8 +625,6 @@ impl OutputType {
         key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
-        let mut hasher = SighashCache::new(transaction);
-
         let hashed_message = Message::from(hasher.taproot_script_spend_signature_hash(
             input_index,
             &sighash::Prevouts::All(prevouts),
@@ -651,7 +649,7 @@ impl OutputType {
     #[allow(clippy::too_many_arguments)]
     fn taproot_key_only_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         transaction_name: &str,
         input_index: usize,
         prevouts: &[TxOut],
@@ -662,8 +660,6 @@ impl OutputType {
         key_manager: &KeyManager,
         id: &str,
     ) -> Result<Option<Message>, ProtocolBuilderError> {
-        let mut hasher = SighashCache::new(transaction);
-
         // Compute a sighash for the key spend path.
         let key_path_hashed_message = Message::from(hasher.taproot_key_spend_signature_hash(
             input_index,
@@ -697,7 +693,7 @@ impl OutputType {
 
     fn ecdsa_key_sighash(
         &self,
-        transaction: &Transaction,
+        hasher: &mut SighashCache<&Transaction>,
         input_index: usize,
         ecdsa_sighash_type: &EcdsaSighashType,
         value: &Amount,
@@ -706,9 +702,7 @@ impl OutputType {
         let wpkh = public_key.wpubkey_hash()?;
         let script_pubkey = ScriptBuf::new_p2wpkh(&wpkh);
 
-        let mut sighasher = SighashCache::new(transaction);
-
-        Ok(vec![Some(Message::from(sighasher.p2wpkh_signature_hash(
+        Ok(vec![Some(Message::from(hasher.p2wpkh_signature_hash(
             input_index,
             &script_pubkey,
             *value,
@@ -718,7 +712,7 @@ impl OutputType {
 
     fn ecdsa_script_sighash(
         &self,
-        transaction: &Transaction,
+        sighasher: &mut SighashCache<&Transaction>,
         input_index: usize,
         ecdsa_sighash_type: &EcdsaSighashType,
         value: &Amount,
@@ -726,8 +720,6 @@ impl OutputType {
     ) -> Result<Vec<Option<Message>>, ProtocolBuilderError> {
         let script_hash = WScriptHash::from(script.get_script().clone());
         let script_pubkey = ScriptBuf::new_p2wsh(&script_hash);
-
-        let mut sighasher = SighashCache::new(transaction);
 
         let hashed_message = Message::from(sighasher.p2wsh_signature_hash(
             input_index,
