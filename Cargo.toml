@@ -36,6 +36,13 @@ bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-scr
 bitcoin-script-functions = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-functions.git", tag = "v0.6.0" }
 redact = { version = "0.1", features = ["serde", "zeroize"] }
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
 [[bin]]
 name = "protocol_builder"
 path = "src/main.rs"
+
+[[bench]]
+name = "sighash_bench"
+harness = false
