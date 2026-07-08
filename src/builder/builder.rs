@@ -131,15 +131,17 @@ impl ProtocolBuilder {
     pub fn speedup_transactions(
         &self,
         speedups_data: &[SpeedupData],
-        funding_transaction_utxo: Utxo,
+        funding_inputs: Vec<Utxo>,
         change_address: &PublicKey,
         speedup_fee: u64,
         key_manager: &Rc<KeyManager>,
     ) -> Result<Transaction, ProtocolBuilderError> {
         let mut protocol = Protocol::new("speedup_tx");
         debug!(
-            "Building speedup transaction with {:?} speedups and funding UTXO: {:?}, {}",
-            speedups_data, funding_transaction_utxo, speedup_fee
+            "Building speedup transaction with {:?} speedups, {} funding inputs, fee: {}",
+            speedups_data,
+            funding_inputs.len(),
+            speedup_fee
         );
 
         for (idx, speedup_data) in speedups_data.iter().enumerate() {
@@ -178,31 +180,27 @@ impl ProtocolBuilder {
             }
         }
 
-        protocol.add_external_transaction("funding")?;
-        protocol.add_unknown_outputs("funding", funding_transaction_utxo.vout)?;
-        let external_output = OutputType::segwit_key(
-            funding_transaction_utxo.amount,
-            &funding_transaction_utxo.pub_key,
-        )?;
-        protocol.add_connection(
-            "speedup_funding",
-            "funding",
-            external_output.into(),
-            "cpfp",
-            InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
-            None,
-            Some(funding_transaction_utxo.txid),
-        )?;
+        for (i, utxo) in funding_inputs.iter().enumerate() {
+            let funding_name = format!("funding_{i}");
+            let connection_name = format!("speedup_funding_{i}");
+            protocol.add_external_transaction(&funding_name)?;
+            protocol.add_unknown_outputs(&funding_name, utxo.vout)?;
+            let external_output = OutputType::segwit_key(utxo.amount, &utxo.pub_key)?;
+            protocol.add_connection(
+                &connection_name,
+                &funding_name,
+                external_output.into(),
+                "cpfp",
+                InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
+                None,
+                Some(utxo.txid),
+            )?;
+        }
 
-        let change_amount = funding_transaction_utxo
-            .amount
-            .checked_sub(speedup_fee)
-            .ok_or_else(|| {
-                ProtocolBuilderError::InsufficientFunds(
-                    funding_transaction_utxo.amount,
-                    speedup_fee,
-                )
-            })?;
+        let total_funding: u64 = funding_inputs.iter().map(|u| u.amount).sum();
+        let change_amount = total_funding.checked_sub(speedup_fee).ok_or_else(|| {
+            ProtocolBuilderError::InsufficientFunds(total_funding, speedup_fee)
+        })?;
         let change_output = OutputType::segwit_key(change_amount, change_address)?;
         protocol.add_transaction_output("cpfp", &change_output)?;
 
@@ -210,7 +208,7 @@ impl ProtocolBuilder {
 
         let mut args_for_all_inputs = vec![];
 
-        let total = speedups_data.len() + 1; // +1 for the funding input
+        let total = speedups_data.len() + funding_inputs.len();
 
         for idx in 0..total {
             if idx < speedups_data.len() {
