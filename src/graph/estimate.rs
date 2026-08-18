@@ -5,8 +5,27 @@ use bitcoin::taproot::LeafVersion;
 use bitcoin::{Transaction, Witness};
 
 use crate::errors::GraphError;
-use crate::types::input::InputType;
+use crate::types::input::{InputType, SpendMode};
 use crate::types::OutputType;
+
+fn script_num_size(n: u32) -> usize {
+    if n == 0 {
+        return 0;
+    }
+
+    // Minimal number of bytes needed to hold n
+    let bits = 32 - n.leading_zeros();
+    let len = ((bits + 7) / 8) as usize; // ceil(bits/8)
+
+    // Extra byte needed if the top bit of the most significant byte
+    // is set, since CScriptNum encodes sign in that bit.
+    let msb = ((n >> (8 * (len - 1))) & 0x80) as u8;
+    if msb != 0 {
+        len + 1
+    } else {
+        len
+    }
+}
 
 /// Variable-length integer (CompactSize) encoded length for n.
 fn compact_size_len(n: usize) -> usize {
