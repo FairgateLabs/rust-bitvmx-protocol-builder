@@ -26,6 +26,7 @@ use crate::errors::ScriptError;
 const SCHNORR_SIG_SIZE: usize = 64;
 const ECDSA_SIG_SIZE: usize = 73;
 const WINTERNITZ_SIG_OVERHEAD_FACTOR: usize = 25;
+const LAMPORT_SIG_OVERHEAD_FACTOR: usize = 32;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum KeyType {
@@ -152,6 +153,8 @@ pub enum StackItem {
     EcdsaSig { non_default_sighash: bool },
     /// Winternitz signature (size depends on the key type).
     WinternitzSig { size: usize },
+    /// Lamport signature (size depends on the key type).
+    LamportSig { size: usize },
     /// Raw item of a known length (e.g., pubkeys, data pushes).
     Raw { size: usize },
 }
@@ -177,6 +180,13 @@ impl StackItem {
         StackItem::WinternitzSig { size }
     }
 
+    pub fn new_lamport_sig(lamport_pubkey: &LamportPublicKey) -> Self {
+        let extra_data = lamport_pubkey.extra_data().unwrap();
+        let size = extra_data.message_bit_length() * LAMPORT_SIG_OVERHEAD_FACTOR;
+
+        StackItem::LamportSig { size }
+    }
+
     pub fn new_raw(size: usize) -> Self {
         StackItem::Raw { size }
     }
@@ -190,6 +200,7 @@ impl StackItem {
                 non_default_sighash,
             } => ECDSA_SIG_SIZE + usize::from(*non_default_sighash),
             StackItem::WinternitzSig { size } => *size,
+            StackItem::LamportSig { size } => *size,
             StackItem::Raw { size } => *size,
         }
     }
