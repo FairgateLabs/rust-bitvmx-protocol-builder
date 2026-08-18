@@ -64,6 +64,14 @@ fn estimate_input_witness_bytes(
         }
 
         OutputType::Taproot { leaves, .. } => {
+            let leaves = match input.spend_mode() {
+                SpendMode::Script { leaf } => &vec![leaves[*leaf].clone()],
+                SpendMode::Scripts {
+                    leaves: leaf_indices,
+                } => &leaf_indices.iter().map(|&i| leaves[i].clone()).collect(),
+                _ => leaves,
+            };
+
             // Items: [optional annex], signature
             let sig_len = 64 + 1; // 64 bytes for schnorr sig + 1 byte for sighash type
             let count = 1;
