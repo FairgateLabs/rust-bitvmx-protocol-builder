@@ -21,7 +21,10 @@ use key_manager::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::errors::ScriptError;
+use crate::{
+    errors::ScriptError,
+    graph::estimate::{compact_size_len, script_num_size},
+};
 
 const SCHNORR_SIG_SIZE: usize = 64;
 const ECDSA_SIG_SIZE: usize = 73;
@@ -301,6 +304,11 @@ impl ProtocolScript {
             { original_script }
         )
         .compile();
+
+        let data_len = script_num_size(leaf_id);
+        self.add_stack_item(StackItem::Raw {
+            size: compact_size_len(data_len) + data_len,
+        });
     }
 }
 
@@ -356,6 +364,11 @@ pub fn verify_winternitz_signatures_aux<T: AsRef<str>>(
         )?;
     }
 
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    for (_, key) in public_keys {
+        protocol_script.add_stack_item(StackItem::new_winternitz_sig(key));
+    }
+
     Ok(protocol_script)
 }
 
@@ -398,6 +411,11 @@ pub fn verify_lamport_signatures<T: AsRef<str>>(
             KeyType::lamport(key)?,
             i as u32,
         )?;
+    }
+
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    for (_, key) in public_keys {
+        protocol_script.add_stack_item(StackItem::new_lamport_sig(key));
     }
 
     Ok(protocol_script)
@@ -465,6 +483,9 @@ pub fn verify_winternitz_signature(
         0,
     )?;
 
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(public_key));
+
     Ok(protocol_script)
 }
 
@@ -498,6 +519,11 @@ pub fn verify_winternitz_signature_timelock(
     protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
     protocol_script.add_stack_item(StackItem::new_winternitz_sig(&public_key));
 
+    let data_len = script_num_size(blocks as u32);
+    protocol_script.add_stack_item(StackItem::Raw {
+        size: compact_size_len(data_len) + data_len,
+    });
+
     Ok(protocol_script)
 }
 
@@ -512,7 +538,15 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> P
     )
     .compile();
 
-    ProtocolScript::new(script, timelock_key, sign_mode)
+    let mut protocol_script = ProtocolScript::new(script, timelock_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
+    let data_len = script_num_size(blocks as u32);
+    protocol_script.add_stack_item(StackItem::Raw {
+        size: compact_size_len(data_len) + data_len,
+    });
+
+    protocol_script
 }
 
 pub fn op_return(data: Vec<u8>) -> ScriptBuf {
@@ -527,7 +561,10 @@ pub fn timelock_renew(aggregated_key: &PublicKey, sign_mode: SignMode) -> Protoc
     )
     .compile();
 
-    ProtocolScript::new(script, aggregated_key, sign_mode)
+    let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
+    protocol_script
 }
 
 pub fn check_signature(public_key: &PublicKey, sign_mode: SignMode) -> ProtocolScript {
@@ -537,7 +574,10 @@ pub fn check_signature(public_key: &PublicKey, sign_mode: SignMode) -> ProtocolS
     )
     .compile();
 
-    ProtocolScript::new(script, public_key, sign_mode)
+    let mut protocol_script = ProtocolScript::new(script, public_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
+    protocol_script
 }
 
 pub fn check_aggregated_signature(
@@ -582,6 +622,12 @@ pub fn kickoff(
         KeyType::winternitz(ending_step_number_key)?,
         2,
     )?;
+
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(input_key));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(ending_state_key));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(ending_step_number_key));
+
     Ok(protocol_script)
 }
 
@@ -604,6 +650,8 @@ pub fn initial_stages(
     .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
     for (index, key) in interval_keys.iter().enumerate() {
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
@@ -611,6 +659,8 @@ pub fn initial_stages(
             KeyType::winternitz(key)?,
             index as u32,
         )?;
+
+        protocol_script.add_stack_item(StackItem::new_winternitz_sig(key));
     }
 
     protocol_script.add_key(
@@ -619,6 +669,9 @@ pub fn initial_stages(
         KeyType::winternitz(selection_key)?,
         interval_keys.len() as u32,
     )?;
+
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(selection_key));
+
     Ok(protocol_script)
 }
 
@@ -643,6 +696,8 @@ pub fn stage_from_3_and_upward(
     .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
     for (index, key) in interval_keys.iter().enumerate() {
         protocol_script.add_key(
             format!("stage_{}_{}", stage, index).as_str(),
@@ -650,6 +705,8 @@ pub fn stage_from_3_and_upward(
             KeyType::winternitz(key)?,
             index as u32,
         )?;
+
+        protocol_script.add_stack_item(StackItem::new_winternitz_sig(key));
     }
 
     protocol_script.add_key(
@@ -664,6 +721,9 @@ pub fn stage_from_3_and_upward(
         KeyType::winternitz(key_previous_selection_alice)?,
         interval_keys.len() as u32,
     )?;
+
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(key_previous_selection_bob));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(key_previous_selection_alice));
 
     Ok(protocol_script)
 }
@@ -682,12 +742,16 @@ pub fn linked_message_challenge(
     .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
         KeyType::winternitz(xc_key)?,
         0,
     )?;
+
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(xc_key));
 
     Ok(protocol_script)
 }
@@ -710,6 +774,8 @@ pub fn linked_message_response(
     .compile();
 
     let mut protocol_script = ProtocolScript::new(script, aggregated_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+
     protocol_script.add_key(
         "xc",
         xc_key.derivation_index()?,
@@ -728,6 +794,10 @@ pub fn linked_message_response(
         KeyType::winternitz(yp_key)?,
         2,
     )?;
+
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(xc_key));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(xp_key));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(yp_key));
 
     Ok(protocol_script)
 }
@@ -789,7 +859,12 @@ pub fn reveal_secret(
     )
     .compile();
 
-    ProtocolScript::new(script, pub_key, sign_mode)
+    let mut protocol_script = ProtocolScript::new(script, pub_key, sign_mode);
+
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
+    protocol_script.add_stack_item(StackItem::Raw { size: 32 }); // assume at most 32 byte preimage
+
+    protocol_script
 }
 
 pub fn build_taproot_spend_info(
@@ -865,7 +940,14 @@ pub fn operator_hashed_slot_preimage(
     )
     .compile();
 
-    ProtocolScript::new(script, &public_key, SignMode::Single)
+    let mut protocol_script = ProtocolScript::new(script, &public_key, SignMode::Single);
+
+    protocol_script.add_stack_item(StackItem::SchnorrSig {
+        non_default_sighash: true,
+    });
+    protocol_script.add_stack_item(StackItem::Raw { size: 32 });
+
+    protocol_script
 }
 
 pub fn verify_signature(
@@ -878,7 +960,8 @@ pub fn verify_signature(
     )
     .compile();
 
-    let protocol_script = ProtocolScript::new(script, public_key, sign_mode);
+    let mut protocol_script = ProtocolScript::new(script, public_key, sign_mode);
+    protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
     Ok(protocol_script)
 }
 

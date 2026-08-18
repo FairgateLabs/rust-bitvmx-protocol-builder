@@ -8,7 +8,7 @@ use crate::errors::GraphError;
 use crate::types::input::{InputType, SpendMode};
 use crate::types::OutputType;
 
-fn script_num_size(n: u32) -> usize {
+pub fn script_num_size(n: u32) -> usize {
     if n == 0 {
         return 0;
     }
@@ -28,7 +28,7 @@ fn script_num_size(n: u32) -> usize {
 }
 
 /// Variable-length integer (CompactSize) encoded length for n.
-fn compact_size_len(n: usize) -> usize {
+pub fn compact_size_len(n: usize) -> usize {
     match n {
         0..=252 => 1,
         253..=0xFFFF => 3,
