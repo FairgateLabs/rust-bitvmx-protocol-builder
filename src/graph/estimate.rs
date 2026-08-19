@@ -5,6 +5,7 @@ use bitcoin::taproot::LeafVersion;
 use bitcoin::{Transaction, Witness};
 
 use crate::errors::GraphError;
+use crate::scripts::ProtocolScript;
 use crate::types::input::{InputType, SpendMode};
 use crate::types::OutputType;
 
@@ -88,6 +89,7 @@ fn estimate_input_witness_bytes(
                 SpendMode::Scripts {
                     leaves: leaf_indices,
                 } => &leaf_indices.iter().map(|&i| leaves[i].clone()).collect(),
+                SpendMode::KeyOnly { .. } => &Vec::<ProtocolScript>::new(),
                 _ => leaves,
             };
 
