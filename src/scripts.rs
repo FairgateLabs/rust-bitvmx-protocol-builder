@@ -305,9 +305,8 @@ impl ProtocolScript {
         )
         .compile();
 
-        let data_len = script_num_size(leaf_id);
         self.add_stack_item(StackItem::Raw {
-            size: compact_size_len(data_len) + data_len,
+            size: script_num_size(leaf_id),
         });
     }
 }
@@ -519,9 +518,8 @@ pub fn verify_winternitz_signature_timelock(
     protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
     protocol_script.add_stack_item(StackItem::new_winternitz_sig(&public_key));
 
-    let data_len = script_num_size(blocks as u32);
     protocol_script.add_stack_item(StackItem::Raw {
-        size: compact_size_len(data_len) + data_len,
+        size: script_num_size(blocks as u32),
     });
 
     Ok(protocol_script)
@@ -541,9 +539,8 @@ pub fn timelock(blocks: u16, timelock_key: &PublicKey, sign_mode: SignMode) -> P
     let mut protocol_script = ProtocolScript::new(script, timelock_key, sign_mode);
     protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
 
-    let data_len = script_num_size(blocks as u32);
     protocol_script.add_stack_item(StackItem::Raw {
-        size: compact_size_len(data_len) + data_len,
+        size: script_num_size(blocks as u32),
     });
 
     protocol_script
