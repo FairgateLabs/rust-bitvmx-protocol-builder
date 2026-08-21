@@ -21,10 +21,7 @@ use key_manager::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    errors::ScriptError,
-    graph::estimate::{compact_size_len, script_num_size},
-};
+use crate::{errors::ScriptError, graph::estimate::script_num_size};
 
 const SCHNORR_SIG_SIZE: usize = 64;
 const ECDSA_SIG_SIZE: usize = 73;
@@ -183,12 +180,10 @@ impl StackItem {
         StackItem::WinternitzSig { size }
     }
 
-    pub fn new_lamport_sig(lamport_pubkey: &LamportPublicKey) -> Self {
-        let extra_data = lamport_pubkey.extra_data().unwrap();
-        let size = extra_data.message_bit_length()
-            * (LAMPORT_SIG_OVERHEAD_FACTOR + compact_size_len(LAMPORT_SIG_OVERHEAD_FACTOR));
-
-        StackItem::LamportSig { size }
+    pub fn new_lamport_sig() -> Self {
+        StackItem::LamportSig {
+            size: LAMPORT_SIG_OVERHEAD_FACTOR,
+        }
     }
 
     pub fn new_raw(size: usize) -> Self {
@@ -415,7 +410,9 @@ pub fn verify_lamport_signatures<T: AsRef<str>>(
 
     protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
     for (_, key) in public_keys {
-        protocol_script.add_stack_item(StackItem::new_lamport_sig(key));
+        for _ in 0..key.message_bit_length().unwrap() {
+            protocol_script.add_stack_item(StackItem::new_lamport_sig());
+        }
     }
 
     Ok(protocol_script)
