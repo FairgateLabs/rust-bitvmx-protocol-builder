@@ -185,7 +185,8 @@ impl StackItem {
 
     pub fn new_lamport_sig(lamport_pubkey: &LamportPublicKey) -> Self {
         let extra_data = lamport_pubkey.extra_data().unwrap();
-        let size = extra_data.message_bit_length() * LAMPORT_SIG_OVERHEAD_FACTOR;
+        let size = extra_data.message_bit_length()
+            * (LAMPORT_SIG_OVERHEAD_FACTOR + compact_size_len(LAMPORT_SIG_OVERHEAD_FACTOR));
 
         StackItem::LamportSig { size }
     }
