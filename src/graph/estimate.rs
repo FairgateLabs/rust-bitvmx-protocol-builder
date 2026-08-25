@@ -5,11 +5,31 @@ use bitcoin::taproot::LeafVersion;
 use bitcoin::{Transaction, Witness};
 
 use crate::errors::GraphError;
-use crate::types::input::InputType;
+use crate::scripts::ProtocolScript;
+use crate::types::input::{InputType, SpendMode};
 use crate::types::OutputType;
 
+pub fn script_num_size(n: u32) -> usize {
+    if n == 0 {
+        return 0;
+    }
+
+    // Minimal number of bytes needed to hold n
+    let bits = 32 - n.leading_zeros();
+    let len = ((bits + 7) / 8) as usize; // ceil(bits/8)
+
+    // Extra byte needed if the top bit of the most significant byte
+    // is set, since CScriptNum encodes sign in that bit.
+    let msb = ((n >> (8 * (len - 1))) & 0x80) as u8;
+    if msb != 0 {
+        len + 1
+    } else {
+        len
+    }
+}
+
 /// Variable-length integer (CompactSize) encoded length for n.
-fn compact_size_len(n: usize) -> usize {
+pub fn compact_size_len(n: usize) -> usize {
     match n {
         0..=252 => 1,
         253..=0xFFFF => 3,
@@ -64,6 +84,15 @@ fn estimate_input_witness_bytes(
         }
 
         OutputType::Taproot { leaves, .. } => {
+            let leaves = match input.spend_mode() {
+                SpendMode::Script { leaf } => &vec![leaves[*leaf].clone()],
+                SpendMode::Scripts {
+                    leaves: leaf_indices,
+                } => &leaf_indices.iter().map(|&i| leaves[i].clone()).collect(),
+                SpendMode::KeyOnly { .. } => &Vec::<ProtocolScript>::new(),
+                _ => leaves,
+            };
+
             // Items: [optional annex], signature
             let sig_len = 64 + 1; // 64 bytes for schnorr sig + 1 byte for sighash type
             let count = 1;
