@@ -363,6 +363,36 @@ dependencies = [
 
 [[package]]
 name = "bitcoin-script"
+version = "0.2.0"
+source = "git+https://github.com/FairgateLabs/rust-bitcoin-script?branch=bitvmx#84d02a9695c843c57ba63d1eda6f672391b4dba9"
+dependencies = [
+ "bitcoin 0.32.102",
+ "bitcoin-opcode-utils",
+ "hex",
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "bitcoin-script"
+version = "0.4.0"
+source = "git+https://github.com/FairgateLabs/rust-bitcoin-script?tag=v3.0.0#421841f18713e62182b0dfe9b2f9817e81f5a263"
+dependencies = [
+ "bitcoin 0.32.102",
+ "bitcoin-opcode-utils",
+ "hex",
+ "lazy_static",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "script-macro 0.4.0 (git+https://github.com/FairgateLabs/rust-bitcoin-script?tag=v3.0.0)",
+ "stdext",
+]
+
+[[package]]
+name = "bitcoin-script"
 version = "0.6.0"
 source = "git+https://github.com/FairgateLabs/rust-bitcoin-script/?tag=v0.6.0#a6dfff681cab299a91a42ae4e9ac1881f4efdf62"
 dependencies = [
@@ -373,7 +403,7 @@ dependencies = [
  "proc-macro-error",
  "proc-macro2",
  "quote",
- "script-macro",
+ "script-macro 0.4.0 (git+https://github.com/FairgateLabs/rust-bitcoin-script/?tag=v0.6.0)",
  "stdext",
 ]
 
@@ -383,8 +413,8 @@ version = "0.6.0"
 source = "git+https://github.com/FairgateLabs/rust-bitcoin-script-functions.git?tag=v0.6.0#cac3949cdc13bd4c2fdc91cec66182c7105a3793"
 dependencies = [
  "bitcoin 0.32.102",
- "bitcoin-script",
- "bitcoin-script-stack",
+ "bitcoin-script 0.6.0",
+ "bitcoin-script-stack 0.6.0",
 ]
 
 [[package]]
@@ -394,9 +424,40 @@ source = "git+https://github.com/FairgateLabs/rust-bitcoin-script-stack.git?tag=
 dependencies = [
  "bitcoin 0.32.102",
  "bitcoin-opcode-utils",
- "bitcoin-script",
- "bitcoin-scriptexec",
+ "bitcoin-script 0.6.0",
+ "bitcoin-scriptexec 0.6.0",
  "hex",
+]
+
+[[package]]
+name = "bitcoin-script-stack"
+version = "3.0.0"
+source = "git+https://github.com/FairgateLabs/rust-bitcoin-script-stack.git?tag=v3.0.0#5331f554f7ca7ef34fc1db132929c07fd52c5cfc"
+dependencies = [
+ "bitcoin 0.32.102",
+ "bitcoin-opcode-utils",
+ "bitcoin-script 0.4.0",
+ "bitcoin-scriptexec 0.0.0",
+ "hex",
+]
+
+[[package]]
+name = "bitcoin-scriptexec"
+version = "0.0.0"
+source = "git+https://github.com/FairgateLabs/rust-bitcoin-scriptexec/?branch=bitvmx#c1e425f024344dc6a112eb0512a575426e1f2efa"
+dependencies = [
+ "bitcoin 0.32.102",
+ "bitcoin-opcode-utils",
+ "bitcoin-script 0.2.0",
+ "clap",
+ "console_error_panic_hook",
+ "getrandom 0.2.17",
+ "hex-conservative 0.2.2",
+ "lazy_static",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -406,7 +467,7 @@ source = "git+https://github.com/FairgateLabs/rust-bitcoin-scriptexec/?tag=v0.6.
 dependencies = [
  "bitcoin 0.32.102",
  "bitcoin-opcode-utils",
- "bitcoin-script",
+ "bitcoin-script 0.6.0",
  "clap",
  "console_error_panic_hook",
  "getrandom 0.2.17",
@@ -532,10 +593,10 @@ version = "0.8.2"
 dependencies = [
  "anyhow",
  "bitcoin 0.32.102",
- "bitcoin-script",
+ "bitcoin-script 0.6.0",
  "bitcoin-script-functions",
- "bitcoin-script-stack",
- "bitcoin-scriptexec",
+ "bitcoin-script-stack 3.0.0",
+ "bitcoin-scriptexec 0.6.0",
  "bitcoincore-rpc",
  "bitvmx-bitcoin-rpc",
  "bitvmx-key-manager",
@@ -1170,7 +1231,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3050,7 +3111,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3135,6 +3196,17 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "script-macro"
 version = "0.4.0"
 source = "git+https://github.com/FairgateLabs/rust-bitcoin-script/?tag=v0.6.0#a6dfff681cab299a91a42ae4e9ac1881f4efdf62"
+dependencies = [
+ "bitcoin 0.32.102",
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "script-macro"
+version = "0.4.0"
+source = "git+https://github.com/FairgateLabs/rust-bitcoin-script?tag=v3.0.0#421841f18713e62182b0dfe9b2f9817e81f5a263"
 dependencies = [
  "bitcoin 0.32.102",
  "proc-macro-error",
@@ -3631,10 +3703,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4205,7 +4277,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
