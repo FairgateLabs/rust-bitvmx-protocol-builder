@@ -526,7 +526,7 @@ impl TransactionGraph {
                         Ok(acc
                             + parent.outputs[output_index]
                                 .get_value()
-                                .ok_or_else(|| GraphError::AmountTypeValueExpected)?
+                                .ok_or(GraphError::AmountTypeValueExpected)?
                                 .to_sat())
                     })?;
 
@@ -550,12 +550,12 @@ impl TransactionGraph {
 
             let total_subtracted = total_transaction_amount
                 .checked_add(minimum_relay_fee)
-                .ok_or_else(|| {
+                .ok_or({
                     GraphError::OverflowError(total_transaction_amount, minimum_relay_fee)
                 })?;
             let recover_amount = total_parents_amount
                 .checked_sub(total_subtracted)
-                .ok_or_else(|| {
+                .ok_or({
                     GraphError::InsufficientFunds(total_parents_amount, total_subtracted)
                 })?;
             let recover_amount = Amount::from_sat(recover_amount);
@@ -671,7 +671,7 @@ impl TransactionGraph {
             } else {
                 let value = output
                     .get_value()
-                    .ok_or_else(|| GraphError::AmountTypeValueExpected)?;
+                    .ok_or(GraphError::AmountTypeValueExpected)?;
                 remaining = remaining.saturating_sub(value.to_sat()); // Saturating at 0
                 let current_amount = amounts.get(&parent_key).cloned().unwrap_or_default();
                 if value.to_sat() > current_amount.to_sat() {
@@ -726,7 +726,7 @@ impl TransactionGraph {
                     Ok::<u64, GraphError>(
                         i.output_type()?
                             .get_value()
-                            .ok_or_else(|| GraphError::AmountTypeValueExpected)?
+                            .ok_or(GraphError::AmountTypeValueExpected)?
                             .to_sat(),
                     )
                 })

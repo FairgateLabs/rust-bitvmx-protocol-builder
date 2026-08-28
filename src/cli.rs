@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::{path::PathBuf, rc::Rc, slice::from_ref};
 
 use anyhow::{Ok, Result};
 
@@ -395,7 +395,7 @@ impl Cli {
             from,
             value,
             &internal_key,
-            &[script.clone()],
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -491,8 +491,8 @@ impl Cli {
             to,
             value,
             &public_key,
-            &[script.clone()],
-            &[script.clone()],
+            from_ref(&script),
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },

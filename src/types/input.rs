@@ -265,6 +265,10 @@ impl InputArgs {
             Self::Segwit { args } => args.len(),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,7 +368,6 @@ impl InputType {
     pub fn set_value(&mut self, value: Amount) {
         if let Some(output_type) = &mut self.output_type {
             output_type.set_value(value);
-            return;
         }
     }
 

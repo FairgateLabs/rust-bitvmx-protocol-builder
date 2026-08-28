@@ -146,14 +146,14 @@ impl ProtocolBuilder {
 
         for (idx, speedup_data) in speedups_data.iter().enumerate() {
             let tx_name = &format!("tx_to_speedup_{idx}");
-            protocol.add_external_transaction(&tx_name)?;
+            protocol.add_external_transaction(tx_name)?;
 
             if let Some(utxo) = &speedup_data.utxo {
-                protocol.add_unknown_outputs(&tx_name, utxo.vout)?;
+                protocol.add_unknown_outputs(tx_name, utxo.vout)?;
                 let external_output = OutputType::segwit_key(utxo.amount, &utxo.pub_key)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
-                    &tx_name,
+                    tx_name,
                     external_output.into(),
                     "cpfp",
                     InputSpec::Auto(SighashType::ecdsa_all(), SpendMode::Segwit),
@@ -162,10 +162,10 @@ impl ProtocolBuilder {
                 )?;
             } else {
                 let partial_utxo = speedup_data.partial_utxo.as_ref().unwrap();
-                protocol.add_unknown_outputs(&tx_name, partial_utxo.1)?;
+                protocol.add_unknown_outputs(tx_name, partial_utxo.1)?;
                 protocol.add_connection(
                     &format!("speedup_{idx}"),
-                    &tx_name,
+                    tx_name,
                     speedup_data.output_type.as_ref().unwrap().clone().into(),
                     "cpfp",
                     InputSpec::Auto(

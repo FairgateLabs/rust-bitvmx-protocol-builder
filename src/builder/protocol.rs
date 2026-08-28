@@ -39,11 +39,11 @@ impl Protocol {
     }
 
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        Ok(storage.get(&name, None)?)
+        Ok(storage.get(name, None)?)
     }
 
     pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
-        storage.set(&self.name, &self, None)?;
+        storage.set(&self.name, self, None)?;
         Ok(())
     }
 
@@ -137,6 +137,7 @@ impl Protocol {
         Ok(transaction.output.len() as u32)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_connection(
         &mut self,
         connection_name: &str,
@@ -545,17 +546,14 @@ impl Protocol {
             .graph
             .get_output(transaction_name, output_index as usize)?
         {
-            match output_type {
-                OutputType::Taproot { leaves, .. } => return Ok((output_type, &leaves)),
-                _ => {}
-            }
+            if let OutputType::Taproot { leaves, .. } = output_type { return Ok((output_type, leaves)) }
         }
-        return Err(ProtocolBuilderError::CannotGetScriptForOutputType(
+        Err(ProtocolBuilderError::CannotGetScriptForOutputType(
             transaction_name.to_string(),
             output_index,
             0,
             "Output not found".to_string(),
-        ));
+        ))
     }
 
     pub fn get_script_to_spend(

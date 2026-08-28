@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::slice::from_ref;
+
     use bitcoin::{
         hashes::Hash,
         key::rand,
@@ -472,8 +474,8 @@ mod tests {
             "C",
             value,
             &internal_taproot_key,
-            &[script.clone()],
-            &[script.clone()],
+            from_ref(&script),
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -495,7 +497,7 @@ mod tests {
                 "A",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -568,8 +570,8 @@ mod tests {
             "C",
             value,
             &internal_key,
-            &[script.clone()],
-            &[script.clone()],
+            from_ref(&script),
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -635,7 +637,7 @@ mod tests {
                 "A",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -648,7 +650,7 @@ mod tests {
                 "A",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -661,7 +663,7 @@ mod tests {
                 "B",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -674,7 +676,7 @@ mod tests {
                 "C",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -687,7 +689,7 @@ mod tests {
                 "D",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -700,7 +702,7 @@ mod tests {
                 "A",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -713,7 +715,7 @@ mod tests {
                 "D",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -726,7 +728,7 @@ mod tests {
                 "F",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -742,8 +744,8 @@ mod tests {
             "I",
             value,
             &internal_taproot_key,
-            &[script.clone()],
-            &[script.clone()],
+            from_ref(&script),
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -757,7 +759,7 @@ mod tests {
                 "G",
                 value,
                 &internal_taproot_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -899,7 +901,7 @@ mod tests {
         let txid = Hash::all_zeros();
         let script =
             ProtocolScript::new(ScriptBuf::from(vec![0x04]), &external_key, SignMode::Single);
-        let output_type = OutputType::taproot(value, &external_key, &[script.clone()])?;
+        let output_type = OutputType::taproot(value, &external_key, from_ref(&script))?;
 
         let mut protocol = Protocol::new("taproot_rounds_endpoints");
         let builder = ProtocolBuilder {};
@@ -912,8 +914,8 @@ mod tests {
             "C",
             value,
             &internal_key,
-            &[script.clone()],
-            &[script.clone()],
+            from_ref(&script),
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -946,7 +948,7 @@ mod tests {
                 "A",
                 value,
                 &internal_key,
-                &[script.clone()],
+                from_ref(&script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -1474,7 +1476,7 @@ mod tests {
             "A",
             value,
             &internal_key,
-            &[script.clone()],
+            from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -1524,26 +1526,22 @@ mod tests {
         let txid = Hash::all_zeros();
 
         // Create a script with SignMode::Skip - this script should not be signed
-        let skip_script = ProtocolScript::new(
-            ScriptBuf::from(vec![0x01]),
-            &ecdsa_key,
-            SignMode::Skip,
-        );
+        let skip_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x01]), &ecdsa_key, SignMode::Skip);
 
         let output_type = OutputType::segwit_script(value, &skip_script)?;
 
         let mut protocol = Protocol::new("p2wsh_skip_signing");
         let builder = ProtocolBuilder {};
 
-        builder
-            .add_external_connection(
-                &mut protocol,
-                "external",
-                txid,
-                OutputSpec::Auto(output_type),
-                "start",
-                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
-            )?;
+        builder.add_external_connection(
+            &mut protocol,
+            "external",
+            txid,
+            OutputSpec::Auto(output_type),
+            "start",
+            InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+        )?;
 
         protocol.build_and_sign(tc.key_manager(), "")?;
 
@@ -1601,11 +1599,8 @@ mod tests {
 
         let scripts = vec![script_0, script_1, script_2];
 
-        let segwit_script = ProtocolScript::new(
-            ScriptBuf::from(vec![0x03]),
-            &ecdsa_key,
-            SignMode::Single,
-        );
+        let segwit_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &ecdsa_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("invalid_leaf_test");
@@ -1708,11 +1703,8 @@ mod tests {
 
         let scripts = vec![skip_script, single_script.clone(), skip_script2];
 
-        let segwit_script = ProtocolScript::new(
-            ScriptBuf::from(vec![0x03]),
-            &ecdsa_key,
-            SignMode::Single,
-        );
+        let segwit_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x03]), &ecdsa_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("mixed_signmodes_test");
@@ -1756,7 +1748,7 @@ mod tests {
 
         // Verify witness contains expected elements
         let witness = &tx.input[0].witness;
-        
+
         // Witness should have: [signature, script, control_block]
         // At minimum 3 elements (signature, script, control_block)
         assert!(
@@ -1807,7 +1799,7 @@ mod tests {
                 "origin",
                 value,
                 &internal_taproot_key,
-                &[taproot_script.clone()],
+                from_ref(&taproot_script),
                 &SpendMode::All {
                     key_path_sign: SignMode::Single,
                 },
@@ -1840,7 +1832,7 @@ mod tests {
 
         // Verify witness structure (at least signature + script + control_block)
         let last_element_size = taproot_witness.last().map(|w| w.len()).unwrap_or(0);
-        
+
         // Control block is typically 33 bytes (for single-leaf tree)
         assert!(
             last_element_size > 0,
@@ -1881,11 +1873,8 @@ mod tests {
 
         let leaves = vec![skip_leaf, single_leaf.clone()];
 
-        let segwit_script = ProtocolScript::new(
-            ScriptBuf::from(vec![0x02]),
-            &ecdsa_key,
-            SignMode::Single,
-        );
+        let segwit_script =
+            ProtocolScript::new(ScriptBuf::from(vec![0x02]), &ecdsa_key, SignMode::Single);
         let output_type = OutputType::segwit_script(value, &segwit_script)?;
 
         let mut protocol = Protocol::new("skip_multi_input_test");

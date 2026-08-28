@@ -1,6 +1,6 @@
-use std::rc::Rc;
+use std::{hint::black_box, rc::Rc, slice::from_ref};
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use bitcoin::{hashes::Hash, Network, ScriptBuf};
 use key_manager::{key_manager::KeyManager, key_type::BitcoinKeyType};
@@ -30,7 +30,7 @@ fn build_single_chain(n_txs: usize, km: &Rc<KeyManager>) -> Protocol {
     let mut protocol = Protocol::new("bench_single");
     let builder = ProtocolBuilder {};
 
-    let ext_output = OutputType::taproot(value, &key, &[script.clone()]).unwrap();
+    let ext_output = OutputType::taproot(value, &key, from_ref(&script)).unwrap();
     builder
         .add_external_connection(
             &mut protocol,
@@ -55,7 +55,7 @@ fn build_single_chain(n_txs: usize, km: &Rc<KeyManager>) -> Protocol {
                 &format!("tx_{i}"),
                 value,
                 &key,
-                &[script.clone()],
+                from_ref(&script),
                 &spend_all,
                 &format!("tx_{}", i + 1),
                 &tr_sighash,

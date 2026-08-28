@@ -73,16 +73,16 @@ mod tests {
         let normal_output = OutputType::segwit_key(1000, &public_key.into()).unwrap();
 
         // Test auto_value() flags
-        assert_eq!(auto_output.auto_value(), true);
-        assert_eq!(auto_output.recover_value(), false);
+        assert!(auto_output.auto_value());
+        assert!(!auto_output.recover_value());
 
         // Test recover_value() flags
-        assert_eq!(recover_output.auto_value(), false);
-        assert_eq!(recover_output.recover_value(), true);
+        assert!(!recover_output.auto_value());
+        assert!(recover_output.recover_value());
 
         // Test normal value has no flags
-        assert_eq!(normal_output.auto_value(), false);
-        assert_eq!(normal_output.recover_value(), false);
+        assert!(!normal_output.auto_value());
+        assert!(!normal_output.recover_value());
 
         // Test dust_limit() returns >= 540 sats
         assert!(auto_output.dust_limit().to_sat() >= 540);
@@ -100,8 +100,8 @@ mod tests {
         // Test with SegwitScript
         let recover_script_output =
             OutputType::segwit_script(AmountType::Recover, &script).unwrap();
-        assert_eq!(recover_script_output.auto_value(), false);
-        assert_eq!(recover_script_output.recover_value(), true);
+        assert!(!recover_script_output.auto_value());
+        assert!(recover_script_output.recover_value());
         assert!(recover_script_output.dust_limit().to_sat() >= 540);
     }
 }
