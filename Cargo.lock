@@ -528,7 +528,7 @@ dependencies = [
 [[package]]
 name = "bitvmx-key-manager"
 version = "0.8.4"
-source = "git+https://github.com/FairgateLabs/rust-bitvmx-key-manager.git?tag=v0.8.4#9e3eac963509bdda4a6afd04ba03ed469c85bda1"
+source = "git+https://github.com/FairgateLabs/rust-bitvmx-key-manager.git?tag=v0.8.4#f3a2c572007b493dec9e30028e7c57516d6b5e1b"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -1559,9 +1559,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
 dependencies = [
  "atomic-waker",
  "bytes",
