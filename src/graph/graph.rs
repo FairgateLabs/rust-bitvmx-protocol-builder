@@ -553,9 +553,9 @@ impl TransactionGraph {
                 .ok_or({
                     GraphError::OverflowError(total_transaction_amount, minimum_relay_fee)
                 })?;
-            let recover_amount = total_parents_amount
-                .checked_sub(total_subtracted)
-                .ok_or({ GraphError::InsufficientFunds(total_parents_amount, total_subtracted) })?;
+            let recover_amount = total_parents_amount.checked_sub(total_subtracted).ok_or(
+                GraphError::InsufficientFunds(total_parents_amount, total_subtracted),
+            )?;
             let recover_amount = Amount::from_sat(recover_amount);
 
             // Update OutputType value
