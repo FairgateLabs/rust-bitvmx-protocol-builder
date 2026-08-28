@@ -546,7 +546,9 @@ impl Protocol {
             .graph
             .get_output(transaction_name, output_index as usize)?
         {
-            if let OutputType::Taproot { leaves, .. } = output_type { return Ok((output_type, leaves)) }
+            if let OutputType::Taproot { leaves, .. } = output_type {
+                return Ok((output_type, leaves));
+            }
         }
         Err(ProtocolBuilderError::CannotGetScriptForOutputType(
             transaction_name.to_string(),

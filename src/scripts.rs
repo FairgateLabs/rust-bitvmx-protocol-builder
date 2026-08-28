@@ -78,7 +78,6 @@ impl KeyType {
             )),
         }
     }
-
 }
 
 impl Display for KeyType {

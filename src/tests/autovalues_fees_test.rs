@@ -3,7 +3,12 @@ mod tests {
     use bitcoin::{hashes::Hash, ScriptBuf};
 
     use crate::{
-        builder::{Protocol, ProtocolBuilder}, errors::ProtocolBuilderError, graph::estimate::estimate_min_relay_fee, scripts::{ProtocolScript, SignMode, StackItem, verify_lamport_signatures}, tests::utils::TestContext, types::{
+        builder::{Protocol, ProtocolBuilder},
+        errors::ProtocolBuilderError,
+        graph::estimate::estimate_min_relay_fee,
+        scripts::{verify_lamport_signatures, ProtocolScript, SignMode, StackItem},
+        tests::utils::TestContext,
+        types::{
             connection::{InputSpec, OutputSpec},
             input::{InputArgs, SpendMode},
             output::OutputType,

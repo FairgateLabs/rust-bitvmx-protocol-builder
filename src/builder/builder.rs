@@ -198,9 +198,9 @@ impl ProtocolBuilder {
         }
 
         let total_funding: u64 = funding_inputs.iter().map(|u| u.amount).sum();
-        let change_amount = total_funding.checked_sub(speedup_fee).ok_or_else(|| {
-            ProtocolBuilderError::InsufficientFunds(total_funding, speedup_fee)
-        })?;
+        let change_amount = total_funding
+            .checked_sub(speedup_fee)
+            .ok_or_else(|| ProtocolBuilderError::InsufficientFunds(total_funding, speedup_fee))?;
         let change_output = OutputType::segwit_key(change_amount, change_address)?;
         protocol.add_transaction_output("cpfp", &change_output)?;
 

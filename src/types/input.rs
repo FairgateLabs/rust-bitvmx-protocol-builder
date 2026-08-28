@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     errors::{GraphError, ProtocolBuilderError},
-    scripts::SignMode, types::output::SignatureType,
+    scripts::SignMode,
+    types::output::SignatureType,
 };
 
 use super::OutputType;
