@@ -289,6 +289,26 @@ fn render(protocol: &Protocol) -> anyhow::Result<()> {
 
 `GraphOptions::Default` renders each transaction as a node labeled with indexed inputs/outputs and their satoshi values. Use `GraphOptions::EdgeArrows` to include port-specific arrows that highlight which output feeds each downstream input.
 
+### Export to BitVMX Protocol Studio
+
+`Protocol::export_studio_yaml` returns the serialized YAML. Set an output directory
+to also write the graph as `<protocol-name>.yaml`.
+
+```rust
+use protocol_builder::graph::studio_yaml::StudioExportSettings;
+
+let yaml = protocol.export_studio_yaml(
+    StudioExportSettings::default().with_output_dir("studio-graphs"),
+)?;
+```
+
+Applications may populate the directory from their own configuration. Setting
+`PROTOCOL_BUILDER_EXPORT_DIR` also supplies it to `StudioExportSettings::default()`;
+in that case, calls to `Protocol::visualize` automatically write the corresponding
+Studio YAML file without changing visualization behavior if export fails. If the
+environment variable is unset and `with_output_dir` is not called, YAML is only
+returned to the caller and no file is written.
+
 ### Auto value outputs and fee estimation
 
 `Protocol::compute_minimum_output_values` backfills outputs marked with `AUTO_AMOUNT` or `RECOVER_AMOUNT`. `AUTO_AMOUNT` placeholders are bumped up just enough for the downstream transaction to pay its own fee estimate (1 sat/vB plus a 5% buffer), while `RECOVER_AMOUNT` placeholders scoop up any leftover value from the parent subtree so no funds are stranded.

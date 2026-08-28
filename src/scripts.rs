@@ -283,6 +283,10 @@ impl ProtocolScript {
         self.items.clone()
     }
 
+    pub fn sign_mode(&self) -> SignMode {
+        self.sign_mode
+    }
+
     pub fn skip_signing(&self) -> bool {
         self.sign_mode == SignMode::Skip
     }

@@ -12,7 +12,10 @@ use storage_backend::storage::{KeyValueStore, Storage};
 
 use crate::{
     errors::ProtocolBuilderError,
-    graph::graph::{GraphOptions, TransactionGraph},
+    graph::{
+        graph::{GraphOptions, TransactionGraph},
+        studio_yaml::StudioExportSettings,
+    },
     scripts::ProtocolScript,
     types::{
         connection::{ConnectionType, InputSpec, OutputSpec},
@@ -23,6 +26,7 @@ use crate::{
 };
 
 use super::check_params::{check_empty_connection_name, check_empty_transaction_name};
+use tracing::{info, warn};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Protocol {
@@ -60,6 +64,15 @@ impl Protocol {
         transaction_name: &str,
     ) -> Result<&mut Self, ProtocolBuilderError> {
         self.get_or_create_transaction(transaction_name, true)?;
+        Ok(self)
+    }
+
+    pub fn add_external_transaction_with_txid(
+        &mut self,
+        transaction_name: &str,
+        txid: Txid,
+    ) -> Result<&mut Self, ProtocolBuilderError> {
+        self.get_or_create_transaction_with_txid(transaction_name, txid)?;
         Ok(self)
     }
 
@@ -586,7 +599,23 @@ impl Protocol {
     }
 
     pub fn visualize(&self, options: GraphOptions) -> Result<String, ProtocolBuilderError> {
+        // Export alongside visualization when PROTOCOL_BUILDER_EXPORT_DIR is set.
+        // Never fail visualization on an optional diagnostic export.
+        let export_settings = StudioExportSettings::default();
+        if let Some(output_dir) = export_settings.output_dir.clone() {
+            match self.export_studio_yaml(export_settings) {
+                Ok(_) => info!("studio yaml exported under {}", output_dir.display()),
+                Err(error) => warn!("studio yaml export failed for '{}': {:?}", self.name, error),
+            }
+        }
         Ok(self.graph.visualize(options)?)
+    }
+
+    pub fn export_studio_yaml(
+        &self,
+        settings: StudioExportSettings,
+    ) -> Result<String, ProtocolBuilderError> {
+        Ok(self.graph.export_studio_yaml(&self.name, settings)?)
     }
 
     pub(crate) fn transaction_template() -> Transaction {
@@ -609,6 +638,26 @@ impl Protocol {
             let transaction = Protocol::transaction_template();
             self.graph
                 .add_transaction(transaction_name, transaction, external)?;
+        };
+
+        Ok(self
+            .graph
+            .get_transaction_by_name(transaction_name)
+            .unwrap()
+            .clone())
+    }
+
+    fn get_or_create_transaction_with_txid(
+        &mut self,
+        transaction_name: &str,
+        txid: Txid,
+    ) -> Result<Transaction, ProtocolBuilderError> {
+        check_empty_transaction_name(transaction_name)?;
+
+        if !self.graph.contains_transaction(transaction_name) {
+            let transaction = Protocol::transaction_template();
+            self.graph
+                .add_transaction_with_txid(transaction_name, transaction, txid)?;
         };
 
         Ok(self

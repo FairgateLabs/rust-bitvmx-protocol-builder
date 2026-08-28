@@ -3,7 +3,7 @@ use std::{
     vec,
 };
 
-use bitcoin::{secp256k1::Message, Amount, Transaction, TxOut, Txid};
+use bitcoin::{secp256k1::Message, Amount, Sequence, Transaction, TxOut, Txid};
 use petgraph::{
     algo::toposort,
     graph::{EdgeIndex, NodeIndex},
@@ -15,6 +15,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     errors::GraphError,
     graph::estimate::estimate_min_relay_fee,
+    graph::studio_yaml::{
+        assemble_doc, make_connection_names_unique, map_input, to_yaml, DocBuilder,
+        StudioConnection, StudioEndpointFrom, StudioEndpointTo, StudioExportSettings, StudioInput,
+        StudioOutput, StudioTransaction,
+    },
     types::{
         input::{InputSignatures, InputType, SighashType, Signature, SpendMode},
         output::OutputType,
@@ -36,16 +41,23 @@ pub(crate) struct Node {
     pub(crate) outputs: Vec<OutputType>,
     pub(crate) inputs: Vec<InputType>,
     pub(crate) external: bool,
+    pub(crate) txid: Option<Txid>,
 }
 
 impl Node {
-    pub(crate) fn new(name: &str, transaction: Transaction, external: bool) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        transaction: Transaction,
+        external: bool,
+        txid: Option<Txid>,
+    ) -> Self {
         Node {
             name: name.to_string(),
             transaction,
             outputs: vec![],
             inputs: vec![],
             external,
+            txid,
         }
     }
 
@@ -53,6 +65,14 @@ impl Node {
         self.inputs
             .get(input_index)
             .ok_or(GraphError::MissingInputInfo(self.name.clone(), input_index))
+    }
+
+    pub(crate) fn get_txid(&self) -> Txid {
+        if let Some(txid) = self.txid {
+            txid
+        } else {
+            self.transaction.compute_txid()
+        }
     }
 }
 
@@ -102,11 +122,12 @@ impl TransactionGraph {
         }
     }
 
-    pub fn add_transaction(
+    fn add_transaction_internal(
         &mut self,
         name: &str,
         transaction: Transaction,
         external: bool,
+        txid: Option<Txid>,
     ) -> Result<(), GraphError> {
         if name.trim().is_empty() {
             return Err(GraphError::EmptyTransactionName);
@@ -116,11 +137,29 @@ impl TransactionGraph {
             return Err(GraphError::TransactionAlreadyExists(name.to_string()));
         }
 
-        let node = Node::new(name, transaction, external);
+        let node = Node::new(name, transaction, external, txid);
         let node_index = self.graph.add_node(node.clone());
 
         self.node_indexes.insert(name.to_string(), node_index);
         Ok(())
+    }
+
+    pub fn add_transaction(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+        external: bool,
+    ) -> Result<(), GraphError> {
+        self.add_transaction_internal(name, transaction, external, None)
+    }
+
+    pub fn add_transaction_with_txid(
+        &mut self,
+        name: &str,
+        transaction: Transaction,
+        txid: Txid,
+    ) -> Result<(), GraphError> {
+        self.add_transaction_internal(name, transaction, true, Some(txid))
     }
 
     pub fn update_transaction(
@@ -235,7 +274,7 @@ impl TransactionGraph {
 
     pub fn get_transaction_by_id(&self, txid: &Txid) -> Result<&Transaction, GraphError> {
         for node in self.graph.node_weights() {
-            if node.transaction.compute_txid() == *txid {
+            if node.get_txid() == *txid {
                 return Ok(&node.transaction);
             }
         }
@@ -244,7 +283,7 @@ impl TransactionGraph {
 
     pub fn get_transaction_name_by_id(&self, txid: Txid) -> Result<&String, GraphError> {
         for node in self.graph.node_weights() {
-            if node.transaction.compute_txid() == txid {
+            if node.get_txid() == txid {
                 return Ok(&node.name);
             }
         }
@@ -339,7 +378,7 @@ impl TransactionGraph {
     pub fn get_transaction_ids(&self) -> Vec<Txid> {
         self.graph
             .node_weights()
-            .map(|node| node.transaction.compute_txid())
+            .map(|node| node.get_txid())
             .collect()
     }
 
@@ -517,18 +556,18 @@ impl TransactionGraph {
 
             // Collect parents outputs amount before mutably borrowing self
             let parent_connections = self.find_incoming_edges(node_index);
-            let total_parents_amount =
-                parent_connections
-                    .iter()
-                    .try_fold(0u64, |acc, &connection| {
-                        let parent = self.get_from_node(connection)?;
-                        let output_index = self.get_connection(connection)?.output_index as usize;
-                        Ok(acc
-                            + parent.outputs[output_index]
-                                .get_value()
-                                .ok_or(GraphError::AmountTypeValueExpected)?
-                                .to_sat())
-                    })?;
+            let total_parents_amount = parent_connections.iter().try_fold(
+                0u64,
+                |acc, &connection| -> Result<u64, GraphError> {
+                    let parent = self.get_from_node(connection)?;
+                    let output_index = self.get_connection(connection)?.output_index as usize;
+                    Ok(acc
+                        + parent.outputs[output_index]
+                            .get_value()
+                            .ok_or(GraphError::AmountTypeValueExpected)?
+                            .to_sat())
+                },
+            )?;
 
             // Collect the transaction outputs amount, excluding the recovering output
             let total_transaction_amount = recovering_transaction
@@ -770,7 +809,7 @@ impl TransactionGraph {
                 from.name,
                 from.name,
                 fee,
-                last_chars(&from.transaction.compute_txid().to_string(), 8),
+                last_chars(&from.get_txid().to_string(), 8),
                 inout,
             ));
 
@@ -803,6 +842,84 @@ impl TransactionGraph {
         result.push('}');
 
         Ok(result)
+    }
+
+    pub fn export_studio_yaml(
+        &self,
+        protocol_name: &str,
+        settings: StudioExportSettings,
+    ) -> Result<String, GraphError> {
+        let mut builder = DocBuilder::new();
+        let mut transactions = Vec::new();
+        let mut connections = Vec::new();
+
+        for node_index in self.graph.node_indices() {
+            let from = self.graph.node_weight(node_index).unwrap();
+            let txid = from.get_txid().to_string();
+
+            let outputs: Vec<StudioOutput> =
+                from.outputs.iter().map(|o| builder.map_output(o)).collect();
+
+            let inputs: Vec<StudioInput> = from
+                .inputs
+                .iter()
+                .enumerate()
+                .map(|(i, inp)| {
+                    let seq = from
+                        .transaction
+                        .input
+                        .get(i)
+                        .map(|ti| ti.sequence)
+                        .unwrap_or(Sequence::MAX);
+                    map_input(inp, seq)
+                })
+                .collect();
+
+            transactions.push(StudioTransaction {
+                name: from.name.clone(),
+                external: from.external,
+                txid: txid.clone(),
+                external_txid: if from.external { Some(txid) } else { None },
+                outputs,
+                inputs,
+            });
+
+            for edge in self.graph.edges(node_index) {
+                let connection = edge.weight();
+                let to = self.graph.node_weight(edge.target()).unwrap();
+                connections.push(StudioConnection {
+                    name: connection.name.clone(),
+                    from: StudioEndpointFrom {
+                        tx: from.name.clone(),
+                        output_index: connection.output_index,
+                    },
+                    to: StudioEndpointTo {
+                        tx: to.name.clone(),
+                        input_index: connection.input_index,
+                    },
+                    timelock_blocks: None,
+                });
+            }
+        }
+
+        make_connection_names_unique(&mut connections);
+        let output_path = settings.output_path(protocol_name);
+        let doc = assemble_doc(builder, protocol_name, transactions, connections);
+        let yaml = to_yaml(&doc)?;
+
+        if let Some(path) = output_path {
+            let directory = path
+                .parent()
+                .expect("studio YAML output path always has a parent directory");
+            std::fs::create_dir_all(directory).map_err(|source| GraphError::StudioYamlIo {
+                path: directory.to_path_buf(),
+                source,
+            })?;
+            std::fs::write(&path, &yaml)
+                .map_err(|source| GraphError::StudioYamlIo { path, source })?;
+        }
+
+        Ok(yaml)
     }
 
     fn get_node_mut(&mut self, name: &str) -> Result<&mut Node, GraphError> {
@@ -915,4 +1032,151 @@ fn last_chars(s: &str, n: usize) -> String {
         .into_iter()
         .rev()
         .collect()
+}
+
+#[cfg(test)]
+mod studio_export_tests {
+    use crate::{
+        builder::{Protocol, ProtocolBuilder},
+        graph::studio_yaml::{StudioDoc, StudioExportSettings},
+        scripts::{ProtocolScript, SignMode},
+        tests::utils::{TemporaryDir, TestContext},
+        types::{
+            connection::{InputSpec, OutputSpec},
+            input::SpendMode,
+            output::OutputType,
+        },
+    };
+    use bitcoin::hashes::Hash;
+    use bitcoin::ScriptBuf;
+
+    #[test]
+    fn exports_studio_yaml_with_txid() {
+        let tc = TestContext::new("studio_export").unwrap();
+        let taproot_key = tc
+            .key_manager()
+            .derive_keypair(key_manager::key_type::BitcoinKeyType::P2tr, 0)
+            .unwrap();
+        let value = 1000;
+        let txid = Hash::all_zeros();
+
+        let leaf = ProtocolScript::new(ScriptBuf::from(vec![0x51]), &taproot_key, SignMode::Single);
+        let output_type =
+            OutputType::segwit_unspendable(ScriptBuf::from(vec![0x6a, 0x01, 0x01])).unwrap();
+
+        let mut protocol = Protocol::new("studio_demo");
+        let builder = ProtocolBuilder {};
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "ext",
+                txid,
+                OutputSpec::Auto(output_type),
+                "start",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )
+            .unwrap()
+            .add_taproot_connection(
+                &mut protocol,
+                "protocol",
+                "start",
+                value,
+                &taproot_key,
+                &[leaf],
+                &SpendMode::All {
+                    key_path_sign: SignMode::Single,
+                },
+                "next",
+                &tc.tr_sighash_type(),
+            )
+            .unwrap();
+        protocol.build_and_sign(tc.key_manager(), "").unwrap();
+
+        let yaml = protocol
+            .export_studio_yaml(StudioExportSettings::default())
+            .unwrap();
+
+        // parses back into our model (guards shape)
+        let doc: StudioDoc = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(doc.name, "studio_demo");
+        assert!(doc.transactions.iter().any(|t| t.name == "start"));
+        // every transaction carries a 64-hex txid equal to compute_txid
+        for t in &doc.transactions {
+            assert_eq!(t.txid.len(), 64, "txid is 64 hex chars");
+        }
+        let start = doc.transactions.iter().find(|t| t.name == "start").unwrap();
+        let expected = protocol
+            .transaction_by_name("start")
+            .unwrap()
+            .compute_txid()
+            .to_string();
+        assert_eq!(start.txid, expected);
+        assert!(!doc.connections.is_empty());
+    }
+
+    #[test]
+    fn protocol_delegates_to_graph() {
+        let tc = TestContext::new("studio_delegate").unwrap();
+        let key = tc
+            .key_manager()
+            .derive_keypair(key_manager::key_type::BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
+        let mut protocol = Protocol::new("d");
+        let out = OutputType::segwit_key(1000u64, &key).unwrap();
+        let builder = ProtocolBuilder {};
+        builder
+            .add_external_connection(
+                &mut protocol,
+                "ext",
+                bitcoin::hashes::Hash::all_zeros(),
+                OutputSpec::Auto(out),
+                "start",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )
+            .unwrap();
+        protocol.build_and_sign(tc.key_manager(), "").unwrap();
+        let yaml = protocol
+            .export_studio_yaml(StudioExportSettings::default())
+            .unwrap();
+        assert!(yaml.contains("name: d"));
+    }
+
+    #[test]
+    fn exports_each_protocol_to_its_own_yaml_file() {
+        let tc = TestContext::new("studio_file_export").unwrap();
+        let key = tc
+            .key_manager()
+            .derive_keypair(key_manager::key_type::BitcoinKeyType::P2wpkh, 0)
+            .unwrap();
+        let mut protocol = Protocol::new("file_export_demo");
+        let out = OutputType::segwit_key(1000u64, &key).unwrap();
+        ProtocolBuilder {}
+            .add_external_connection(
+                &mut protocol,
+                "ext",
+                bitcoin::hashes::Hash::all_zeros(),
+                OutputSpec::Auto(out),
+                "start",
+                InputSpec::Auto(tc.ecdsa_sighash_type(), SpendMode::Segwit),
+            )
+            .unwrap();
+        protocol.build_and_sign(tc.key_manager(), "").unwrap();
+
+        let export_root = TemporaryDir::new("studio_file_export_output");
+        let output_dir = export_root.path("studio-graphs");
+        let yaml = protocol
+            .export_studio_yaml(StudioExportSettings::default().with_output_dir(&output_dir))
+            .unwrap();
+
+        let output_files: Vec<_> = std::fs::read_dir(&output_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(output_files.len(), 1);
+        assert_eq!(
+            output_files[0].file_name().unwrap(),
+            "file_export_demo.yaml"
+        );
+        assert_eq!(std::fs::read_to_string(&output_files[0]).unwrap(), yaml);
+    }
 }

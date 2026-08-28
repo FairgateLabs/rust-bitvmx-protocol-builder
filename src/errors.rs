@@ -83,6 +83,16 @@ pub enum GraphError {
 
     #[error("Output amount is less than dust limit: {0} ")]
     DustOutput(String),
+
+    #[error("Failed to serialize studio YAML: {0}")]
+    YamlSerialization(#[from] serde_yaml::Error),
+
+    #[error("Failed to write studio YAML to {path}: {source}")]
+    StudioYamlIo {
+        path: std::path::PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 #[derive(Error, Debug)]
