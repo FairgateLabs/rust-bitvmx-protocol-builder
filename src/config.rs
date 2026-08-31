@@ -26,6 +26,8 @@ pub struct Config {
 
 impl Config {
     pub fn new(config: Option<String>) -> Result<Config, ConfigError> {
-        Ok(bitvmx_settings::settings::load_config_file::<Config>(config)?)
+        Ok(bitvmx_settings::settings::load_config_file::<Config>(
+            config,
+        )?)
     }
 }

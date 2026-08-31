@@ -129,9 +129,9 @@ impl Utxo {
         }
     }
 }
-impl Into<SpeedupData> for Utxo {
-    fn into(self) -> SpeedupData {
-        SpeedupData::new(self)
+impl From<Utxo> for SpeedupData {
+    fn from(val: Utxo) -> Self {
+        SpeedupData::new(val)
     }
 }
 
@@ -317,7 +317,7 @@ impl OutputType {
                     return Err(ProtocolBuilderError::DustOutput {
                         value,
                         dust_limit: self.dust_limit(),
-                        output_type: self.clone(),
+                        output_type: Box::new(self.clone()),
                     });
                 }
                 Ok(value)

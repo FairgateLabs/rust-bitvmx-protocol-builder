@@ -19,21 +19,21 @@ pub enum OutputSpec {
     Last,
 }
 
-impl Into<OutputSpec> for OutputType {
-    fn into(self) -> OutputSpec {
-        OutputSpec::Auto(self)
+impl From<OutputType> for OutputSpec {
+    fn from(val: OutputType) -> Self {
+        OutputSpec::Auto(val)
     }
 }
 
-impl Into<OutputSpec> for usize {
-    fn into(self) -> OutputSpec {
-        OutputSpec::Index(self)
+impl From<usize> for OutputSpec {
+    fn from(val: usize) -> Self {
+        OutputSpec::Index(val)
     }
 }
 
-impl Into<InputSpec> for usize {
-    fn into(self) -> InputSpec {
-        InputSpec::Index(self)
+impl From<usize> for InputSpec {
+    fn from(val: usize) -> Self {
+        InputSpec::Index(val)
     }
 }
 

@@ -3,7 +3,12 @@ mod tests {
     use bitcoin::{hashes::Hash, ScriptBuf};
 
     use crate::{
-        builder::{Protocol, ProtocolBuilder}, errors::ProtocolBuilderError, graph::estimate::estimate_min_relay_fee, scripts::{ProtocolScript, SignMode, StackItem, verify_lamport_signatures}, tests::utils::TestContext, types::{
+        builder::{Protocol, ProtocolBuilder},
+        errors::ProtocolBuilderError,
+        graph::estimate::estimate_min_relay_fee,
+        scripts::{verify_lamport_signatures, ProtocolScript, SignMode, StackItem},
+        tests::utils::TestContext,
+        types::{
             connection::{InputSpec, OutputSpec},
             input::{InputArgs, SpendMode},
             output::OutputType,
@@ -66,7 +71,7 @@ mod tests {
 
         // Verify parent has output
         assert!(
-            parent_tx.output.len() > 0,
+            !parent_tx.output.is_empty(),
             "Parent transaction should have at least one output"
         );
 
@@ -77,7 +82,7 @@ mod tests {
 
         // Verify child consumed parent output by having an input
         assert!(
-            child_tx.input.len() > 0,
+            !child_tx.input.is_empty(),
             "Child should have at least one input from parent"
         );
 

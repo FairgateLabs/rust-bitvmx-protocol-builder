@@ -16,7 +16,7 @@ pub fn script_num_size(n: u32) -> usize {
 
     // Minimal number of bytes needed to hold n
     let bits = 32 - n.leading_zeros();
-    let len = ((bits + 7) / 8) as usize; // ceil(bits/8)
+    let len = bits.div_ceil(8) as usize; // ceil(bits/8)
 
     // Extra byte needed if the top bit of the most significant byte
     // is set, since CScriptNum encodes sign in that bit.
@@ -143,7 +143,7 @@ fn vbytes_from_parts(
 ) -> u64 {
     let s = stripped_size as u64;
     let w = total_witness_bytes_including_marker_flag as u64;
-    s + ((w + 3) / 4) // ceil(w/4)
+    s + w.div_ceil(4) // ceil(w/4)
 }
 
 /// Estimate the minimum relay fee (in sats) for `tx` at `feerate_sat_per_vb`,

@@ -249,7 +249,7 @@ pub enum ProtocolBuilderError {
     DustOutput {
         value: Amount,
         dust_limit: Amount,
-        output_type: OutputType,
+        output_type: Box<OutputType>,
     },
 
     #[error("Uncompressed public key error: {0}")]

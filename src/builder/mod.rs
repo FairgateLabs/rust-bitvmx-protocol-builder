@@ -1,3 +1,4 @@
+#[allow(clippy::module_inception)]
 mod builder;
 mod check_params;
 mod protocol;

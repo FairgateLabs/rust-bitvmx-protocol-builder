@@ -78,14 +78,17 @@ impl KeyType {
             )),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        match self {
-            KeyType::WinternitzKey { .. } => "Winternitz".to_string(),
-            KeyType::LamportKey { .. } => "Lamport".to_string(),
-            KeyType::EcdsaKey { .. } => "Ecdsa".to_string(),
-            KeyType::XOnlyKey { .. } => "XOnly".to_string(),
-        }
+impl Display for KeyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            KeyType::WinternitzKey { .. } => "Winternitz",
+            KeyType::LamportKey { .. } => "Lamport",
+            KeyType::EcdsaKey => "Ecdsa",
+            KeyType::XOnlyKey => "XOnly",
+        };
+        write!(f, "{}", name)
     }
 }
 
@@ -425,7 +428,7 @@ pub fn ots_checklamport(public_key: &LamportPublicKey, keep_message: bool) -> Sc
         stack.define(1, format!("signature_{}", i).as_str());
     }
 
-    lamport_checksig(&mut stack, &public_key, keep_message);
+    lamport_checksig(&mut stack, public_key, keep_message);
 
     stack.get_script()
 }
@@ -514,7 +517,7 @@ pub fn verify_winternitz_signature_timelock(
     )?;
 
     protocol_script.add_stack_item(StackItem::new_schnorr_sig(true));
-    protocol_script.add_stack_item(StackItem::new_winternitz_sig(&public_key));
+    protocol_script.add_stack_item(StackItem::new_winternitz_sig(public_key));
 
     Ok(protocol_script)
 }
@@ -900,13 +903,13 @@ pub fn build_taproot_spend_info(
     let total_slots = 1 << (min_depth + 1); // 2^(min_depth + 1)
     let nodes_at_min_depth = total_slots - scripts_count;
     // Add leaves at minimum depth
-    for i in 0..nodes_at_min_depth {
-        tr_builder = tr_builder.add_leaf(min_depth, leaves[i].get_script().clone())?;
+    for leaf in &leaves[..nodes_at_min_depth] {
+        tr_builder = tr_builder.add_leaf(min_depth, leaf.get_script().clone())?;
     }
 
     // Add remaining leaves at minimum depth + 1
-    for i in nodes_at_min_depth..scripts_count {
-        tr_builder = tr_builder.add_leaf(min_depth + 1, leaves[i].get_script().clone())?;
+    for leaf in &leaves[nodes_at_min_depth..scripts_count] {
+        tr_builder = tr_builder.add_leaf(min_depth + 1, leaf.get_script().clone())?;
     }
 
     tr_builder
@@ -1461,7 +1464,7 @@ mod tests {
         let mut stack = StackTracker::new();
 
         for hash in signature.to_hashes().iter() {
-            stack.hexstr(&hex::encode(&hash));
+            stack.hexstr(&hex::encode(hash));
         }
 
         lamport_checksig(&mut stack, &public_key, false);
@@ -1487,7 +1490,7 @@ mod tests {
         let mut stack = StackTracker::new();
 
         for hash in signature.to_hashes().iter() {
-            stack.hexstr(&hex::encode(&hash));
+            stack.hexstr(&hex::encode(hash));
         }
 
         lamport_checksig(&mut stack, &public_key, true);

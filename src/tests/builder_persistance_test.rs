@@ -174,7 +174,7 @@ mod tests {
             "A",
             value,
             &internal_key,
-            &[script.clone()],
+            std::slice::from_ref(&script),
             &SpendMode::All {
                 key_path_sign: SignMode::Single,
             },
@@ -225,7 +225,7 @@ mod tests {
             "A",
             "B",
             value,
-            &[script.clone()],
+            std::slice::from_ref(&script),
             600,
             &script_expired,
             &script_renew,
