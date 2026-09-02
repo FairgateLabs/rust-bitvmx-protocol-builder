@@ -12,7 +12,7 @@ mod test {
     fn create_node() {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx, false);
+        let node = Node::new("test_tx", tx, false, None);
 
         assert_eq!(node.name, "test_tx");
         assert_eq!(node.outputs.len(), 0);
@@ -106,7 +106,7 @@ mod test {
     fn test_missing_input_info() {
         let raw_tx = hex!(SOME_TX);
         let tx: Transaction = Decodable::consensus_decode(&mut raw_tx.as_slice()).unwrap();
-        let node = Node::new("test_tx", tx, false);
+        let node = Node::new("test_tx", tx, false, None);
 
         let result = node.get_input(0);
         assert!(result.is_err());
