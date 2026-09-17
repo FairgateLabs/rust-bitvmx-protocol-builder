@@ -30,7 +30,6 @@ bitcoin-script = { git = "https://github.com/FairgateLabs/rust-bitcoin-script/",
 bitcoin-scriptexec = { git = "https://github.com/FairgateLabs/rust-bitcoin-scriptexec/", tag = "v0.6.0" }
 
 bitvmx-key-manager = { git = "https://github.com/FairgateLabs/rust-bitvmx-key-manager.git", tag = "v0.8.5" }
-bitvmx-bitcoin-rpc = { git = "https://github.com/FairgateLabs/rust-bitvmx-bitcoin-rpc.git", tag = "v0.8.5" }
 rust-bitvmx-storage-backend = { git = "https://github.com/FairgateLabs/rust-bitvmx-storage-backend.git", tag = "v0.8.5" }
 bitvmx-settings = { git = "https://github.com/FairgateLabs/rust-bitvmx-settings.git", tag = "v0.8.5" }
 bitcoin-script-stack = { git = "https://github.com/FairgateLabs/rust-bitcoin-script-stack.git", tag = "v0.6.0" }
