@@ -13,3 +13,7 @@ version = "0.10.2"
 crate = "h2"
 version = "0.4.19"
 
+[[allow.exact]]
+crate = "rustls"
+version = "0.23.45"
+

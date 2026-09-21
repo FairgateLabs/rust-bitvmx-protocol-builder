@@ -1,4 +1,3 @@
-use bitvmx_bitcoin_rpc::rpc_config::RpcConfig;
 use key_manager::config::KeyManagerConfig;
 use serde::Deserialize;
 use storage_backend::storage_config::StorageConfig;
@@ -18,7 +17,6 @@ pub struct ProtocolBuilderConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)] // enforce strict field compliance
 pub struct Config {
-    pub rpc: RpcConfig,
     pub builder: ProtocolBuilderConfig,
     pub key_manager: KeyManagerConfig,
     pub key_storage: StorageConfig,
