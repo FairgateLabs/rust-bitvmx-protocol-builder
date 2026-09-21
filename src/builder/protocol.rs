@@ -47,16 +47,18 @@ impl Protocol {
         }
     }
 
-    fn storage_key(name: &str) -> StorageKey {
-        StorageKey::from_joined(&format!("{PROTOCOL_PREFIX}{name}"))
+    fn storage_key(name: &str) -> Result<StorageKey, ProtocolBuilderError> {
+        Ok(StorageKey::from_joined(&format!(
+            "{PROTOCOL_PREFIX}{name}"
+        ))?)
     }
 
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        Ok(storage.get(Self::storage_key(name), None)?)
+        Ok(storage.get(Self::storage_key(name)?, None)?)
     }
 
     pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
-        storage.set(Self::storage_key(&self.name), self, None)?;
+        storage.set(Self::storage_key(&self.name)?, self, None)?;
         Ok(())
     }
 
