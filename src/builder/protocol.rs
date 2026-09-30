@@ -8,7 +8,10 @@ use bitcoin::{
 use key_manager::key_manager::KeyManager;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, rc::Rc, vec};
-use storage_backend::storage::{KeyValueStore, Storage};
+use storage_backend::{
+    key::StorageKey,
+    storage::{KeyValueStore, Storage},
+};
 
 use crate::{
     errors::ProtocolBuilderError,
@@ -28,6 +31,8 @@ use crate::{
 use super::check_params::{check_empty_connection_name, check_empty_transaction_name};
 use tracing::{info, warn};
 
+pub const PROTOCOL_PREFIX: &str = "protocol/";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Protocol {
     name: String,
@@ -42,12 +47,18 @@ impl Protocol {
         }
     }
 
+    fn storage_key(name: &str) -> Result<StorageKey, ProtocolBuilderError> {
+        Ok(StorageKey::from_joined(&format!(
+            "{PROTOCOL_PREFIX}{name}"
+        ))?)
+    }
+
     pub fn load(name: &str, storage: Rc<Storage>) -> Result<Option<Self>, ProtocolBuilderError> {
-        Ok(storage.get(name, None)?)
+        Ok(storage.get(Self::storage_key(name)?, None)?)
     }
 
     pub fn save(&self, storage: Rc<Storage>) -> Result<(), ProtocolBuilderError> {
-        storage.set(&self.name, self, None)?;
+        storage.set(Self::storage_key(&self.name)?, self, None)?;
         Ok(())
     }
 
